@@ -3072,6 +3072,230 @@ documentation:
                 }
 
 
+/v1/gambio:
+  description: Gambio Shop Integration
+  /import:
+    description: Bestellungen von Gambio importieren
+    post:
+      displayName: Bestellungen importieren
+      description: |
+        Importiert Bestellungen aus Gambio Shop in OpenXE Aufträge
+
+        Permission: `create_orders`
+      body:
+        application/json:
+          example: |
+            {
+                "config": {
+                    "base_url": "https://shop.example.com/api/v1",
+                    "username": "api_user",
+                    "password": "api_password",
+                    "default_project": 1,
+                    "default_bearbeiter": "Admin",
+                    "belegnr_prefix": "GAMBIO"
+                },
+                "filters": {
+                    "status": "pending",
+                    "limit": 50,
+                    "date_from": "2024-01-01"
+                }
+            }
+      responses:
+        200:
+          description: Import erfolgreich
+          body:
+            application/json:
+              example: |
+                {
+                    "data": {
+                        "total": 10,
+                        "imported": 8,
+                        "skipped": 2,
+                        "errors": []
+                    }
+                }
+        400:
+          description: Validierungsfehler
+          body:
+            application/json:
+              example: |
+                {
+                    "error": {
+                        "code": 7400,
+                        "http_code": 400,
+                        "message": "Validation failed",
+                        "details": [
+                            "Required field \"config.base_url\" is empty."
+                        ]
+                    }
+                }
+
+  /test:
+    description: API-Verbindung testen
+    post:
+      displayName: Verbindung testen
+      description: |
+        Testet die Verbindung zur Gambio API
+
+        Permission: `list_orders`
+      body:
+        application/json:
+          example: |
+            {
+                "config": {
+                    "base_url": "https://shop.example.com/api/v1",
+                    "username": "api_user",
+                    "password": "api_password"
+                }
+            }
+      responses:
+        200:
+          description: Test erfolgreich
+          body:
+            application/json:
+              example: |
+                {
+                    "data": {
+                        "connected": true,
+                        "message": "Connection successful"
+                    }
+                }
+
+  /orders:
+    description: Bestellungen von Gambio abrufen
+    post:
+      displayName: Bestellungen abrufen
+      description: |
+        Ruft Bestellungen von Gambio ab (ohne Import)
+
+        Permission: `list_orders`
+      body:
+        application/json:
+          example: |
+            {
+                "config": {
+                    "base_url": "https://shop.example.com/api/v1",
+                    "username": "api_user",
+                    "password": "api_password"
+                },
+                "filters": {
+                    "status": "pending",
+                    "limit": 10
+                }
+            }
+      responses:
+        200:
+          description: Bestellungen abgerufen
+          body:
+            application/json:
+              example: |
+                {
+                    "data": {
+                        "orders": [
+                            {
+                                "id": 12345,
+                                "customer": {
+                                    "email": "test@example.com",
+                                    "customer_number": "K001"
+                                },
+                                "billing_address": {
+                                    "firstname": "Max",
+                                    "lastname": "Mustermann",
+                                    "street": "Musterstraße 1",
+                                    "postcode": "12345",
+                                    "city": "Musterstadt"
+                                },
+                                "total": 99.99,
+                                "status": "pending"
+                            }
+                        ],
+                        "count": 1
+                    }
+                }
+
+  /order:
+    description: Einzelne Bestellung von Gambio abrufen
+    post:
+      displayName: Bestellung abrufen
+      description: |
+        Ruft eine einzelne Bestellung von Gambio ab
+
+        Permission: `list_orders`
+      body:
+        application/json:
+          example: |
+            {
+                "config": {
+                    "base_url": "https://shop.example.com/api/v1",
+                    "username": "api_user",
+                    "password": "api_password"
+                },
+                "order_id": 12345
+            }
+      responses:
+        200:
+          description: Bestellung abgerufen
+          body:
+            application/json:
+              example: |
+                {
+                    "data": {
+                        "order": {
+                            "id": 12345,
+                            "customer": {
+                                "email": "test@example.com",
+                                "customer_number": "K001"
+                            },
+                            "billing_address": {
+                                "firstname": "Max",
+                                "lastname": "Mustermann",
+                                "street": "Musterstraße 1",
+                                "postcode": "12345",
+                                "city": "Musterstadt"
+                            },
+                            "total": 99.99,
+                            "status": "pending"
+                        }
+                    }
+                }
+
+  /import-order:
+    description: Einzelne Bestellung importieren
+    post:
+      displayName: Bestellung importieren
+      description: |
+        Importiert eine einzelne Bestellung von Gambio
+
+        Permission: `create_orders`
+      body:
+        application/json:
+          example: |
+            {
+                "config": {
+                    "base_url": "https://shop.example.com/api/v1",
+                    "username": "api_user",
+                    "password": "api_password",
+                    "default_project": 1,
+                    "default_bearbeiter": "Admin",
+                    "belegnr_prefix": "GAMBIO"
+                },
+                "order_id": 12345
+            }
+      responses:
+        200:
+          description: Import erfolgreich
+          body:
+            application/json:
+              example: |
+                {
+                    "data": {
+                        "imported": true,
+                        "order_id": 12345,
+                        "message": "Order imported successfully"
+                    }
+                }
+
+
 /v1/belege/auftraege:
   description: Aufträge abrufen
   get:
