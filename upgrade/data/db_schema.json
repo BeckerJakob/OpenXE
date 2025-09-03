@@ -112639,7 +112639,7 @@
                 },
                 {
                     "Field": "preis",
-                    "Type": "decimal(14,10)",
+                    "Type": "decimal(20,10)",
                     "Collation": null,
                     "Null": "NO",
                     "Key": "",
