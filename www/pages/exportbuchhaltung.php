@@ -247,7 +247,7 @@ class Exportbuchhaltung
             if ($dataok) {
                 $filename_csv = "EXTF_".date('Ymd') . "_Buchungsstapel_DATEV_export.csv";
                 try {
-                    $csv = $this->DATEV_Buchuchungsstapel($rgchecked, $gschecked, $vbchecked, $lgchecked, $buchhaltung_berater, $buchhaltung_mandant, $buchhaltung_wj_beginn, $buchhaltung_sachkontenlaenge, $von, $bis, $projekt, $filename_csv, $diffignore, $sachkonto_kennung, $format);
+                    $csv = $this->DATEV_Buchuchungsstapel($rgchecked, $gschecked, $vbchecked, $lgchecked, $buchhaltung_berater, $buchhaltung_mandant, $buchhaltung_wj_beginn, (int)$buchhaltung_sachkontenlaenge, $von, $bis, $projekt, $filename_csv, $diffignore, $sachkonto_kennung, $format);
 
                     if ($pdfexport) {
 
