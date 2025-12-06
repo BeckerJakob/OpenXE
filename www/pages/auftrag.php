@@ -974,6 +974,8 @@ class Auftrag extends GenAuftrag
     $this->app->ActionHandler("steuer", "AuftragSteuer");
     $this->app->ActionHandler("berechnen", "Auftraegeberechnen");
 
+    $this->app->ActionHandler("supplierorder", "AuftragLieferantBestellen");
+
     $this->app->ActionHandler("offene", "AuftragOffenePositionen");
 
     $this->app->ActionHandler("etiketten","AuftragEtiketten");
@@ -1238,6 +1240,99 @@ class Auftrag extends GenAuftrag
       $this->app->Tpl->Parse('TAB1','auftrag_ean.tpl');
     }
     $this->app->Tpl->Parse('PAGE','tabview.tpl');
+  }
+
+  function AuftragLieferantBestellen()
+  {
+    $id = (int)$this->app->Secure->GetGET("id");
+    
+    // Get Order Positions
+    $sql = "SELECT ap.id, ap.artikel, ap.menge, ap.beschreibung, art.adresse as lieferant 
+            FROM auftrag_position ap
+            JOIN artikel art ON ap.artikel = art.id
+            WHERE ap.auftrag = $id AND art.lagerartikel = 1 AND art.typ != 'pauschale' AND art.typ != 'service'";
+            
+    $positions = $this->app->DB->SelectArr($sql);
+    
+    if(!is_array($positions)) {
+         $msg = $this->app->erp->base64_url_encode("<div class='warning'>Keine Positionen gefunden.</div>");
+         $this->app->Location->execute("index.php?module=auftrag&action=edit&id=$id&msg=$msg");
+         return;
+    }
+
+    $orders = []; // supplier_id => [ items ]
+    $stock_cache = [];
+
+    foreach($positions as $pos) {
+        $artID = $pos['artikel'];
+        $menge = $pos['menge'];
+        
+        if(!isset($stock_cache[$artID])) {
+            $stockSql = "SELECT SUM(lpi.menge) 
+                         FROM lager_platz_inhalt lpi 
+                         INNER JOIN lager_platz lp ON lp.id = lpi.lager_platz
+                         WHERE lpi.artikel = $artID AND lp.sperrlager = 0";
+            $currentStock = $this->app->DB->Select($stockSql);
+            $stock_cache[$artID] = ($currentStock) ? $currentStock : 0;
+        }
+        
+        if($stock_cache[$artID] >= $menge) {
+             $stock_cache[$artID] -= $menge;
+             continue; // Covered
+        }
+        
+        $missing = $menge - $stock_cache[$artID];
+        $stock_cache[$artID] = 0; // consumed all stock
+        
+        if($missing > 0) {
+            $lieferant = $pos['lieferant'];
+            if(!$lieferant) continue; // No supplier linked to article
+            
+            $orders[$lieferant][] = [
+                'artikel' => $artID,
+                'menge' => $missing,
+                'beschreibung' => $pos['beschreibung'],
+                'auftrag_position_id' => $pos['id']
+            ];
+        }
+    }
+    
+    // Create Orders
+    $created_count = 0;
+    foreach($orders as $lieferant => $items) {
+        $bestellid = $this->app->erp->CreateBestellung(['adresse' => $lieferant]);
+        if($bestellid) {
+             $this->app->erp->LoadBestellungStandardwerte($bestellid, $lieferant);
+             $created_count++;
+             $this->app->erp->BestellungProtokoll($bestellid, "Automatisch aus Auftrag $id angelegt");
+             
+             foreach($items as $item) {
+                 $preisid = $this->app->erp->Einkaufspreis($item['artikel'], $item['menge'], $lieferant);
+                 $artikelohnepreis = ($preisid === null) ? $item['artikel'] : null;
+                 
+                 $this->app->erp->AddBestellungPosition(
+                    $bestellid, 
+                    $preisid, 
+                    $item['menge'], 
+                    date('Y-m-d'), 
+                    $item['beschreibung'], 
+                    $artikelohnepreis, 
+                    '', 
+                    '', 
+                    $item['auftrag_position_id']
+                 );
+             }
+             $this->app->erp->BestellungNeuberechnen($bestellid);
+        }
+    }
+    
+    if($created_count > 0) {
+        $msg = $this->app->erp->base64_url_encode("<div class='success'>$created_count Bestellungen erfolgreich angelegt.</div>");
+    } else {
+        $msg = $this->app->erp->base64_url_encode("<div class='info'>Alle Artikel sind auf Lager oder kein Lieferant zugeordnet. Bestand reicht aus.</div>");
+    }
+    
+    $this->app->Location->execute("index.php?module=auftrag&action=edit&id=$id&msg=$msg");
   }
 
   function AuftragUpdateVerband()
@@ -1566,6 +1661,7 @@ class Auftrag extends GenAuftrag
           case 'anfrage':   if(!confirm('Wirklich rückführen?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=auftrag&action=anfrage&id=%value%'; break;
           case 'kreditlimit':       if(!confirm('Wirklich Kreditlimit für diesen Auftrag freigeben?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=auftrag&action=kreditlimit&id=%value%'; break;
           case 'copy': if(!confirm('Wirklich kopieren?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=auftrag&action=copy&id=%value%'; break;
+          case 'supplierorder': if(!confirm('Wirklich Bestellungen für fehlende Artikel bei Lieferanten anlegen?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=auftrag&action=supplierorder&id=%value%'; break;
           case 'delivery': if(!confirm('Wirklich als Lieferschein weiterführen?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=auftrag&action=lieferschein&id=%value%'; break;
           case 'deliveryinvoice': if(!confirm('Wirklich als Lieferschein und Rechnung weiterführen und Artikel automatisch aus Lager abziehen?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=auftrag&action=lieferscheinrechnung&id=%value%'; break;
           case 'invoice': if(!confirm('".$extendtext."Wirklich als Rechnung weiterführen?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=auftrag&action=rechnung&id=%value%'; break;
@@ -1595,28 +1691,6 @@ class Auftrag extends GenAuftrag
         }
       }
     </script>
-
-
-      Aktion:&nbsp;<select id=\"aktion$prefix\" onchange=\"onchangeauftrag(this.value);\">
-      <option>bitte w&auml;hlen ...</option>
-      $storno
-      <option value=\"copy\">Auftrag kopieren</option>
-      $freigabe
-      <option value=\"abschicken\">Auftrag abschicken</option>
-      <!--<option value=\"proforma\">Proforma Rechnung &ouml;ffnen</option>-->
-      $alsbestellung
-      $alsproduktion
-      <option value=\"delivery\">als Lieferschein weiterf&uuml;hren</option>
-      $alsrechnung
-      $proformarechnungoption
-      <option value=\"abschluss\">als abgeschlossen markieren</option>
-      $alsfreigegeben
-      <!--<option value=\"deliveryinvoice\">manuell weiterf&uuml;hren + ausbuchen</option>-->
-      $kreditlimit
-      $teillieferungen
-      $auswahlentsprechendkommissionierung
-      $zertifikatoption
-      $artikeleinlagern
       $artikelauslagern
       $shopexport
       $optionlieferkette
