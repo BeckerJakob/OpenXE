@@ -174,8 +174,7 @@ class Bestellvorschlag {
             'versendet',
             'freigegeben'
             $entwuerfe
-        ) AND NOT (auf.zahlungsweise = 'vorkasse' AND auf.vorabbezahltmarkieren <> 1)
-        AND $reserviersperre
+        ) AND $reserviersperre
 ) AS auftrag,
 (
     SELECT
