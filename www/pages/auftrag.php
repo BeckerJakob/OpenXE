@@ -1702,7 +1702,7 @@ class Auftrag extends GenAuftrag
       <!--<option value=\"proforma\">Proforma Rechnung &ouml;ffnen</option>-->
       $alsbestellung
       $alsproduktion
-      <option value=\"supplierorder\">bei Lieferant bestellen</option>
+      <option value=\"supplierorder\">bei Lieferant(en) bestellen</option>
       <option value=\"delivery\">als Lieferschein weiterf&uuml;hren</option>
       $alsrechnung
       $proformarechnungoption
