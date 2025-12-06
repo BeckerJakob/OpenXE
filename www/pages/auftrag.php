@@ -1314,7 +1314,7 @@ class Auftrag extends GenAuftrag
                     $bestellid, 
                     $preisid, 
                     $item['menge'], 
-                    date('Y-m-d'), 
+                    '', 
                     $item['beschreibung'], 
                     $artikelohnepreis, 
                     '', 
