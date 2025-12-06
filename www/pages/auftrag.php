@@ -1643,6 +1643,43 @@ class Auftrag extends GenAuftrag
     $hookcase = '';
     $this->app->erp->RunHook('Auftrag_Aktion_option',3, $id, $status, $hookoption);
     $this->app->erp->RunHook('Auftrag_Aktion_case',3, $id, $status, $hookcase);
+
+    $showSupplierOrder = false;
+    $positions = $this->app->DB->SelectArr("SELECT ap.id, ap.artikel, ap.menge FROM auftrag_position ap JOIN artikel art ON ap.artikel = art.id WHERE ap.auftrag = '$id' AND art.lagerartikel = 1 AND art.typ != 'pauschale' AND art.typ != 'service'");
+    if (is_array($positions)) {
+       $stock_cache = [];
+       foreach ($positions as $pos) {
+          $artID = $pos['artikel'];
+          if (!isset($stock_cache[$artID])) {
+               $stockSql = "SELECT SUM(lpi.menge) 
+                            FROM lager_platz_inhalt lpi 
+                            INNER JOIN lager_platz lp ON lp.id = lpi.lager_platz
+                            WHERE lpi.artikel = $artID AND lp.sperrlager = 0";
+               $currentStock = $this->app->DB->Select($stockSql);
+               $stock_cache[$artID] = ($currentStock) ? $currentStock : 0;
+          }
+          
+          $ordered = $this->app->DB->Select("SELECT SUM(bp.menge) FROM bestellung_position bp JOIN bestellung b ON bp.bestellung = b.id WHERE bp.auftrag_position_id = '". $pos['id'] ."' AND b.status != 'storniert'");
+          $ordered = ($ordered) ? $ordered : 0;
+          
+          $needed = $pos['menge'] - $ordered;
+          
+          if ($needed > 0) {
+             if ($stock_cache[$artID] >= $needed) {
+                 $stock_cache[$artID] -= $needed;
+             } else {
+                 $showSupplierOrder = true;
+                 break;
+             }
+          }
+       }
+    }
+    
+    $supplierorder = '';
+    if($showSupplierOrder) {
+        $supplierorder = '<option value="supplierorder">bei Lieferant(en) bestellen</option>';
+    }
+
     $menu ="
 
       <script type=\"text/javascript\">
@@ -1702,7 +1739,7 @@ class Auftrag extends GenAuftrag
       <!--<option value=\"proforma\">Proforma Rechnung &ouml;ffnen</option>-->
       $alsbestellung
       $alsproduktion
-      <option value=\"supplierorder\">bei Lieferant(en) bestellen</option>
+      $supplierorder
       <option value=\"delivery\">als Lieferschein weiterf&uuml;hren</option>
       $alsrechnung
       $proformarechnungoption
