@@ -389,7 +389,6 @@ FROM
             WHERE aufp.artikel = {$artikelId}
               AND (aufp.menge - aufp.geliefert) > 0
               AND auf.status IN ('versendet','freigegeben','angelegt')
-              AND NOT (auf.zahlungsweise = 'vorkasse' AND auf.vorabbezahltmarkieren <> 1)
               AND COALESCE(auf.nicht_reservieren, 0) <> 1
             HAVING restmenge > 0
             ORDER BY auf.datum, auf.id, aufp.id
