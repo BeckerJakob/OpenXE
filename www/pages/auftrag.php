@@ -1691,6 +1691,28 @@ class Auftrag extends GenAuftrag
         }
       }
     </script>
+
+
+      Aktion:&nbsp;<select id=\"aktion$prefix\" onchange=\"onchangeauftrag(this.value);\">
+      <option>bitte w&auml;hlen ...</option>
+      $storno
+      <option value=\"copy\">Auftrag kopieren</option>
+      $freigabe
+      <option value=\"abschicken\">Auftrag abschicken</option>
+      <!--<option value=\"proforma\">Proforma Rechnung &ouml;ffnen</option>-->
+      $alsbestellung
+      $alsproduktion
+      <option value=\"delivery\">als Lieferschein weiterf&uuml;hren</option>
+      $alsrechnung
+      $proformarechnungoption
+      <option value=\"abschluss\">als abgeschlossen markieren</option>
+      $alsfreigegeben
+      <!--<option value=\"deliveryinvoice\">manuell weiterf&uuml;hren + ausbuchen</option>-->
+      $kreditlimit
+      $teillieferungen
+      $auswahlentsprechendkommissionierung
+      $zertifikatoption
+      $artikeleinlagern
       $artikelauslagern
       $shopexport
       $optionlieferkette
