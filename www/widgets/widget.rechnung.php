@@ -30,6 +30,7 @@ class WidgetRechnung extends WidgetGenRechnung
       $projektdanach = explode(' ',$this->app->Secure->GetPOST('projekt'));
       $projektdanach = reset($projektdanach);
       $projektdanachid = $this->app->DB->Select("SELECT id FROM projekt WHERE abkuerzung = '$projektdanach' AND IFNULL(geloescht,0) = 0 LIMIT 1");
+      $this->app->erp->CheckAndSetVorkasseOk($id, $this->app->Secure->GetPOST('zahlungsstatus'));
       if(!$schreibschutzbefore && $projektdanach != $projektabkuerzung){
         $this->app->erp->LoadSteuersaetze($id, 'rechnung', $projektdanachid);
       }
