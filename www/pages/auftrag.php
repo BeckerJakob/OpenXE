@@ -1297,12 +1297,21 @@ class Auftrag extends GenAuftrag
         }
     }
     
+    // Get Application Project if available
+    $projekt = $this->app->DB->Select("SELECT projekt FROM auftrag WHERE id='$id'");
+
     // Create Orders
     $created_count = 0;
     foreach($orders as $lieferant => $items) {
         $bestellid = $this->app->erp->CreateBestellung(['adresse' => $lieferant]);
         if($bestellid) {
              $this->app->erp->LoadBestellungStandardwerte($bestellid, $lieferant);
+             
+             // Update Project
+             if($projekt > 0) {
+                 $this->app->DB->Update("UPDATE bestellung SET projekt='$projekt' WHERE id='$bestellid'");
+             }
+
              $created_count++;
              $this->app->erp->BestellungProtokoll($bestellid, "Automatisch aus Auftrag $id angelegt");
              
