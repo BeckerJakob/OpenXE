@@ -8381,6 +8381,7 @@ function StandardFirmendatenWerte()
   $this->AddNeuenFirmendatenWert( 'zeiterfassung_pflicht', 'int', '1', '', '0', '0', 0, 0);
 
   $this->AddNeuenFirmendatenWert( 'ampellager', 'int', '1', '', '0', '0', 0, 0);
+  $this->AddNeuenFirmendatenWert( 'ampelbestellung', 'int', '1', '', '0', '0', 0, 0);
   $this->AddNeuenFirmendatenWert( 'ampelporto', 'int', '1', '', '0', '0', 0, 0);
   $this->AddNeuenFirmendatenWert( 'ampelust', 'int', '1', '', '0', '0', 0, 0);
   $this->AddNeuenFirmendatenWert( 'ampelzahlung', 'int', '1', '', '0', '0', 0, 0);
@@ -12214,17 +12215,17 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
     //echo "$positionen_vorhanden $artikelzaehlen<hr>";
     if($positionen_vorhanden==$artikelzaehlen){
       $this->app->DB->Update("UPDATE auftrag SET lager_ok='1' WHERE id='$auftrag' LIMIT 1");
-      $this->app->DB->Update("UPDATE auftrag SET bestellungen_ok='1' WHERE id='$auftrag' LIMIT 1");
+      $this->app->DB->Update("UPDATE auftrag SET bestellung_ok='1' WHERE id='$auftrag' LIMIT 1");
     }
     else {
       $kommissionierverfahren = $this->app->DB->Select("SELECT kommissionierverfahren FROM projekt WHERE id = '$projekt' LIMIT 1");
       if($kommissionierverfahren == 'rechnungsmail')
       {
         $this->app->DB->Update("UPDATE auftrag SET lager_ok='1' WHERE id='$auftrag' LIMIT 1");
-        $this->app->DB->Update("UPDATE auftrag SET bestellungen_ok='1' WHERE id='$auftrag' LIMIT 1");
+        $this->app->DB->Update("UPDATE auftrag SET bestellung_ok='1' WHERE id='$auftrag' LIMIT 1");
       }else{
         $this->app->DB->Update("UPDATE auftrag SET lager_ok='0' WHERE id='$auftrag' LIMIT 1");
-        $this->app->DB->Update("UPDATE auftrag SET bestellungen_ok='0' WHERE id='$auftrag' LIMIT 1");
+        $this->app->DB->Update("UPDATE auftrag SET bestellung_ok='0' WHERE id='$auftrag' LIMIT 1");
       }
       if($positionen_vorhanden > 0 && $artikelzaehlen > 0)
       {
@@ -26660,7 +26661,7 @@ function Firmendaten($field,$projekt="")
           'footer_reihenfolge_proformarechnung_aktivieren','zeiterfassung_abrechnenvorausgewaehlt','festetrackingnummer',
           'guenstigste_vk','oneclickrelease','cleaner_logfile','cleaner_protokoll','cleaner_shopimport','cleaner_shopexportlog',
           'cleaner_versandzentrum','cleaner_uebertragungen','cleaner_adapterbox','angebot_auftrag_bestellung_ansprechpartner',
-          'ampellager','ampelporto','ampelust','ampelzahlung','ampelnachnahme','ampelautoversand','ampelkunde',
+          'ampellager','ampelbestellung','ampelporto','ampelust','ampelzahlung','ampelnachnahme','ampelautoversand','ampelkunde',
           'ampelliefertermin','ampelkreditlimit','ampelliefersperre','ampelproduktion','freitext1aktiv','freitext2aktiv',
           'reisekosten_ohnebriefpapier','lieferdatumkw','vertriebbearbeiterfuellen','typimdokument','staffelpreiseanzeigen',
           'abmessungimdokument','projektoeffentlich','verkaufspreisevpe','einkaufspreisevpe','apiohnehtmlumwandlung',

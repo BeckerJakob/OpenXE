@@ -835,7 +835,7 @@ class Auftrag extends GenAuftrag
         auf.id,
         auf.status,
         auf.lager_ok,
-        auf.bestellungen_ok,
+        auf.bestellung_ok,
         auf.porto_ok,
         auf.ust_ok,
         auf.vorkasse_ok,
@@ -5742,7 +5742,7 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
     $zusatzcheck = true;
     $this->app->erp->RunHook('AuftragVersandZusatzcheck', 2, $id, $zusatzcheck);
     if(($auftrag[0]['status']==='freigegeben' && $auftrag[0]['nachlieferung']=='0'
-        && $auftrag[0]['lager_ok']=='1'&&$auftrag[0]['bestellungen_ok']=='1'&&$auftrag[0]['porto_ok']=='1'&&$auftrag[0]['ust_ok']=='1'
+        && $auftrag[0]['lager_ok']=='1'&&$auftrag[0]['bestellung_ok']=='1'&&$auftrag[0]['porto_ok']=='1'&&$auftrag[0]['ust_ok']=='1'
         && $auftrag[0]['vorkasse_ok']=='1'&&$auftrag[0]['nachnahme_ok']=='1' &&($auftrag[0]['liefertermin_ok']=='1' || $ignoriereliefertermin)
         && $auftrag[0]['check_ok']=='1' && $auftrag[0]['autoversand']=='1'
         && $auftrag[0]['kreditlimit_ok']=='1' && $auftrag[0]['liefersperre_ok']=='1' && ($useredittimestamp > 45 || $useredittimestamp <= 0 || $internmodus)
@@ -6442,7 +6442,7 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
 
         if(a.reserviert_ok,'$reserviert','') as AR, 
         if(a.lager_ok,'$go','$stop') as LA, 
-        if(a.bestellungen_ok,'$go','$stop') as LA, 
+        if(a.bestellung_ok,'$go','$stop') as LA, 
         if(a.porto_ok,'$go','$stop') as PO, 
         if(a.ust_ok,'$go',CONCAT('<a href=\"/index.php?module=adresse&action=ustprf&id=',a.adresse,'\">','$stop','</a>')) as ST, 
         if(a.vorkasse_ok,'$go','$stop') as ZE, 

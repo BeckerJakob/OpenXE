@@ -6150,7 +6150,7 @@ XML;
                   }
                 }
               }
-              $obj->AddUbertragungMonitorLog($uebertragungen_account, $this->datei_id, 0, $isProduction?'produktion':'bestellung_ok', '', '', '', '', $isProduction?'produktion': 'bestellung', $bestellung);
+              $obj->AddUbertragungMonitorLog($uebertragungen_account, $this->datei_id, 0, $isProduction?'produktion':'bestellung_angelegt', '', '', '', '', $isProduction?'produktion': 'bestellung', $bestellung);
               $doctype = $isProduction?'produktion': 'bestellung';
               $this->app->erp->RunHook('transfer_document_incoming', 3, $uebertragungen_account, $doctype, $bestellung);
             }

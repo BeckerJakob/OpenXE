@@ -21516,7 +21516,7 @@
                     "Comment": ""
                 },
                 {
-                    "Field": "bestellungen_ok",
+                    "Field": "bestellung_ok",
                     "Type": "int(1)",
                     "Collation": null,
                     "Null": "NO",
@@ -70240,7 +70240,7 @@
                     "Comment": ""
                 },
                 {
-                    "Field": "bestellungen_ok",
+                    "Field": "bestellung_ok",
                     "Type": "int(1)",
                     "Collation": null,
                     "Null": "NO",

@@ -1609,7 +1609,7 @@
 							<tr><td width="300">UST: </td><td><input type="checkbox" value="1" name="ampelust" [AMPELUST]></td><td>Kreditlimit: </td><td><input type="checkbox" value="1" name="ampelkreditlimit" [AMPELKREDITLIMIT]></td></tr>
 							<tr><td width="300">Zahlung: </td><td><input type="checkbox" value="1" name="ampelzahlung" [AMPELZAHLUNG]></td><td>Liefersperre: </td><td><input type="checkbox" value="1" name="ampelliefersperre" [AMPELLIEFERSPERRE]></td></tr>
 							<tr><td width="300">Nachnahme: </td><td><input type="checkbox" value="1" name="ampelnachnahme" [AMPELNACHNAHME]></td><td>Produktion: </td><td><input type="checkbox" value="1" name="ampelproduktion" [AMPELPRODUKTION]></td></tr>
-							<tr><td width="300">Autoversand: </td><td><input type="checkbox" value="1" name="ampelautoversand" [AMPELAUTOVERSAND]></td><td></td><td></td></tr>
+							<tr><td width="300">Autoversand: </td><td><input type="checkbox" value="1" name="ampelautoversand" [AMPELAUTOVERSAND]></td><td>Bestellung: </td><td><input type="checkbox" value="1" name="ampelbestellung" [AMPELBESTELLUNG]></td></tr></td><td></td></tr>
 						</table>
 
 
@@ -1625,6 +1625,7 @@
 							<tr><td><input type="checkbox" value="1" name="ampelkreditlimit" [AMPELKREDITLIMIT]>&nbsp;Kreditlimit</td></tr>
 							<tr><td><input type="checkbox" value="1" name="ampelliefersperre" [AMPELLIEFERSPERRE]>&nbsp;Liefersperre</td></tr>
 							<tr><td><input type="checkbox" value="1" name="ampelproduktion" [AMPELPRODUKTION]>&nbsp;Produktion</td></tr></table></td></tr>
+							<tr><td><input type="checkbox" value="1" name="ampelbestellung" [AMPELBESTELLUNG]>&nbsp;Bestellung</td></tr></table></td></tr>
 						</table>-->
 					</fieldset>
 				</div>
