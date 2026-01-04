@@ -12215,22 +12215,55 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
     //echo "$positionen_vorhanden $artikelzaehlen<hr>";
     if($positionen_vorhanden==$artikelzaehlen){
       $this->app->DB->Update("UPDATE auftrag SET lager_ok='1' WHERE id='$auftrag' LIMIT 1");
-      $this->app->DB->Update("UPDATE auftrag SET bestellung_ok='1' WHERE id='$auftrag' LIMIT 1");
     }
     else {
       $kommissionierverfahren = $this->app->DB->Select("SELECT kommissionierverfahren FROM projekt WHERE id = '$projekt' LIMIT 1");
       if($kommissionierverfahren == 'rechnungsmail')
       {
         $this->app->DB->Update("UPDATE auftrag SET lager_ok='1' WHERE id='$auftrag' LIMIT 1");
-        $this->app->DB->Update("UPDATE auftrag SET bestellung_ok='1' WHERE id='$auftrag' LIMIT 1");
       }else{
         $this->app->DB->Update("UPDATE auftrag SET lager_ok='0' WHERE id='$auftrag' LIMIT 1");
-        $this->app->DB->Update("UPDATE auftrag SET bestellung_ok='0' WHERE id='$auftrag' LIMIT 1");
       }
       if($positionen_vorhanden > 0 && $artikelzaehlen > 0)
       {
         $this->app->DB->Update("UPDATE auftrag SET teillieferung_moeglich='1' WHERE id='$auftrag' LIMIT 1");
       }
+    }
+
+    // Calculate bestellung_ok (Purchase Order Status)
+    $bestellung_ok = 1;
+    $positions = $this->app->DB->SelectArr("SELECT ap.id, ap.artikel, ap.menge FROM auftrag_position ap JOIN artikel art ON ap.artikel = art.id WHERE ap.auftrag = '$auftrag' AND art.lagerartikel = 1 AND art.typ != 'pauschale' AND art.typ != 'service'");
+
+    if (is_array($positions)) {
+         $stock_cache = [];
+         foreach ($positions as $pos) {
+            $artID = $pos['artikel'];
+            if (!isset($stock_cache[$artID])) {
+                 $stockSql = "SELECT SUM(lpi.menge) 
+                              FROM lager_platz_inhalt lpi 
+                              INNER JOIN lager_platz lp ON lp.id = lpi.lager_platz
+                              WHERE lpi.artikel = $artID AND lp.sperrlager = 0";
+                 $currentStock = $this->app->DB->Select($stockSql);
+                 $stock_cache[$artID] = ($currentStock) ? $currentStock : 0;
+            }
+
+            $ordered = $this->app->DB->Select("SELECT SUM(bp.menge) FROM bestellung_position bp JOIN bestellung b ON bp.bestellung = b.id WHERE bp.auftrag_position_id = '". $pos['id'] ."' AND b.status != 'storniert'");
+            $ordered = ($ordered) ? $ordered : 0;
+
+            $needed = $pos['menge'] - $ordered;
+
+            if ($needed > 0) {
+               if ($stock_cache[$artID] >= $needed) {
+                   $stock_cache[$artID] -= $needed;
+               } else {
+                   $bestellung_ok = 0;
+                   break;
+               }
+            }
+         }
+    }
+
+    $this->app->DB->Update("UPDATE auftrag SET bestellung_ok='$bestellung_ok' WHERE id='$auftrag' LIMIT 1");
 
     }
 
