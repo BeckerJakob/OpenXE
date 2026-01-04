@@ -12265,8 +12265,6 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
 
     $this->app->DB->Update("UPDATE auftrag SET bestellung_ok='$bestellung_ok' WHERE id='$auftrag' LIMIT 1");
 
-    }
-
 
     // projekt check start
     $projektcheck = 0;
