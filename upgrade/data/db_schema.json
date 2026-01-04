@@ -31561,7 +31561,7 @@
                 },
                 {
                     "Field": "datum",
-                    "Type": "date",
+                    "Type": "datetime",
                     "Collation": null,
                     "Null": "NO",
                     "Key": "",
@@ -65728,6 +65728,28 @@
                     "Comment": ""
                 },
                 {
+                    "Field": "doc_typ",
+                    "Type": "varchar(255)",
+                    "Collation": "utf8mb3_general_ci",
+                    "Null": "NO",
+                    "Key": "",
+                    "Default": null,
+                    "Extra": "",
+                    "Privileges": "select,insert,update,references",
+                    "Comment": ""
+                },
+                {
+                    "Field": "doc_id",
+                    "Type": "int(11)",
+                    "Collation": null,
+                    "Null": "NO",
+                    "Key": "MUL",
+                    "Default": "0",
+                    "Extra": "",
+                    "Privileges": "select,insert,update,references",
+                    "Comment": ""
+                },
+                {
                     "Field": "payment_transaction_group_id",
                     "Type": "int(11)",
                     "Collation": null,
@@ -65756,6 +65778,17 @@
                     "Null": "NO",
                     "Key": "",
                     "Default": "current_timestamp()",
+                    "Extra": "",
+                    "Privileges": "select,insert,update,references",
+                    "Comment": ""
+                },
+                {
+                    "Field": "duedate",
+                    "Type": "date",
+                    "Collation": null,
+                    "Null": "YES",
+                    "Key": "",
+                    "Default": "",
                     "Extra": "",
                     "Privileges": "select,insert,update,references",
                     "Comment": ""
