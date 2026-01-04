@@ -3370,10 +3370,12 @@ class YUI {
     $tmpblue = '';
     $tmpstorno = '';
     $stop_lager = '';
+    $stop_bestellungen = '';
     $abgeschlossen = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/grey.png\" border=\"0\">";
     $angelegt = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/dokumentoffen.png\" border=\"0\">";
     $storniert = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/storno.png\" border=\"0\">";
     $go_lager = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/dokumentok.png\" border=\"0\">";
+    $go_bestellungen = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/dokumentok.png\" border=\"0\">";
     for ($i = 0;$i < 1;$i++) $tmp.= $abgeschlossen;
     for ($i = 0;$i < 1;$i++) $tmpblue.= $angelegt;
     for ($i = 0;$i < 1;$i++) $tmpstorno.= $storniert;
@@ -3382,7 +3384,7 @@ class YUI {
                if(a.status='abgeschlossen','<table cellpadding=0 cellspacing=0><tr><td nowrap>$tmp</td></tr></table>','<table cellpadding=0 cellspacing=0><tr><td nowrap>$tmpstorno</td></tr></table>'),
 
                CONCAT('<table cellpadding=0 cellspacing=0><tr><td nowrap>',
-                 if(1,'$go_lager','$stop_lager'),'</td></tr></table>'
+                 if(1,'$go_lager','$stop_lager'),if(1,'$go_bestellungen','$stop_bestellungen'),'</td></tr></table>'
                  )))";
   }
 
@@ -3431,9 +3433,11 @@ class YUI {
     if($this->app->erp->Firmendaten("ampellager")!="1")
     {
       $go_lager = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/lagergo.png\" style=\"margin-right:1px\" title=\"Artikel ist im Lager\" border=\"0\">";
+      $go_bestellungen = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/lagergo.png\" style=\"margin-right:1px\" title=\"Artikel ist im Lager\" border=\"0\">";
       $stop_lager = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/lagerstop.png\" style=\"margin-right:1px\" title=\"Artikel fehlt im Lager\" border=\"0\">";
+      $stop_bestellungen = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/lagerstop.png\" style=\"margin-right:1px\" title=\"Artikel fehlt im Lager\" border=\"0\">";
       $anzahl++;
-    } else { $go_lager=""; $stop_lager=""; }
+    } else { $go_lager=""; $stop_lager=""; $go_bestellungen=""; $stop_bestellungen=""; }
 
     if($this->app->erp->Firmendaten("ampelporto")!="1")
     {
@@ -3618,7 +3622,7 @@ class YUI {
                '<table cellpadding=0 cellspacing=0><tr><td nowrap>$tmpstorno2'),
 
                CONCAT('<table cellpadding=0 cellspacing=0><tr><td nowrap>',
-                 if(a.lager_ok,'$go_lager','$stop_lager'),if(a.porto_ok,'$go_porto','$stop_porto'),if(a.ust_ok,'$go_ust',CONCAT('<a href=\"/index.php?module=adresse&action=ustprf&id=',a.adresse,'\">','$stop_ust','</a>')),
+                 if(a.lager_ok,'$go_lager','$stop_lager'),if(a.bestellungen_ok,'$go_bestellungen','$stop_bestellungen'),if(a.porto_ok,'$go_porto','$stop_porto'),if(a.ust_ok,'$go_ust',CONCAT('<a href=\"/index.php?module=adresse&action=ustprf&id=',a.adresse,'\">','$stop_ust','</a>')),
                  if(a.vorkasse_ok=1,'$go_vorkasse',if(a.vorkasse_ok=2,'$gostop_vorkasse','$stop_vorkasse')),if(a.nachnahme_ok,'$go_nachnahme','$stop_nachnahme'),if(a.autoversand,'$go_autoversand','$stop_autoversand'),
                  if(a.check_ok,'$go_check','$stop_check'),if(a.liefertermin_ok,'$go_liefertermin','$stop_liefertermin'),if(a.kreditlimit_ok,'$go_kreditlimit','$stop_kreditlimit'),if(a.liefersperre_ok,'$go_liefersperre','$stop_liefersperre')$extra,''
                  )),
@@ -3642,7 +3646,7 @@ class YUI {
                if(a.status='abgeschlossen','<table cellpadding=0 cellspacing=0><tr><td nowrap>$tmp</td></tr></table>','<table cellpadding=0 cellspacing=0><tr><td nowrap>$tmpstorno</td></tr></table>'),
 
                CONCAT('<table cellpadding=0 cellspacing=0><tr><td nowrap>',
-                 if(a.lager_ok,'$go_lager','$stop_lager'),if(a.porto_ok,'$go_porto','$stop_porto'),if(a.ust_ok,'$go_ust',CONCAT('<a href=\"/index.php?module=adresse&action=ustprf&id=',a.adresse,'\">','$stop_ust','</a>')),
+                 if(a.lager_ok,'$go_lager','$stop_lager'),if(a.bestellungen_ok,'$go_bestellungen','$stop_bestellungen'),if(a.porto_ok,'$go_porto','$stop_porto'),if(a.ust_ok,'$go_ust',CONCAT('<a href=\"/index.php?module=adresse&action=ustprf&id=',a.adresse,'\">','$stop_ust','</a>')),
                  if(a.vorkasse_ok=1,'$go_vorkasse',if(a.vorkasse_ok=2,'$gostop_vorkasse','$stop_vorkasse')),if(a.nachnahme_ok,'$go_nachnahme','$stop_nachnahme'),if(a.autoversand,'$go_autoversand','$stop_autoversand'),
                  if(a.check_ok,'$go_check','$stop_check'),if(a.liefertermin_ok,'$go_liefertermin','$stop_liefertermin'),if(a.kreditlimit_ok,'$go_kreditlimit','$stop_kreditlimit'),if(a.liefersperre_ok,'$go_liefersperre','$stop_liefersperre')$extra $extra2,'</td></tr></table>'
                  )))";

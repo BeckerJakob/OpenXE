@@ -12214,14 +12214,17 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
     //echo "$positionen_vorhanden $artikelzaehlen<hr>";
     if($positionen_vorhanden==$artikelzaehlen){
       $this->app->DB->Update("UPDATE auftrag SET lager_ok='1' WHERE id='$auftrag' LIMIT 1");
+      $this->app->DB->Update("UPDATE auftrag SET bestellungen_ok='1' WHERE id='$auftrag' LIMIT 1");
     }
     else {
       $kommissionierverfahren = $this->app->DB->Select("SELECT kommissionierverfahren FROM projekt WHERE id = '$projekt' LIMIT 1");
       if($kommissionierverfahren == 'rechnungsmail')
       {
         $this->app->DB->Update("UPDATE auftrag SET lager_ok='1' WHERE id='$auftrag' LIMIT 1");
+        $this->app->DB->Update("UPDATE auftrag SET bestellungen_ok='1' WHERE id='$auftrag' LIMIT 1");
       }else{
         $this->app->DB->Update("UPDATE auftrag SET lager_ok='0' WHERE id='$auftrag' LIMIT 1");
+        $this->app->DB->Update("UPDATE auftrag SET bestellungen_ok='0' WHERE id='$auftrag' LIMIT 1");
       }
       if($positionen_vorhanden > 0 && $artikelzaehlen > 0)
       {

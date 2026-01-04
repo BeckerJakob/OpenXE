@@ -150,6 +150,7 @@ class DocumentSalesOrderResource extends AbstractResource
                 //'au.keinsteuersatz',
 
                 'au.lager_ok',
+                'au.bestellungen_ok',
                 'au.porto_ok',
                 'au.ust_ok',
                 'au.check_ok',

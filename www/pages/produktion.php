@@ -977,6 +977,7 @@ class Produktion {
                 p.abgeschlossen,
                 p.nachlieferung,
                 p.lager_ok,
+                p.bestellungen_ok,
                 p.porto_ok,
                 p.ust_ok,
                 p.check_ok,
@@ -1577,7 +1578,7 @@ class Produktion {
             $where .= "AND id = $produktion_id";
         }
 
-        $sql = "SELECT id, lager_ok, reserviert_ok, auslagern_ok, einlagern_ok, zeit_ok, versand_ok FROM produktion ".$where;
+        $sql = "SELECT id, lager_ok, bestellungen_ok, reserviert_ok, auslagern_ok, einlagern_ok, zeit_ok, versand_ok FROM produktion ".$where;
         $produktionen = $this->app->DB->SelectArr($sql);
 
         foreach ($produktionen as $produktion) {

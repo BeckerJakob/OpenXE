@@ -962,6 +962,7 @@ return [
         'auftrag___abgeschlossen'                 => 'auftrag.abgeschlossen',
         'auftrag___nachlieferung'                 => 'auftrag.nachlieferung',
         'auftrag___lager_ok'                      => 'auftrag.lager_ok',
+        'auftrag___bestellungen_ok'               => 'auftrag.bestellungen_ok',
         'auftrag___porto_ok'                      => 'auftrag.porto_ok',
         'auftrag___ust_ok'                        => 'auftrag.ust_ok',
         'auftrag___check_ok'                      => 'auftrag.check_ok',
