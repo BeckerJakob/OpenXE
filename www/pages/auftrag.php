@@ -235,7 +235,7 @@ class Auftrag extends GenAuftrag
               ''
             )
           ) AS `auftrag`, 
-          DATE_FORMAT(a.datum,'%d.%m.%Y %H:%i') AS `vom`, 
+          DATE_FORMAT(a.sortierdatum,'%d.%m.%Y %H:%i') AS `vom`, 
           a.lieferantkdrnummer AS `kunde`,
           CONCAT(
             " . $this->app->erp->MarkerUseredit("a.name", "a.useredittimestamp") . ",
