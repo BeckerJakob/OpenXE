@@ -112,7 +112,7 @@ class Auftrag extends GenAuftrag
 
         $heading = array('','', 'Auftrag', 'Vom', 'Kd-Nr.', 'Kunde', 'Land', 'Projekt', 'Zahlung', 'Betrag '.($kleinunternehmer?'netto':'brutto'));
         $width = array('1%','1%', '10%', '10%', '10%', '31%', '5%', '1%', '1%', '1%', '1%', '1%');
-        $findcols = array('open','a.belegnr', 'a.belegnr', 'a.datum'
+        $findcols = array('open','a.belegnr', 'a.belegnr', 'a.sortierdatum'
         ,$useAddr? 'if(a.lieferantenauftrag=1,adr.lieferantennummer,adr.kundennummer)':'a.lieferantkdrnummer',
           'a.name', 'a.land',
           //'p.abkuerzung',
@@ -130,7 +130,7 @@ class Auftrag extends GenAuftrag
           $searchsql[] = $projectCol;
         }
         $alignright = array('10');
-        $defaultorder = 13; //Optional wenn andere Reihenfolge gewuenscht
+        $defaultorder = 3; //Optional wenn andere Reihenfolge gewuenscht
         $hide767 = array('5');
         $defaultorderdesc = 1;
 
