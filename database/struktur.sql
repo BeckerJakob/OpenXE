@@ -2917,6 +2917,7 @@ CREATE TABLE `auftrag` (
   `storage_country` varchar(3) NOT NULL,
   `shop_status_update_attempt` int(3) NOT NULL DEFAULT 0,
   `shop_status_update_last_attempt_at` datetime DEFAULT NULL,
+  `sortierdatum` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   KEY `projekt` (`projekt`),
   KEY `adresse` (`adresse`),

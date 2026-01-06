@@ -22999,6 +22999,17 @@
                     "Extra": "",
                     "Privileges": "select,insert,update,references",
                     "Comment": ""
+                },
+                {
+                    "Field": "sortierdatum",
+                    "Type": "timestamp",
+                    "Collation": null,
+                    "Null": "NO",
+                    "Key": "",
+                    "Default": "current_timestamp()",
+                    "Extra": "",
+                    "Privileges": "select,insert,update,references",
+                    "Comment": ""
                 }
             ],
             "keys": [
