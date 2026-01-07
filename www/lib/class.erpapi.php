@@ -30537,24 +30537,25 @@ function Firmendaten($field,$projekt="")
       $firma = $this->app->DB->Select("SELECT MAX(f.id) FROM firma f INNER JOIN firmendaten fd ON f.id = fd.firma LIMIT 1");
       if(!$firma)$firma = $this->app->DB->Select("SELECT max(id) FROM firma LIMIT 1");
       if(!$firma)$firma = $this->app->DB->Select("SELECT MAX(id) FROM firma LIMIT 1");
-
+        
+        $date = new DateTime(); $date->setTimezone(new DateTimeZone('Europe/Berlin')); $jetzt = $date->format('Y-m-d H:i:s');
         if($this->StandardZahlungsweise($projekt)=="rechnung")
         {
           $this->app->DB->Insert("INSERT INTO auftrag (id,datum,bearbeiter,firma,belegnr,autoversand,zahlungsweise,zahlungszieltage,
-          zahlungszieltageskonto,zahlungszielskonto,status,projekt,adresse,ohne_briefpapier)
+          zahlungszieltageskonto,zahlungszielskonto,status,projekt,adresse,ohne_briefpapier, sortierdatum)
             VALUES ('',NOW(),'','','$belegmax',1,'".$this->StandardZahlungsweise($projekt)."',
               '".$this->ZahlungsZielTage($projekt)."',
               '".$this->ZahlungsZielTageSkonto($projekt)."',
               '".$this->ZahlungsZielSkonto($projekt)."',
-              'angelegt','$projekt','$adresse','".$ohnebriefpapier."')");
+              'angelegt','$projekt','$adresse','".$ohnebriefpapier."', '$jetzt')");
         } else {
           $this->app->DB->Insert("INSERT INTO auftrag (id,datum,bearbeiter,firma,belegnr,autoversand,zahlungsweise,zahlungszieltage,
-          zahlungszieltageskonto,zahlungszielskonto,status,projekt,adresse,ohne_briefpapier)
+          zahlungszieltageskonto,zahlungszielskonto,status,projekt,adresse,ohne_briefpapier, sortierdatum)
             VALUES ('',NOW(),'','','$belegmax',1,'".$this->StandardZahlungsweise($projekt)."',
               '0',
               '0',
               '0',
-              'angelegt','$projekt','$adresse','".$ohnebriefpapier."')");
+              'angelegt','$projekt','$adresse','".$ohnebriefpapier."', '$jetzt')");
         }
 
         $id = $this->app->DB->GetInsertID();
@@ -31713,9 +31714,10 @@ function Firmendaten($field,$projekt="")
           return;
         }
         // kopiere eintraege aus auftrag_position
+        $date = new DateTime(); $date->setTimezone(new DateTimeZone('Europe/Berlin')); $jetzt = $date->format('Y-m-d H:i:s');
         $arr = $this->app->DB->SelectArr(
           sprintf(
-            "SELECT NOW() as datum,projekt,freitext,bodyzusatz,adresse,name,shopextid,
+            "SELECT '%s' as sortierdatum, NOW() as datum,projekt,freitext,bodyzusatz,adresse,name,shopextid,
             standardlager,ansprechpartner,anschreiben,
             abteilung,unterabteilung,strasse,adresszusatz,plz,ort,land,ustid,email,telefon,telefax,betreff,kundennummer,
             ihrebestellnummer,typ,
@@ -31726,6 +31728,7 @@ function Firmendaten($field,$projekt="")
             lieferland,lieferstrasse,lieferort,lieferplz,lieferadresszusatz,lieferansprechpartner,autoversand,art,
             sprache,anzeigesteuer,waehrung,kurs,kostenstelle,gln,liefergln,bundesstaat,lieferemail, lieferbedingung
             FROM auftrag WHERE id=%d LIMIT 1",
+            $jetzt,
             $id
           )
         );
@@ -33138,6 +33141,8 @@ function Firmendaten($field,$projekt="")
         $check_mail = $this->app->DB->Select("SELECT auftrag_email FROM adresse WHERE id='$adresseid'");
         if($check_mail!="") $arr[0]['email'] = $check_mail;
         $arr[0]['autoversand'] = 1-(int)$this->Projektdaten($arr[0]['projekt'],'deactivateautoshipping');
+        $date = new DateTime(); $date->setTimezone(new DateTimeZone('Europe/Berlin'));
+        $arr[0]['sortierdatum'] = $date->format('Y-m-d H:i:s');
         $this->app->DB->UpdateArr('auftrag',$newid, 'id', $arr[0], true);
         $pos = $this->app->DB->SelectArr("SELECT * FROM angebot_position WHERE angebot='$id' order by sort");
         for($i=0;$i<(!empty($pos)?count($pos):0);$i++){
@@ -39002,7 +39007,8 @@ function Firmendaten($field,$projekt="")
       }
 
       function ImportCreateAuftrag($data) {
-        $this->app->DB->Insert("INSERT INTO auftrag (id,angelegtam) VALUES ('',NOW())");
+        $date = new DateTime(); $date->setTimezone(new DateTimeZone('Europe/Berlin')); $jetzt = $date->format('Y-m-d H:i:s');
+        $this->app->DB->Insert("INSERT INTO auftrag (id,angelegtam,sortierdatum) VALUES ('',NOW(),'$jetzt')");
         $id = $this->app->DB->GetInsertID();
 
         if($data['firma']=="") $data['firma']=1;
