@@ -12266,6 +12266,33 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
 
     $this->app->DB->Update("UPDATE auftrag SET bestellung_ok='$bestellung_ok' WHERE id='$auftrag' LIMIT 1");
 
+    // bezahlung_ok CODE
+    $bezahlung_ok = 1;
+    $sql = "UPDATE auftrag 
+            SET bezahlung_ok = '$bezahlung_ok' 
+            WHERE id = '$auftrag' 
+            /* Bedingung 1: Es muss mindestens eine Rechnung geben */
+            AND EXISTS (
+                SELECT 1 FROM rechnung WHERE auftragid = '$auftrag'
+            )
+            /* Bedingung 2: Es darf KEINE unbezahlte Rechnung geben */
+            AND NOT EXISTS (
+                SELECT 1 FROM rechnung WHERE auftragid = '$auftrag' AND zahlungsstatus != 'bezahlt'
+            )";
+
+    $this->app->DB->Update($sql);
+
+    // lieferschein_ok CODE
+    $lieferschein_ok = 1;
+    $sql = "UPDATE auftrag 
+            SET lieferschein_ok = '$lieferschein_ok' 
+            WHERE id = '$auftrag' 
+            /* Bedingung: Führe das Update nur aus, wenn ein Lieferschein existiert */
+            AND EXISTS (
+                SELECT 1 FROM lieferschein WHERE auftragid = '$auftrag'
+            )";
+
+    $this->app->DB->Update($sql);
 
     // projekt check start
     $projektcheck = 0;
