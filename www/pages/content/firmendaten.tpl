@@ -1438,7 +1438,6 @@
 							<tr><td></td><td></td></tr>
 							<tr><td width="300">Auftrag Barcodescanner Reiter einblenden:</td><td><input type="checkbox" name="auftrag_eantab" [AUFTRAG_EANTAB]></td></tr>
 							<tr><td width="300">Auftrag nicht abschlie&szlig;en beim Weiterführen zu Lieferschein und Rechnung:</td><td><input type="checkbox" name="auftragabschliessen" [AUFTRAGABSCHLIESSEN]></td></tr>
-							<tr><td width="300">Zahlungseingang bei Vorkasse im Auftrag autom. setzen wenn Rechnung bezahlt:</td><td><input type="checkbox" name="vorkasse_ok_bei_rechnung_bezahlt" [VORKASSE_OK_BEI_RECHNUNG_BEZAHLT]></td></tr>
 							<tr><td>Interne Bemerkungen im Auftrag-Minidetails editierbar:</td><td><input type="checkbox" name="internebemerkungminidetails" [INTERNEBEMERKUNGMINIDETAILS]></td></tr>
 							<tr><td>Markierung unbezahlte Auftr&auml;ge:</td><td><input type="checkbox" name="auftragmarkierenegsaldo" [AUFTRAGMARKIERENEGSALDO]> </td></tr>
 							<tr><td width="300">Unterst&uuml;cklisten im Auftrag aufl&ouml;sen:</td><td><input type="checkbox" name="auftragexplodieren_unterstuecklisten" [AUFTRAGEXPLODIEREN_UNTERSTUECKLISTEN]>&nbsp;</td></tr>

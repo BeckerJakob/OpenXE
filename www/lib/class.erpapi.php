@@ -8085,7 +8085,6 @@ function StandardFirmendatenWerte()
   $this->AddNeuenFirmendatenWert( 'typimdokument', 'int', '1', '', '0', '', 0, 0);
   $this->AddNeuenFirmendatenWert( 'staffelpreiseanzeigen', 'int', '1', '', '0', '', 0, 0);
   $this->AddNeuenFirmendatenWert( 'auftragabschliessen', 'int', '1', '', '0', '', 0, 0);
-  $this->AddNeuenFirmendatenWert( 'vorkasse_ok_bei_rechnung_bezahlt', 'int', '1', '', '0', '', 0, 0);
   $this->AddNeuenFirmendatenWert( 'dateienweiterfuehren', 'int', '1', '', '0', '', 0, 0);
   $this->AddNeuenFirmendatenWert( 'systemmailsabschalten', 'int', '1', '', '0', '', 0, 0);
   $this->AddNeuenFirmendatenWert( 'lagerbestand_in_auftragspositionen_anzeigen', 'int', '1', '', '0', '', 0, 0);
@@ -26696,7 +26695,7 @@ function Firmendaten($field,$projekt="")
           'ampelliefertermin','ampelkreditlimit','ampelliefersperre','ampelproduktion','freitext1aktiv','freitext2aktiv',
           'reisekosten_ohnebriefpapier','lieferdatumkw','vertriebbearbeiterfuellen','typimdokument','staffelpreiseanzeigen',
           'abmessungimdokument','projektoeffentlich','verkaufspreisevpe','einkaufspreisevpe','apiohnehtmlumwandlung',
-          'externeurlsblockieren','auftragabschliessen','vorkasse_ok_bei_rechnung_bezahlt','belegnummersortierungint',
+          'externeurlsblockieren','auftragabschliessen','belegnummersortierungint',
           'dienstleistungsartikel_nicht_zu_lieferschein','dateienweiterfuehren','systemmailsabschalten','belegeinanhang',
           'lagerbestand_in_auftragspositionen_anzeigen','positionenkaufmaenischrunden','wareneingang_lagerartikel',
           'stuecklistegewichtnurartikel','bestellungabschliessen','gutschriftkursvonrechnung','wareneingangdmsdrucker',
@@ -39546,21 +39545,6 @@ function Firmendaten($field,$projekt="")
       }
     }
     return $sipuid;
-  }
-  function CheckAndSetVorkasseOk($rechnungId, $status)
-  {
-    if ($status != 'bezahlt') {
-      return;
-    }
-    if (!$this->Firmendaten('vorkasse_ok_bei_rechnung_bezahlt')) {
-      return;
-    }
-
-    $auftragId = $this->app->DB->Select("SELECT auftragid FROM rechnung WHERE id = '$rechnungId' LIMIT 1");
-
-    if ($auftragId > 0) {
-      $this->app->DB->Update("UPDATE auftrag SET vorkasse_ok='1' WHERE id='$auftragId' LIMIT 1");
-    }
   }
 } // END erpAPI
 

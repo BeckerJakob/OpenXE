@@ -3114,10 +3114,6 @@ class Rechnung extends GenRechnung
                                 zahlungsstatus = IF(".$saldo['betrag']." = 0,'bezahlt','offen')
                             WHERE id=".$offene_rechnung['id'];
                     $this->app->DB->Update($sql);
-
-                    if($saldo['betrag'] == 0) {
-                        $this->app->erp->CheckAndSetVorkasseOk($offene_rechnung['id'], 'bezahlt');
-                    }
                 } 
             }
             else {
