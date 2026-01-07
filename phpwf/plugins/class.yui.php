@@ -3439,8 +3439,8 @@ class YUI {
 
     if($this->app->erp->Firmendaten("ampellager")!="1")
     {
-      $go_lager = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/lagerplatzgo.png\" style=\"margin-right:1px\" title=\"Artikel ist im Lager\" border=\"0\">";
-      $stop_lager = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/lagerplatzstop.png\" style=\"margin-right:1px\" title=\"Artikel fehlt im Lager\" border=\"0\">";
+      $go_lager = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/lagerplatzgo.png\" style=\"margin-right:1px\" title=\"Artikel sind im Lager\" border=\"0\">";
+      $stop_lager = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/lagerplatzstop.png\" style=\"margin-right:1px\" title=\"Artikel fehlen im Lager\" border=\"0\">";
       $anzahl++;
     } else { $go_lager=""; $stop_lager=""; }
     
