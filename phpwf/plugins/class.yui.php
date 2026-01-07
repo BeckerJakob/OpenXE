@@ -3430,20 +3430,34 @@ class YUI {
   function IconsSQL() {
 
     $anzahl = 0;
-    if($this->app->erp->Firmendaten("ampellager")!="1")
-    {
-      $go_lager = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/lagergo.png\" style=\"margin-right:1px\" title=\"Artikel ist im Lager\" border=\"0\">";
-      $stop_lager = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/lagerstop.png\" style=\"margin-right:1px\" title=\"Artikel fehlt im Lager\" border=\"0\">";
-      $anzahl++;
-    } else { $go_lager=""; $stop_lager=""; }
-
     if($this->app->erp->Firmendaten("ampelbestellung")!="1")
     {
-      $go_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/bestellunggo.png\" style=\"margin-right:1px\" title=\"Artikel sind bestellt\" border=\"0\">";
-      $stop_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/bestellungstop.png\" style=\"margin-right:1px\" title=\"Artikel sind nicht bestellt\" border=\"0\">";
+      $go_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_bestellt.png\" style=\"margin-right:1px\" title=\"Artikel sind bestellt\" border=\"0\">";
+      $stop_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_nicht_bestellt.png\" style=\"margin-right:1px\" title=\"Artikel sind nicht bestellt\" border=\"0\">";
       $anzahl++;
     } else { $go_bestellung=""; $stop_bestellung=""; }
 
+    if($this->app->erp->Firmendaten("ampellager")!="1")
+    {
+      $go_lager = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/lagerplatzgo.png\" style=\"margin-right:1px\" title=\"Artikel ist im Lager\" border=\"0\">";
+      $stop_lager = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/lagerplatzstop.png\" style=\"margin-right:1px\" title=\"Artikel fehlt im Lager\" border=\"0\">";
+      $anzahl++;
+    } else { $go_lager=""; $stop_lager=""; }
+    
+    if($this->app->erp->Firmendaten("ampelbezahlung")!="1")
+    {
+      $go_bezahlung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/vorkassego.png\" style=\"margin-right:1px\" title=\"Rechnung ist bezahlt\" border=\"0\">";
+      $stop_bezahlung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/vorkassestop.png\" style=\"margin-right:1px\" title=\"Rechnung ist nicht bezahlt\" border=\"0\">";
+      $anzahl++;
+    }
+      
+    if($this->app->erp->Firmendaten("ampellieferschein")!="1")
+    {
+      $go_lieferschein = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_go.png\" style=\"margin-right:1px\" title=\"Lieferschein ist erstellt\" border=\"0\">";
+      $stop_lieferschein = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_stop.png\" style=\"margin-right:1px\" title=\"Lieferschein ist nicht erstellt\" border=\"0\">";
+      $anzahl++;
+    }
+    
     if($this->app->erp->Firmendaten("ampelporto")!="1")
     {
       $go_porto = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/portogo.png\" style=\"margin-right:1px\" title=\"Porto Check OK\" border=\"0\">";
@@ -3627,7 +3641,7 @@ class YUI {
                '<table cellpadding=0 cellspacing=0><tr><td nowrap>$tmpstorno2'),
 
                CONCAT('<table cellpadding=0 cellspacing=0><tr><td nowrap>',
-                 if(a.lager_ok,'$go_lager','$stop_lager'),if(a.bestellung_ok,'$go_bestellung','$stop_bestellung'),if(a.porto_ok,'$go_porto','$stop_porto'),if(a.ust_ok,'$go_ust',CONCAT('<a href=\"/index.php?module=adresse&action=ustprf&id=',a.adresse,'\">','$stop_ust','</a>')),
+                 if(a.lager_ok,'$go_lager','$stop_lager'),if(a.bestellung_ok,'$go_bestellung','$stop_bestellung'),if(a.bezahlung_ok,'$go_bezahlung','$stop_bezahlung'),if(a.lieferschein_ok,'$go_lieferschein','$stop_lieferschein'),if(a.porto_ok,'$go_porto','$stop_porto'),if(a.ust_ok,'$go_ust',CONCAT('<a href=\"/index.php?module=adresse&action=ustprf&id=',a.adresse,'\">','$stop_ust','</a>')),
                  if(a.vorkasse_ok=1,'$go_vorkasse',if(a.vorkasse_ok=2,'$gostop_vorkasse','$stop_vorkasse')),if(a.nachnahme_ok,'$go_nachnahme','$stop_nachnahme'),if(a.autoversand,'$go_autoversand','$stop_autoversand'),
                  if(a.check_ok,'$go_check','$stop_check'),if(a.liefertermin_ok,'$go_liefertermin','$stop_liefertermin'),if(a.kreditlimit_ok,'$go_kreditlimit','$stop_kreditlimit'),if(a.liefersperre_ok,'$go_liefersperre','$stop_liefersperre')$extra,''
                  )),
@@ -3651,7 +3665,7 @@ class YUI {
                if(a.status='abgeschlossen','<table cellpadding=0 cellspacing=0><tr><td nowrap>$tmp</td></tr></table>','<table cellpadding=0 cellspacing=0><tr><td nowrap>$tmpstorno</td></tr></table>'),
 
                CONCAT('<table cellpadding=0 cellspacing=0><tr><td nowrap>',
-                 if(a.lager_ok,'$go_lager','$stop_lager'),if(a.bestellung_ok,'$go_bestellung','$stop_bestellung'),if(a.porto_ok,'$go_porto','$stop_porto'),if(a.ust_ok,'$go_ust',CONCAT('<a href=\"/index.php?module=adresse&action=ustprf&id=',a.adresse,'\">','$stop_ust','</a>')),
+                 if(a.lager_ok,'$go_lager','$stop_lager'),if(a.bestellung_ok,'$go_bestellung','$stop_bestellung'),if(a.bezahlung_ok,'$go_bezahlung','$stop_bezahlung'),if(a.lieferschein_ok,'$go_lieferschein','$stop_lieferschein'),if(a.porto_ok,'$go_porto','$stop_porto'),if(a.ust_ok,'$go_ust',CONCAT('<a href=\"/index.php?module=adresse&action=ustprf&id=',a.adresse,'\">','$stop_ust','</a>')),
                  if(a.vorkasse_ok=1,'$go_vorkasse',if(a.vorkasse_ok=2,'$gostop_vorkasse','$stop_vorkasse')),if(a.nachnahme_ok,'$go_nachnahme','$stop_nachnahme'),if(a.autoversand,'$go_autoversand','$stop_autoversand'),
                  if(a.check_ok,'$go_check','$stop_check'),if(a.liefertermin_ok,'$go_liefertermin','$stop_liefertermin'),if(a.kreditlimit_ok,'$go_kreditlimit','$stop_kreditlimit'),if(a.liefersperre_ok,'$go_liefersperre','$stop_liefersperre')$extra $extra2,'</td></tr></table>'
                  )))";
@@ -3698,8 +3712,8 @@ class YUI {
         $lager_ok = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/lagergo.png\" style=\"margin-right:1px\" title=\"Artikel ist im Lager\" border=\"0\">";
         $lager_nicht_ok = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/lagerstop.png\" style=\"margin-right:1px\" title=\"Artikel fehlt im Lager\" border=\"0\">";
 
-        $bestellung_ok = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/bestellunggo.png\" style=\"margin-right:1px\" title=\"Artikel sind bestellt\" border=\"0\">";
-        $bestellung_nicht_ok = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/bestellungstop.png\" style=\"margin-right:1px\" title=\"Artikel sind nicht bestellt\" border=\"0\">";
+        $bestellung_ok = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_bestellt.png\" style=\"margin-right:1px\" title=\"Artikel sind bestellt\" border=\"0\">";
+        $bestellung_nicht_ok = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_nicht_bestellt.png\" style=\"margin-right:1px\" title=\"Artikel sind nicht bestellt\" border=\"0\">";
 
         $reserviert_ok = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_bestellt.png\" style=\"margin-right:1px\" title=\"Artikel reserviert\" border=\"0\">";
         $reserviert_nicht_ok = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_nicht_bestellt.png\" style=\"margin-right:1px\" title=\"Artikel nicht reserviert\" border=\"0\">";

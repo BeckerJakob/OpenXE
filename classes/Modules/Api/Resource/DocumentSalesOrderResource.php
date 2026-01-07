@@ -151,6 +151,8 @@ class DocumentSalesOrderResource extends AbstractResource
 
                 'au.lager_ok',
                 'au.bestellung_ok',
+                'au.bezahlung_ok',
+                'au.lieferschein_ok',
                 'au.porto_ok',
                 'au.ust_ok',
                 'au.check_ok',

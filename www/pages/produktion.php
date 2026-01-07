@@ -978,6 +978,8 @@ class Produktion {
                 p.nachlieferung,
                 p.lager_ok,
                 p.bestellung_ok,
+                p.bezahlung_ok,
+                p.lieferschein_ok,
                 p.porto_ok,
                 p.ust_ok,
                 p.check_ok,

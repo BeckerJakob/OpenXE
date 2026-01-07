@@ -963,6 +963,8 @@ return [
         'auftrag___nachlieferung'                 => 'auftrag.nachlieferung',
         'auftrag___lager_ok'                      => 'auftrag.lager_ok',
         'auftrag___bestellung_ok'                 => 'auftrag.bestellung_ok',
+        'auftrag___bezahlung_ok'                  => 'auftrag.bezahlung_ok',
+        'auftrag___lieferschein_ok'               => 'auftrag.lieferschein_ok',
         'auftrag___porto_ok'                      => 'auftrag.porto_ok',
         'auftrag___ust_ok'                        => 'auftrag.ust_ok',
         'auftrag___check_ok'                      => 'auftrag.check_ok',
