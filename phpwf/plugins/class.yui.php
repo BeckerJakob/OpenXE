@@ -3432,8 +3432,8 @@ class YUI {
     $anzahl = 0;
     if($this->app->erp->Firmendaten("ampelbestellung")!="1")
     {
-      $go_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_bestellt.png\" style=\"margin-right:1px\" title=\"Artikel sind bestellt\" border=\"0\">";
-      $stop_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_nicht_bestellt.png\" style=\"margin-right:1px\" title=\"Artikel sind nicht bestellt\" border=\"0\">";
+      $go_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_bestellt.png\" style=\"margin-right:1px\" title=\"Bestellung(en) noch nicht erstellt\" border=\"0\">";
+      $stop_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_nicht_bestellt.png\" style=\"margin-right:1px\" title=\"Bestellung(en) wurde(n) erstellt\" border=\"0\">";
       $anzahl++;
     } else { $go_bestellung=""; $stop_bestellung=""; }
 
