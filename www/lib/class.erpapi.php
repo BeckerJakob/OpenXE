@@ -26696,7 +26696,7 @@ function Firmendaten($field,$projekt="")
           'ampelliefertermin','ampelkreditlimit','ampelliefersperre','ampelproduktion','freitext1aktiv','freitext2aktiv',
           'reisekosten_ohnebriefpapier','lieferdatumkw','vertriebbearbeiterfuellen','typimdokument','staffelpreiseanzeigen',
           'abmessungimdokument','projektoeffentlich','verkaufspreisevpe','einkaufspreisevpe','apiohnehtmlumwandlung',
-          'externeurlsblockieren','auftragabschliessen','belegnummersortierungint',
+          'externeurlsblockieren','auftragabschliessen','vorkasse_ok_bei_rechnung_bezahlt','belegnummersortierungint',
           'dienstleistungsartikel_nicht_zu_lieferschein','dateienweiterfuehren','systemmailsabschalten','belegeinanhang',
           'lagerbestand_in_auftragspositionen_anzeigen','positionenkaufmaenischrunden','wareneingang_lagerartikel',
           'stuecklistegewichtnurartikel','bestellungabschliessen','gutschriftkursvonrechnung','wareneingangdmsdrucker',
