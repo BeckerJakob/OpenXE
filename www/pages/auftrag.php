@@ -7625,20 +7625,22 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                         // Since we have specific quantities, manual creation is safer.
 
                         foreach ($teilmengen as $tm) {
-                            $ap = $this->app->DB->SelectRow("SELECT * FROM auftrag_position WHERE id = " . $tm['posid']);
+                            $ap = $this->app->DB->SelectRow("SELECT * FROM auftrag_position WHERE id = " . (int)$tm['posid']);
                             if ($ap) {
-                                // Create Lieferschein Position
-                                $lp = array();
-                                $lp['lieferschein'] = $lieferschein_id;
-                                $lp['artikel'] = $ap['artikel'];
-                                $lp['menge'] = $tm['menge'];
-                                $lp['nummer'] = $ap['nummer'];
-                                $lp['bezeichnung'] = $ap['bezeichnung'];
-                                $lp['auftrag_position_id'] = $ap['id'];
-                                // ... copy other relevant fields like unit, description etc if available and needed. 
-                                // Taking minimal set for now as per requirement.
+                                // SQL-Statement manuell erstellen
+                                $sql = sprintf(
+                                    "INSERT INTO lieferschein_position (lieferschein, artikel, menge, nummer, bezeichnung, auftrag_position_id) 
+                                    VALUES (%d, %d, %f, '%s', '%s', %d)",
+                                    (int)$lieferschein_id,
+                                    (int)$ap['artikel'],
+                                    (float)$tm['menge'],
+                                    $this->app->DB->real_escape_string($ap['nummer']),
+                                    $this->app->DB->real_escape_string($ap['bezeichnung']),
+                                    (int)$ap['id']
+                                );
                                 
-                                $this->app->DB->Insert('lieferschein_position', $lp);
+                                // Den fertigen SQL-String an die Insert-Methode übergeben
+                                $this->app->DB->Insert($sql);
                             }
                         }
                         
