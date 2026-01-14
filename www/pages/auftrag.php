@@ -744,33 +744,19 @@ class Auftrag extends GenAuftrag
             $defaultorder = 2;
             $defaultorderdesc = 0;
 
+            // Definition des SQL-Subselects für bereits gelieferte Mengen
+            $bereits_geliefert_sql = "IFNULL((SELECT SUM(lp.menge) FROM lieferschein_position lp JOIN lieferschein l ON lp.lieferschein = l.id WHERE lp.auftrag_position_id = ap.id AND l.status != 'storniert'), 0)";
+
+            // Der Input-String wird als reiner SQL-CONCAT definiert
             $input_for_menge = "CONCAT(
-                        '<input type = \"number\" min=\"0\" max=\"',
-                        ap.menge - " . ($this->app->DB->Select("SELECT COUNT(*) FROM lieferschein l INNER JOIN lieferschein_position lp ON lp.lieferschein = l.id WHERE l.status != 'storniert' AND lp.auftrag_position_id = ap.id") > 0 ? 
-                        "IFNULL((SELECT SUM(lp.menge) FROM lieferschein_position lp JOIN lieferschein l ON lp.lieferschein = l.id WHERE lp.auftrag_position_id = ap.id AND l.status != 'storniert'), 0)" : "0") . ",
+                        '<input type=\"number\" step=\"any\" min=\"0\" max=\"',
+                        ap.menge - $bereits_geliefert_sql,
                         '\" name=\"teilmenge_',
                         ap.id,
-                        '\"',
-                        ' value=\"',
-                        '\">',
-                        '</input>'
+                        '\" value=\"',
+                        ap.menge - $bereits_geliefert_sql,
+                        '\">'
                     )";
-            
-           /* $sql = "SELECT SQL_CALC_FOUND_ROWS 
-                    ap.sort, 
-                    ap.sort, 
-                    a.name_de, 
-                    a.nummer,
-                    " . $this->app->erp->FormatMenge('ap.menge') . ",
-                    IFNULL((SELECT SUM(lp.menge) FROM lieferschein_position lp JOIN lieferschein l ON lp.lieferschein = l.id WHERE lp.auftrag_position_id = ap.id AND l.status != 'storniert'), 0) as bereits_geliefert,
-                    $input_for_menge
-                    FROM auftrag_position ap 
-                    INNER JOIN artikel a ON ap.artikel = a.id
-                    HAVING (ap.menge - bereits_geliefert) > 0"; */
-            
-            // Optimized SQL to avoid HAVING clause issues if possible, but HAVING is needed for the calculated column 'bereits_geliefert'
-            // Using subselect in HAVING might be slow, but correct.
-            // Let's stick closer to the user requested SQL structure but integrated into the framework's style
             
             $sql = "SELECT SQL_CALC_FOUND_ROWS 
                     ap.sort, 
@@ -778,21 +764,14 @@ class Auftrag extends GenAuftrag
                     a.name_de, 
                     a.nummer,
                     " . $this->app->erp->FormatMenge('ap.menge') . " as auftragsmenge,
-                    IFNULL((SELECT SUM(lp.menge) 
-                     FROM lieferschein_position lp 
-                     JOIN lieferschein l ON lp.lieferschein = l.id 
-                     WHERE lp.auftrag_position_id = ap.id 
-                     AND l.status != 'storniert'), 0) as bereits_geliefert,
+                    $bereits_geliefert_sql as bereits_geliefert,
                     $input_for_menge
                     FROM auftrag_position ap 
                     INNER JOIN artikel a ON ap.artikel = a.id";
 
              $where = " ap.auftrag = $id HAVING (auftragsmenge - bereits_geliefert) > 0";
-             // Note: TableSearch usually handles WHERE via $where variable. HAVING might need special handling or be part of WHERE if the DB class supports it or if we append it.
-             // The framework seems to append $where. appended "HAVING" to $where might work if the previous part doesn't force WHERE.
-             // Since $where is " ap.auftrag = $id ...", appending HAVING works in valid SQL: WHERE ... HAVING ...
              
-             $count = "SELECT count(DISTINCT ap.id) FROM auftrag_position ap WHERE ap.auftrag = $id"; // Count might be inaccurate if we hide fully delivered items, but acceptable for this purpose. 
+             $count = "SELECT count(DISTINCT ap.id) FROM auftrag_position ap WHERE ap.auftrag = $id";
         break;
         case 'positionen_teillieferung':
 
