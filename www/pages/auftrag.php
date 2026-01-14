@@ -769,7 +769,7 @@ class Auftrag extends GenAuftrag
                     FROM auftrag_position ap 
                     INNER JOIN artikel a ON ap.artikel = a.id";
 
-             $where = " ap.auftrag = $id HAVING (auftragsmenge - bereits_geliefert) > 0";
+             $where = " ap.auftrag = $id HAVING (auftragsmenge - bereits_geliefert) > 0 AND a.lagerartikel = 1 AND a.geloescht = 0";
              
              $count = "SELECT count(DISTINCT ap.id) FROM auftrag_position ap WHERE ap.auftrag = $id";
         break;
