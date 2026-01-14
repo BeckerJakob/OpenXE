@@ -7636,23 +7636,29 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                         // Since we have specific quantities, manual creation is safer.
 
                         foreach ($teilmengen as $tm) {
-                            $ap = $this->app->DB->SelectRow("SELECT * FROM auftrag_position WHERE id = " . (int)$tm['posid']);
-                            if ($ap) {
-                                // SQL-Statement manuell erstellen
-                                $sql = sprintf(
-                                    "INSERT INTO lieferschein_position (lieferschein, artikel, menge, nummer, bezeichnung, auftrag_position_id) 
-                                    VALUES (%d, %d, %f, '%s', '%s', %d)",
-                                    (int)$lieferschein_id,
-                                    (int)$ap['artikel'],
-                                    (float)$tm['menge'],
-                                    $this->app->DB->real_escape_string($ap['nummer']),
-                                    $this->app->DB->real_escape_string($ap['bezeichnung']),
-                                    (int)$ap['id']
-                                );
-                                
-                                // Den fertigen SQL-String an die Insert-Methode übergeben
-                                $this->app->DB->Insert($sql);
-                            }
+                          // Wir joinen hier den Artikel, um den Typ zu prüfen
+                          $ap = $this->app->DB->SelectRow("
+                              SELECT ap.*, a.lagerartikel 
+                              FROM auftrag_position ap 
+                              JOIN artikel a ON ap.artikel = a.id 
+                              WHERE ap.id = " . (int)$tm['posid'] . " 
+                              AND a.lagerartikel = 1
+                          ");
+
+                          if ($ap && $tm['menge'] > 0) {
+                            // Nur wenn es ein Lagerartikel ist, wird die Lieferschein-Position erstellt
+                            $sql = sprintf(
+                                "INSERT INTO lieferschein_position (lieferschein, artikel, menge, nummer, bezeichnung, auftrag_position_id) 
+                                VALUES (%d, %d, %f, '%s', '%s', %d)",
+                                (int)$lieferschein_id,
+                                (int)$ap['artikel'],
+                                (float)$tm['menge'],
+                                $this->app->DB->real_escape_string($ap['nummer']),
+                                $this->app->DB->real_escape_string($ap['bezeichnung']),
+                                (int)$ap['id']
+                            );
+                            $this->app->DB->Insert($sql);
+                          }
                         }
                         
                          $this->app->erp->AuftragProtokoll($id, "Teil-Lieferschein LS-".$lieferschein_id." erstellt");
