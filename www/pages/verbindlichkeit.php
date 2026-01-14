@@ -48,8 +48,10 @@ class Verbindlichkeit {
                 $entwuerfe = true;
                 // break ommitted
             case "verbindlichkeit_list":
+
                 $allowed['verbindlichkeit_list'] = array('list');
-                $heading = array('','','Belegnr','Adresse', 'Lieferant', 'RE-Nr', 'RE-Datum', 'Betrag (brutto)', 'W&auml;hrung','Zahlstatus', 'Ziel','Skontoziel','Skonto','Status','Monitor', 'Men&uuml;');
+
+                $heading = array('','','Belegnr','Adresse', 'Lieferant', 'RE-Nr', 'RE-Datum', 'Betrag (brutto)', 'W&auml;hrung','Zahlungsweise','Zahlstatus', 'Ziel','Skontoziel','Skonto','Status','Monitor', 'Men&uuml;');
                 $width = array('1%','1%','10%'); // Fill out manually later
 
                 // columns that are aligned right (numbers etc)
@@ -65,6 +67,7 @@ class Verbindlichkeit {
                     'v.rechnungsdatum',
                     'v.betrag',
                     'v.waehrung',
+                    'v.zahlungsweise',
                     'v.bezahlt',
                     'v.zahlbarbis',
                     'v.skontobis',
@@ -106,6 +109,7 @@ class Verbindlichkeit {
                             ".$app->erp->FormatDate("v.rechnungsdatum").",
                             ".$app->erp->FormatMenge('v.betrag',2).",
                             v.waehrung,
+                            v.zahlungsweise,
                             if(v.bezahlt,'bezahlt',COALESCE(".$payment_status.",'offen')),
                             ".$app->erp->FormatDate("v.zahlbarbis").",
                             IF(v.skonto <> 0,".$app->erp->FormatDate("v.skontobis").",''),
@@ -121,11 +125,11 @@ class Verbindlichkeit {
                 $where = "1";
 
                 if ($entwuerfe) {
-                    $where .= " AND v.belegnr = '' OR v.belegnr IS NULL";
-                    $count = "SELECT count(DISTINCT id) FROM verbindlichkeit v WHERE $where";
+                    $where .= " AND (v.belegnr = '' OR v.belegnr IS NULL)";
                 }
                 else {
-                    $where .= " AND v.belegnr <> ''";
+                    $where .= " AND v.belegnr <> ''";                
+
                     $count = "SELECT count(DISTINCT id) FROM verbindlichkeit v WHERE $where";
                     // Toggle filters
                     $this->app->Tpl->Add('JQUERYREADY', "$('#anhang').click( function() { fnFilterColumn1( 0 ); } );");
@@ -198,18 +202,18 @@ class Verbindlichkeit {
                     $filterzahlbarbis = $this->app->YUI->TableSearchFilter($name, 7,'zahlbarbis');
                     if (!empty($filterzahlbarbis)) {
                         $filterzahlbarbis = $this->app->String->Convert($filterzahlbarbis,'%1.%2.%3','%3-%2-%1');
-                        $where .= " AND tables.zahlbarbis <= '".$filterzahlbarbis."'";
+                        $where .= " AND v.zahlbarbis <= '".$filterzahlbarbis."'";
                     }
 
                     $this->app->YUI->DatePicker('skontobis');
                     $filterskontobis = $this->app->YUI->TableSearchFilter($name, 8,'skontobis');
                     if (!empty($filterskontobis)) {
                         $filterskontobis = $this->app->String->Convert($filterskontobis,'%1.%2.%3','%3-%2-%1');
-                        $where .= " AND tables.skontobis <= '".$filterskontobis."'";
+                        $where .= " AND v.skontobis <= '".$filterskontobis."'";
                     }
-
-                    // END Toggle filters
                 }
+
+                $count = "SELECT count(DISTINCT id) FROM verbindlichkeit v WHERE $where";
 
                 $moreinfo = true; // Allow drop down details
                 $menucol = 1; // For moredata
@@ -555,8 +559,8 @@ class Verbindlichkeit {
         $this->app->Tpl->Set('TABTEXT1','Verbindlichkeiten');
         $this->app->Tpl->Set('TABTEXT2','In Bearbeitung');
 
-        $this->app->YUI->TableSearch('TAB1', 'verbindlichkeit_list', "show", "", "", basename(__FILE__), __CLASS__);
         $this->app->YUI->TableSearch('TAB2', 'verbindlichkeit_inbearbeitung', "show", "", "", basename(__FILE__), __CLASS__);
+        $this->app->YUI->TableSearch('TAB1', 'verbindlichkeit_list', "show", "", "", basename(__FILE__), __CLASS__);
 
         if($this->app->erp->RechteVorhanden('verbindlichkeit', 'freigabeeinkauf')){
             $this->app->Tpl->Set('MANUELLFREIGABEEINKAUF', '<option value="freigabeeinkauf">{|freigeben (Einkauf)|}</option>');
