@@ -733,7 +733,7 @@ class Auftrag extends GenAuftrag
 
         break;
         case 'positionen_teillieferschein':
-            $id = $app->Secure->GetGET('id');
+            $id = (int)$app->Secure->GetGET('id'); // Sicherheits-Cast auf Integer
             $allowed['positionen_teillieferschein'] = array('list');
             $heading = array('Position', 'Artikel', 'Nr.', 'Bestellt', 'Bereits im LS', 'Menge f&uuml;r diesen LS', '');
             $width = array('1%', '40%', '15%', '5%', '5%', '5%', '5%');
@@ -744,7 +744,7 @@ class Auftrag extends GenAuftrag
             $defaultorder = 2;
             $defaultorderdesc = 0;
 
-            // Definition des SQL-Subselects für bereits gelieferte Mengen
+            // Definition des SQL-Subselects für bereits gelieferte Mengen (ohne stornierte)
             $bereits_geliefert_sql = "IFNULL((SELECT SUM(lp.menge) FROM lieferschein_position lp JOIN lieferschein l ON lp.lieferschein = l.id WHERE lp.auftrag_position_id = ap.id AND l.status != 'storniert'), 0)";
 
             // Der Input-String wird als reiner SQL-CONCAT definiert
@@ -769,9 +769,20 @@ class Auftrag extends GenAuftrag
                     FROM auftrag_position ap 
                     INNER JOIN artikel a ON ap.artikel = a.id";
 
-             $where = " ap.auftrag = $id HAVING (auftragsmenge - bereits_geliefert) > 0 AND a.lagerartikel = 1 AND a.geloescht = 0";
+            // WHERE: Basis-Filterung (Auftrag-ID, Lagerartikel, nicht gelöscht)
+            // HAVING: Filterung auf Basis der berechneten Alias-Spalten (offene Menge)
+            $where = " ap.auftrag = $id 
+                       AND a.lagerartikel = 1 
+                       AND a.geloescht = 0 
+                       HAVING (auftragsmenge - bereits_geliefert) > 0";
              
-             $count = "SELECT count(DISTINCT ap.id) FROM auftrag_position ap WHERE ap.auftrag = $id";
+            // Die Count-Abfrage muss die gleichen Tabellen-Joins und Filter haben wie das WHERE
+            $count = "SELECT count(DISTINCT ap.id) 
+                      FROM auftrag_position ap 
+                      INNER JOIN artikel a ON ap.artikel = a.id 
+                      WHERE ap.auftrag = $id 
+                      AND a.lagerartikel = 1 
+                      AND a.geloescht = 0";
         break;
         case 'positionen_teillieferung':
 
