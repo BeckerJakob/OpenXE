@@ -12346,20 +12346,34 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
     $this->app->DB->Update("UPDATE auftrag SET bestellung_ok='$bestellung_ok' WHERE id='$auftrag' LIMIT 1");
 
     // bezahlung_ok CODE
-    $bezahlung_ok = 1;
-    $sql = "UPDATE auftrag 
-            SET bezahlung_ok = '$bezahlung_ok' 
-            WHERE id = '$auftrag' 
-            /* Bedingung 1: Es muss mindestens eine Rechnung geben */
-            AND EXISTS (
-                SELECT 1 FROM rechnung WHERE auftragid = '$auftrag'
-            )
-            /* Bedingung 2: Es darf KEINE unbezahlte Rechnung geben */
-            AND NOT EXISTS (
-                SELECT 1 FROM rechnung WHERE auftragid = '$auftrag' AND zahlungsstatus != 'bezahlt'
-            )";
+    $bezahlung_ok = 0;
+        
+    // Wir holen uns die aktuellste, nicht stornierte Rechnung zum Auftrag
+    // Hinweis: Ich verwende 'auftragid' wie in deinem Snippet angegeben
+    $rechnung = $this->app->DB->SelectRow("
+        SELECT status, zahlungsstatus 
+        FROM rechnung 
+        WHERE auftragid = '$auftrag' AND status != 'storniert' 
+        ORDER BY id DESC LIMIT 1
+    ");
 
-    $this->app->DB->Update($sql);
+    if ($rechnung) {
+        $ist_versendet = ($rechnung['status'] == 'abgeschlossen'); 
+        $ist_bezahlt = ($rechnung['zahlungsstatus'] == 'bezahlt');
+
+        if (!$ist_versendet) {
+            // Fall 2: Rechnung da, aber noch nicht versendet (egal ob bezahlt oder nicht)
+            $bezahlung_ok = 2; // Gelb
+        } elseif (!$ist_bezahlt) {
+            // Fall 3: Rechnung versendet, aber wartet auf Geld
+            $bezahlung_ok = 3; // Blau
+        } else {
+            // Fall 1: Rechnung versendet UND bezahlt
+            $bezahlung_ok = 1; // Grün
+        }
+    }
+
+    $this->app->DB->Update("UPDATE auftrag SET bezahlung_ok = '$bezahlung_ok' WHERE id = '$auftrag' LIMIT 1");
 
     // lieferschein_ok CODE
     $lieferschein_ok = 1;
