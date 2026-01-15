@@ -7655,11 +7655,12 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                         
                         // 2. Header-Synchronisation: Alle Zusatzfelder vom Auftrag in den Lieferschein kopieren
                         // Dies stellt sicher, dass Kunde, Lieferant, Land, Versandart etc. identisch sind.
+                        // 2. Header-Synchronisation: Korrigiert (ohne die nicht existierende Spalte 'bezeichnung')
                         $this->app->DB->Update("
                             UPDATE lieferschein l, auftrag a 
                             SET 
                                 l.auftragid = a.id,
-                                l.bezeichnung = a.bezeichnung,
+                                l.internebezeichnung = a.internebezeichnung,
                                 l.ihrebestellnummer = a.ihrebestellnummer,
                                 l.internet = a.internet,
                                 l.transaktionsnummer = a.transaktionsnummer,
@@ -7672,6 +7673,9 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                                 l.plz = a.plz,
                                 l.ort = a.ort,
                                 l.land = a.land,
+                                l.email = a.email,
+                                l.telefon = a.telefon,
+                                l.ustid = a.ustid,
                                 l.waehrung = a.waehrung,
                                 l.zahlungsweise = a.zahlungsweise,
                                 l.versandart = a.versandart,
