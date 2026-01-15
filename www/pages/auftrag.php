@@ -737,10 +737,10 @@ class Auftrag extends GenAuftrag
             $allowed['positionen_teillieferschein'] = array('list');
             
             // Überschriften erweitert um "Lager"
-            $heading = array('Position', 'Artikel', 'Nr.', 'Bestellt', 'Bereits im LS', 'Lager', 'Menge f&uuml;r diesen LS', '');
-            $width = array('1%', '35%', '15%', '5%', '5%', '10%', '5%', '5%');
+            $heading = array('Position', 'Artikel', 'Nr.', 'Bestellt', 'Bereits im LS', 'Lager (Physisch)', 'Verfügbar (Netto)', 'Menge f&uuml;r diesen LS', '');
+            $width = array('1%', '30%', '10%', '5%', '5%', '10%', '10%', '5%', '5%');
 
-            $findcols = array('ap.sort', 'a.name_de', 'a.nummer', 'ap.menge', 'bereits_geliefert', 'lager', 'teilmenge');
+            $findcols = array('ap.sort', 'a.name_de', 'a.nummer', 'ap.menge', 'bereits_geliefert', 'lager', 'verfuegbar_netto', 'teilmenge');
             $searchsql = array('');
 
             $defaultorder = 2;
@@ -749,7 +749,7 @@ class Auftrag extends GenAuftrag
             // SQL für bereits gelieferte Mengen
             $bereits_geliefert_sql = "IFNULL((SELECT SUM(lp.menge) FROM lieferschein_position lp JOIN lieferschein l ON lp.lieferschein = l.id WHERE lp.auftrag_position_id = ap.id AND l.status != 'storniert'), 0)";
 
-            // Lager-Logik: Zeigt Menge oder fett rot "aus", wenn nichts am Lager ist
+            // Lager-Logik (Physisch)
             $lager_sql = "IF(a.lagerartikel, 
                             IFNULL(
                                 (SELECT IF(SUM(l.menge) > 0, TRIM(SUM(l.menge))+0, '<font color=red><b>aus</b></font>') 
@@ -758,14 +758,28 @@ class Auftrag extends GenAuftrag
                             ), 
                           '-')";
 
+            // Verfügbar Netto Logic: Physisch - (Alle Reservierungen - Reservierungen für diesen Auftrag)
+            // Reservierungen für diesen Auftrag ignorieren wir, da wir diese ja gerade erfüllen wollen.
+            // (r.objekt != 'auftrag' OR r.parameter != $id)
+            $verfuegbar_netto_sql = "
+                (
+                    IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
+                    - 
+                    IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.objekt != 'auftrag' OR r.parameter != $id)), 0)
+                )
+            ";
+            
             // Input für die Teilmenge
+            // Value = GREATEST(0, LEAST(Offene Menge, Netto Verfügbar))
+            $offene_menge_sql = "(ap.menge - $bereits_geliefert_sql)";
+            
             $input_for_menge = "CONCAT(
                         '<input type=\"number\" step=\"any\" min=\"0\" max=\"',
-                        ap.menge - $bereits_geliefert_sql,
+                        GREATEST(0, $verfuegbar_netto_sql),
                         '\" name=\"teilmenge_',
                         ap.id,
                         '\" value=\"',
-                        ap.menge - $bereits_geliefert_sql,
+                        GREATEST(0, LEAST($offene_menge_sql, $verfuegbar_netto_sql)),
                         '\">'
                     )";
             
@@ -777,6 +791,7 @@ class Auftrag extends GenAuftrag
                     " . $this->app->erp->FormatMenge('ap.menge') . " as auftragsmenge,
                     $bereits_geliefert_sql as bereits_geliefert,
                     $lager_sql as lager,
+                    IF($verfuegbar_netto_sql > 0, TRIM($verfuegbar_netto_sql)+0, CONCAT('<font color=red><b>', TRIM($verfuegbar_netto_sql)+0, '</b></font>')) as verfuegbar_netto_display,
                     $input_for_menge
                     FROM auftrag_position ap 
                     INNER JOIN artikel a ON ap.artikel = a.id";
@@ -7647,7 +7662,12 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                         foreach ($teilmengen as $tm) {
                           // Wir joinen hier den Artikel, um den Typ zu prüfen
                           $ap = $this->app->DB->SelectRow("
-                              SELECT ap.*, a.lagerartikel 
+                              SELECT ap.*, a.lagerartikel,
+                              (
+                                IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
+                                - 
+                                IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.objekt != 'auftrag' OR r.parameter != $id)), 0)
+                              ) as verfuegbar_netto
                               FROM auftrag_position ap 
                               JOIN artikel a ON ap.artikel = a.id 
                               WHERE ap.id = " . (int)$tm['posid'] . " 
@@ -7655,18 +7675,36 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                           ");
 
                           if ($ap && $tm['menge'] > 0) {
-                            // Nur wenn es ein Lagerartikel ist, wird die Lieferschein-Position erstellt
-                            $sql = sprintf(
-                                "INSERT INTO lieferschein_position (lieferschein, artikel, menge, nummer, bezeichnung, auftrag_position_id) 
-                                VALUES (%d, %d, %f, '%s', '%s', %d)",
-                                (int)$lieferschein_id,
-                                (int)$ap['artikel'],
-                                (float)$tm['menge'],
-                                $this->app->DB->real_escape_string($ap['nummer']),
-                                $this->app->DB->real_escape_string($ap['bezeichnung']),
-                                (int)$ap['id']
-                            );
-                            $this->app->DB->Insert($sql);
+                            
+                            // Validierung & Kappung gegen Netto-Verfügbarkeit
+                            $mengeToDeliver = (float)$tm['menge'];
+                            $verfuegbar = (float)$ap['verfuegbar_netto'];
+                            
+                            // Falls Menge größer als Verfügbar, kappen
+                            if ($mengeToDeliver > $verfuegbar) {
+                                $mengeToDeliver = $verfuegbar;
+                            }
+                            
+                            // Absicherung gegen negative Werte
+                            if ($mengeToDeliver < 0) {
+                                $mengeToDeliver = 0;
+                            }
+
+                            // Nur erstellen, wenn Menge > 0
+                            if ($mengeToDeliver > 0) {
+                                // Nur wenn es ein Lagerartikel ist, wird die Lieferschein-Position erstellt
+                                $sql = sprintf(
+                                    "INSERT INTO lieferschein_position (lieferschein, artikel, menge, nummer, bezeichnung, auftrag_position_id) 
+                                    VALUES (%d, %d, %f, '%s', '%s', %d)",
+                                    (int)$lieferschein_id,
+                                    (int)$ap['artikel'],
+                                    $mengeToDeliver,
+                                    $this->app->DB->real_escape_string($ap['nummer']),
+                                    $this->app->DB->real_escape_string($ap['bezeichnung']),
+                                    (int)$ap['id']
+                                );
+                                $this->app->DB->Insert($sql);
+                            }
                           }
                         }
                         
