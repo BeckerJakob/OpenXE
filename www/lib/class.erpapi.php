@@ -12248,36 +12248,83 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
     }
 
     // Calculate bestellung_ok (Purchase Order Status)
-    $bestellung_ok = 1;
+    // 0 = Nicht bestellt (Orange), 2 = Angelegt (Gelb), 3 = Freigegeben (Blau), 1 = Versendet/Abgeschlossen (Grün)
+    $bestellung_ok = 1; // Wir starten optimistisch bei "Grün"
+
     $positions = $this->app->DB->SelectArr("SELECT ap.id, ap.artikel, ap.menge FROM auftrag_position ap JOIN artikel art ON ap.artikel = art.id WHERE ap.auftrag = '$auftrag' AND art.lagerartikel = 1 AND art.typ != 'pauschale' AND art.typ != 'service'");
 
     if (is_array($positions)) {
-         $stock_cache = [];
-         foreach ($positions as $pos) {
+        $stock_cache = [];
+        foreach ($positions as $pos) {
             $artID = $pos['artikel'];
+            
+            // 1. Lagerbestand abfragen (Cache zur Performance-Optimierung)
             if (!isset($stock_cache[$artID])) {
-                 $stockSql = "SELECT SUM(lpi.menge) 
-                              FROM lager_platz_inhalt lpi 
-                              INNER JOIN lager_platz lp ON lp.id = lpi.lager_platz
-                              WHERE lpi.artikel = $artID AND lp.sperrlager = 0";
-                 $currentStock = $this->app->DB->Select($stockSql);
-                 $stock_cache[$artID] = ($currentStock) ? $currentStock : 0;
+                $stockSql = "SELECT SUM(lpi.menge) 
+                            FROM lager_platz_inhalt lpi 
+                            INNER JOIN lager_platz lp ON lp.id = lpi.lager_platz
+                            WHERE lpi.artikel = $artID AND lp.sperrlager = 0";
+                $currentStock = $this->app->DB->Select($stockSql);
+                $stock_cache[$artID] = ($currentStock) ? $currentStock : 0;
             }
 
-            $ordered = $this->app->DB->Select("SELECT SUM(bp.menge) FROM bestellung_position bp JOIN bestellung b ON bp.bestellung = b.id WHERE bp.auftrag_position_id = '". $pos['id'] ."' AND b.status != 'storniert'");
-            $ordered = ($ordered) ? $ordered : 0;
+            // Wieviel wird nach Lagerabzug noch benötigt?
+            $needed = $pos['menge'];
+            if ($stock_cache[$artID] > 0) {
+                $take = min($needed, $stock_cache[$artID]);
+                $needed -= $take;
+                $stock_cache[$artID] -= $take;
+            }
 
-            $needed = $pos['menge'] - $ordered;
-
+            // 2. Wenn noch Bedarf besteht, Bestellungen prüfen
             if ($needed > 0) {
-               if ($stock_cache[$artID] >= $needed) {
-                   $stock_cache[$artID] -= $needed;
-               } else {
-                   $bestellung_ok = 0;
-                   break;
-               }
+                $po_positions = $this->app->DB->SelectArr("SELECT bp.menge, b.status 
+                                                          FROM bestellung_position bp 
+                                                          JOIN bestellung b ON bp.bestellung = b.id 
+                                                          WHERE bp.auftrag_position_id = '". $pos['id'] ."' 
+                                                          AND b.status != 'storniert'");
+                
+                $ordered_qty = 0;
+                $lowest_po_status_for_pos = 1; // Standard für diese Position: Grün
+
+                if (is_array($po_positions)) {
+                    foreach ($po_positions as $po) {
+                        $ordered_qty += $po['menge'];
+                        
+                        // Status-Mapping für die Ampel
+                        // Priorität der "schlechteren" Stati: angelegt (2) > freigegeben (3) > versendet (1)
+                        if ($po['status'] == 'angelegt') {
+                            $current_status_val = 2; 
+                        } elseif ($po['status'] == 'freigegeben') {
+                            $current_status_val = 3;
+                        } else {
+                            $current_status_val = 1; // versendet / abgeschlossen
+                        }
+
+                        // Wir merken uns den "unfertigsten" Status der Bestellung für diese Position
+                        if ($current_status_val == 2) $lowest_po_status_for_pos = 2;
+                        elseif ($current_status_val == 3 && $lowest_po_status_for_pos != 2) $lowest_po_status_for_pos = 3;
+                    }
+                }
+
+                // 3. Finale Entscheidung für den Gesamtstatus des Auftrags
+                if ($ordered_qty < $needed) {
+                    // Es fehlt Menge, für die es gar keine Bestellung gibt -> ORANGE
+                    $bestellung_ok = 0;
+                    break; // Sobald eine Position fehlt, ist die Gesamtampel 0
+                } else {
+                    // Menge ist bestellt, wir prüfen, ob der Gesamtstatus herabgestuft werden muss
+                    // (0 ist schlechter als 2, 2 schlechter als 3, 3 schlechter als 1)
+                    if ($bestellung_ok != 0) {
+                        if ($lowest_po_status_for_pos == 2) {
+                            $bestellung_ok = 2;
+                        } elseif ($lowest_po_status_for_pos == 3 && $bestellung_ok != 2) {
+                            $bestellung_ok = 3;
+                        }
+                    }
+                }
             }
-         }
+        }
     }
 
     $this->app->DB->Update("UPDATE auftrag SET bestellung_ok='$bestellung_ok' WHERE id='$auftrag' LIMIT 1");
