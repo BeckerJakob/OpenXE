@@ -12358,7 +12358,7 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
     ");
 
     if ($rechnung) {
-        $ist_versendet = ($rechnung['status'] == 'abgeschlossen'); 
+        $ist_versendet = ($rechnung['status'] == 'abgeschlossen' || $rechnung['status'] == 'versendet');
         $ist_bezahlt = ($rechnung['zahlungsstatus'] == 'bezahlt');
 
         if (!$ist_versendet) {
