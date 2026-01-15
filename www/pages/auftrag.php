@@ -7627,85 +7627,111 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
    * Create partial delivery note from order
    */
   function AuftragTeilLieferschein() {
-    $id = $this->app->Secure->GetGET('id');
+    $id = (int)$this->app->Secure->GetGET('id');
     $this->AuftragMenu();
     $submit = $this->app->Secure->GetPOST('submit');
 
     $sql = "SELECT * from auftrag WHERE id = $id";
-    $auftrag = $this->app->DB->SelectArr($sql)[0];
+    $auftrag = $this->app->DB->SelectRow($sql);
     $msg = "";
 
-    if ($auftrag['status'] == 'freigegeben') {
+    if ($auftrag && $auftrag['status'] == 'freigegeben') {
         if ($submit != '') {
             switch ($submit) {
                 case 'speichern':
                     $teilmenge_input = $this->app->Secure->GetPOSTArray();
                     $teilmengen = array();
                     foreach ($teilmenge_input as $key => $value) {
-                         if ((strpos($key,'teilmenge_') === 0) && ($value !== '') && ($value > 0)) {
-                            $posid = substr($key, 10); // teilmenge_ID
-                            $teilmengen[] = array('posid' => $posid, 'menge' => $value);
+                         // Nur Positionen mit Menge > 0 berücksichtigen
+                         if ((strpos($key,'teilmenge_') === 0) && ($value !== '') && ((float)$value > 0)) {
+                            $posid = substr($key, 10);
+                            $teilmengen[] = array('posid' => $posid, 'menge' => (float)$value);
                         }
                     }
 
                     if (!empty($teilmengen)) {
-                        // Create Lieferschein
+                        // 1. Lieferschein-Rumpf erstellen
                         $lieferschein_id = $this->app->erp->CreateLieferschein($auftrag['adresse'], $auftrag['projekt']);
-                         
-                        // Update Lieferschein header to link to this order
-                        $this->app->DB->Update("UPDATE lieferschein SET auftragid = $id WHERE id = $lieferschein_id");
                         
-                        // Copy addresses etc if needed (CreateLieferschein might do some basic stuff, but usually we extend from order)
-                        // Using WeiterfuehrenAuftragZuLieferschein logic partially or manually creating positions.
-                        // Since we have specific quantities, manual creation is safer.
+                        // 2. Header-Synchronisation: Alle Zusatzfelder vom Auftrag in den Lieferschein kopieren
+                        // Dies stellt sicher, dass Kunde, Lieferant, Land, Versandart etc. identisch sind.
+                        $this->app->DB->Update("
+                            UPDATE lieferschein l, auftrag a 
+                            SET 
+                                l.auftragid = a.id,
+                                l.bezeichnung = a.bezeichnung,
+                                l.ihrebestellnummer = a.ihrebestellnummer,
+                                l.internet = a.internet,
+                                l.transaktionsnummer = a.transaktionsnummer,
+                                l.ansprechpartner = a.ansprechpartner,
+                                l.abteilung = a.abteilung,
+                                l.unterabteilung = a.unterabteilung,
+                                l.name = a.name,
+                                l.strasse = a.strasse,
+                                l.adresszusatz = a.adresszusatz,
+                                l.plz = a.plz,
+                                l.ort = a.ort,
+                                l.land = a.land,
+                                l.waehrung = a.waehrung,
+                                l.zahlungsweise = a.zahlungsweise,
+                                l.versandart = a.versandart,
+                                l.versandart_freitext = a.versandart_freitext,
+                                l.abweichendelieferadresse = a.abweichendelieferadresse,
+                                l.liefername = a.liefername,
+                                l.lieferansprechpartner = a.lieferansprechpartner,
+                                l.lieferabteilung = a.lieferabteilung,
+                                l.lieferunterabteilung = a.lieferunterabteilung,
+                                l.lieferstrasse = a.lieferstrasse,
+                                l.lieferadresszusatz = a.lieferadresszusatz,
+                                l.lieferplz = a.lieferplz,
+                                l.lieferort = a.lieferort,
+                                l.lieferland = a.lieferland,
+                                l.vertrieb = a.vertrieb,
+                                l.vertriebid = a.vertriebid,
+                                l.internebemerkung = a.internebemerkung,
+                                l.sprache = a.sprache,
+                                l.lieferant = a.lieferant,
+                                l.projektfiliale = a.projektfiliale
+                            WHERE l.id = $lieferschein_id AND a.id = $id
+                        ");
 
+                        // 3. Positionen verarbeiten (mit Netto-Verfügbarkeitsprüfung)
                         foreach ($teilmengen as $tm) {
-                          // Wir joinen hier den Artikel, um den Typ zu prüfen
-                          $ap = $this->app->DB->SelectRow("
-                              SELECT ap.*, a.lagerartikel,
-                              (
-                                IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
-                                - 
-                                IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.objekt != 'auftrag' OR r.parameter != $id)), 0)
-                              ) as verfuegbar_netto
-                              FROM auftrag_position ap 
-                              JOIN artikel a ON ap.artikel = a.id 
-                              WHERE ap.id = " . (int)$tm['posid'] . " 
-                              AND a.lagerartikel = 1
-                          ");
+                             $ap = $this->app->DB->SelectRow("
+                                SELECT ap.*, a.lagerartikel,
+                                (
+                                    IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
+                                    - 
+                                    IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.objekt != 'auftrag' OR r.parameter != $id)), 0)
+                                ) as verfuegbar_netto
+                                FROM auftrag_position ap 
+                                JOIN artikel a ON ap.artikel = a.id 
+                                WHERE ap.id = " . (int)$tm['posid'] . " 
+                                AND a.lagerartikel = 1
+                            ");
 
-                          if ($ap && $tm['menge'] > 0) {
-                            
-                            // Validierung & Kappung gegen Netto-Verfügbarkeit
-                            $mengeToDeliver = (float)$tm['menge'];
-                            $verfuegbar = (float)$ap['verfuegbar_netto'];
-                            
-                            // Falls Menge größer als Verfügbar, kappen
-                            if ($mengeToDeliver > $verfuegbar) {
-                                $mengeToDeliver = $verfuegbar;
+                            if ($ap && (float)$tm['menge'] > 0) {
+                                $mengeToDeliver = (float)$tm['menge'];
+                                $verfuegbar = (float)$ap['verfuegbar_netto'];
+                                
+                                // Kappung gegen real verfügbaren Bestand
+                                if ($mengeToDeliver > $verfuegbar) {
+                                    $mengeToDeliver = $verfuegbar;
+                                }
+                                
+                                if ($mengeToDeliver > 0) {
+                                    $this->app->DB->Insert(sprintf(
+                                        "INSERT INTO lieferschein_position (lieferschein, artikel, menge, nummer, bezeichnung, auftrag_position_id) 
+                                        VALUES (%d, %d, %f, '%s', '%s', %d)",
+                                        (int)$lieferschein_id,
+                                        (int)$ap['artikel'],
+                                        $mengeToDeliver,
+                                        $this->app->DB->real_escape_string($ap['nummer']),
+                                        $this->app->DB->real_escape_string($ap['bezeichnung']),
+                                        (int)$ap['id']
+                                    ));
+                                }
                             }
-                            
-                            // Absicherung gegen negative Werte
-                            if ($mengeToDeliver < 0) {
-                                $mengeToDeliver = 0;
-                            }
-
-                            // Nur erstellen, wenn Menge > 0
-                            if ($mengeToDeliver > 0) {
-                                // Nur wenn es ein Lagerartikel ist, wird die Lieferschein-Position erstellt
-                                $sql = sprintf(
-                                    "INSERT INTO lieferschein_position (lieferschein, artikel, menge, nummer, bezeichnung, auftrag_position_id) 
-                                    VALUES (%d, %d, %f, '%s', '%s', %d)",
-                                    (int)$lieferschein_id,
-                                    (int)$ap['artikel'],
-                                    $mengeToDeliver,
-                                    $this->app->DB->real_escape_string($ap['nummer']),
-                                    $this->app->DB->real_escape_string($ap['bezeichnung']),
-                                    (int)$ap['id']
-                                );
-                                $this->app->DB->Insert($sql);
-                            }
-                          }
                         }
                         
                          $this->app->erp->AuftragProtokoll($id, "Teil-Lieferschein LS-".$lieferschein_id." erstellt");
@@ -7728,7 +7754,6 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
     }
 
     $this->app->Tpl->Add('INFOTEXT', $msg);
-    // Use the new table search case
     $this->app->YUI->TableSearch('TABLE', 'positionen_teillieferschein', 'show', '', '', basename(__FILE__), __CLASS__);
     $this->app->Tpl->Parse('PAGE', 'auftrag_teillieferschein.tpl');
   }
