@@ -1636,10 +1636,28 @@ class Auftrag extends GenAuftrag
     //$art = $this->app->DB->Select("SELECT art FROM auftrag WHERE id='$id' LIMIT 1");
     $alleartikelreservieren = '';
 
-    if ($status==='angelegt' || $status==='freigegeben') {
+    // Prüfen, ob es noch Positionen gibt, die nicht vollständig im Lieferschein sind
+    $offenePositionenVorhanden = $this->app->DB->Select(sprintf("
+        SELECT ap.id 
+        FROM auftrag_position ap
+        INNER JOIN artikel a ON ap.artikel = a.id
+        WHERE ap.auftrag = %d 
+        AND a.lagerartikel = 1
+        AND ap.menge > IFNULL((
+            SELECT SUM(lp.menge) 
+            FROM lieferschein_position lp 
+            JOIN lieferschein l ON lp.lieferschein = l.id 
+            WHERE lp.auftrag_position_id = ap.id 
+            AND l.status != 'storniert'
+        ), 0)
+        LIMIT 1
+    ", $id));
+
+    if ($status === 'angelegt' || $status === 'freigegeben') {
         $teillieferungen = '<option value="teillieferung">Teilauftrag erstellen</option>';
     } 
-    if ($status === 'freigegeben') {
+
+    if ($status === 'freigegeben' && $offenePositionenVorhanden) {
         $teillieferungen .= '<option value="teillieferschein">Teil-Lieferschein erstellen</option>';
     }  
 
