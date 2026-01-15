@@ -12298,17 +12298,22 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
                     foreach ($po_positions as $po) {
                         $ordered_qty += $po['menge'];
                         
-                        // Status-Mapping basierend auf deinen neuen Icons:
-                        if ($po['status'] == 'angelegt') {
+                        // NEUES Status-Mapping für die Ampel:
+                        if ($po['status'] == 'angelegt' || $po['status'] == 'freigegeben') {
+                            // Interner Status: Dokument existiert, wurde aber noch nicht verschickt
                             $current_status_val = 2; // Gelb ($wait_bestellung)
-                        } elseif ($po['status'] == 'freigegeben') {
+                        } elseif ($po['status'] == 'versendet') {
+                            // Externer Status: Lieferant hat Bestellung, wir warten auf Ware
                             $current_status_val = 3; // Blau ($ready_bestellung)
+                        } elseif ($po['status'] == 'abgeschlossen') {
+                            // Abgeschlossen: Ware ist da
+                            $current_status_val = 1; // Grün ($go_bestellung)
                         } else {
-                            $current_status_val = 1; // Grün ($go_bestellung - versendet/abgeschlossen)
+                            $current_status_val = 1; 
                         }
 
-                        // Wir ermitteln den "unfertigsten" Status für diese Position
-                        // Priorität: 2 (Angelegt) wiegt schwerer als 3 (Freigegeben)
+                        // Priorität: Wir zeigen immer den "unfertigsten" Status an.
+                        // 0 (fehlt) > 2 (Warten auf Versand) > 3 (Warten auf Ware) > 1 (Erledigt)
                         if ($current_status_val == 2) {
                             $lowest_po_status_for_pos = 2;
                         } elseif ($current_status_val == 3 && $lowest_po_status_for_pos != 2) {
