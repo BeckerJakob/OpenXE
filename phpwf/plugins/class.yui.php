@@ -3432,9 +3432,9 @@ class YUI {
     $anzahl = 0;
     if($this->app->erp->Firmendaten("ampelbestellung")!="1")
     {
-      $go_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_bestellt.png\" style=\"margin-right:1px\" title=\"Bestellung(en) wurde(n) erstellt\" border=\"0\">";
-      $ready_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_bestellung_freigegeben.png\" style=\"margin-right:1px\" title=\"Bestellung(en) freigegeben, aber noch nicht versendet\" border=\"0\">";
-      $wait_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_bestellung_angelegt.png\" style=\"margin-right:1px\" title=\"Bestellung(en) erstellt, aber noch nicht freigegeben\" border=\"0\">";
+      $go_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_bestellt.png\" style=\"margin-right:1px\" title=\"Bestellung(en) wurde(n) eingelagert\" border=\"0\">";
+      $ready_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_bestellung_freigegeben.png\" style=\"margin-right:1px\" title=\"Bestellung(en) wartet(n) auf Wareneingang\" border=\"0\">";
+      $wait_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_bestellung_angelegt.png\" style=\"margin-right:1px\" title=\"Bestellung(en) noch nicht freigegeben/versendet\" border=\"0\">";
       $stop_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_nicht_bestellt.png\" style=\"margin-right:1px\" title=\"Bestellung(en) noch nicht erstellt\" border=\"0\">";
       $anzahl++;
     } else { $go_bestellung=""; $ready_bestellung=""; $wait_bestellung=""; $stop_bestellung=""; }

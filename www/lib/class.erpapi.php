@@ -12248,15 +12248,22 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
     }
 
     // Calculate bestellung_ok (Purchase Order Status)
-    // 0 = Nicht bestellt (Orange), 2 = Angelegt (Gelb), 3 = Freigegeben (Blau), 1 = Versendet/Abgeschlossen (Grün)
-    $bestellung_ok = 1; // Wir starten optimistisch bei "Grün"
+    // 0 = Orange (Nicht erstellt), 2 = Gelb (Angelegt/Wait), 3 = Blau (Freigegeben/Ready), 1 = Grün (Versendet/Go)
+    $bestellung_ok = 1; // Wir starten optimistisch bei "Grün" (Alles erledigt oder im Lager)
 
-    $positions = $this->app->DB->SelectArr("SELECT ap.id, ap.artikel, ap.menge FROM auftrag_position ap JOIN artikel art ON ap.artikel = art.id WHERE ap.auftrag = '$auftrag' AND art.lagerartikel = 1 AND art.typ != 'pauschale' AND art.typ != 'service'");
+    // Nur relevante Lagerartikel prüfen (keine Pauschalen/Services)
+    $positions = $this->app->DB->SelectArr("SELECT ap.id, ap.artikel, ap.menge 
+                                            FROM auftrag_position ap 
+                                            JOIN artikel art ON ap.artikel = art.id 
+                                            WHERE ap.auftrag = '$auftrag' 
+                                            AND art.lagerartikel = 1 
+                                            AND art.typ != 'pauschale' 
+                                            AND art.typ != 'service'");
 
     if (is_array($positions)) {
         $stock_cache = [];
         foreach ($positions as $pos) {
-            $artID = $pos['artikel'];
+            $artID = (int)$pos['artikel'];
             
             // 1. Lagerbestand abfragen (Cache zur Performance-Optimierung)
             if (!isset($stock_cache[$artID])) {
@@ -12276,12 +12283,12 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
                 $stock_cache[$artID] -= $take;
             }
 
-            // 2. Wenn noch Bedarf besteht, Bestellungen prüfen
+            // 2. Wenn nach Lagerprüfung noch Bedarf besteht, Bestellungen prüfen
             if ($needed > 0) {
                 $po_positions = $this->app->DB->SelectArr("SELECT bp.menge, b.status 
                                                           FROM bestellung_position bp 
                                                           JOIN bestellung b ON bp.bestellung = b.id 
-                                                          WHERE bp.auftrag_position_id = '". $pos['id'] ."' 
+                                                          WHERE bp.auftrag_position_id = '". (int)$pos['id'] ."' 
                                                           AND b.status != 'storniert'");
                 
                 $ordered_qty = 0;
@@ -12291,35 +12298,38 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
                     foreach ($po_positions as $po) {
                         $ordered_qty += $po['menge'];
                         
-                        // Status-Mapping für die Ampel
-                        // Priorität der "schlechteren" Stati: angelegt (2) > freigegeben (3) > versendet (1)
+                        // Status-Mapping basierend auf deinen neuen Icons:
                         if ($po['status'] == 'angelegt') {
-                            $current_status_val = 2; 
+                            $current_status_val = 2; // Gelb ($wait_bestellung)
                         } elseif ($po['status'] == 'freigegeben') {
-                            $current_status_val = 3;
+                            $current_status_val = 3; // Blau ($ready_bestellung)
                         } else {
-                            $current_status_val = 1; // versendet / abgeschlossen
+                            $current_status_val = 1; // Grün ($go_bestellung - versendet/abgeschlossen)
                         }
 
-                        // Wir merken uns den "unfertigsten" Status der Bestellung für diese Position
-                        if ($current_status_val == 2) $lowest_po_status_for_pos = 2;
-                        elseif ($current_status_val == 3 && $lowest_po_status_for_pos != 2) $lowest_po_status_for_pos = 3;
+                        // Wir ermitteln den "unfertigsten" Status für diese Position
+                        // Priorität: 2 (Angelegt) wiegt schwerer als 3 (Freigegeben)
+                        if ($current_status_val == 2) {
+                            $lowest_po_status_for_pos = 2;
+                        } elseif ($current_status_val == 3 && $lowest_po_status_for_pos != 2) {
+                            $lowest_po_status_for_pos = 3;
+                        }
                     }
                 }
 
-                // 3. Finale Entscheidung für den Gesamtstatus des Auftrags
+                // 3. Finale Entscheidung für den Gesamtstatus der Ampel
                 if ($ordered_qty < $needed) {
-                    // Es fehlt Menge, für die es gar keine Bestellung gibt -> ORANGE
+                    // Es fehlt Menge, für die es keine Bestellung gibt -> SOFORT ORANGE
                     $bestellung_ok = 0;
-                    break; // Sobald eine Position fehlt, ist die Gesamtampel 0
+                    break; // Abbruch der Schleife, da der schlechteste Status (0) erreicht ist
                 } else {
-                    // Menge ist bestellt, wir prüfen, ob der Gesamtstatus herabgestuft werden muss
-                    // (0 ist schlechter als 2, 2 schlechter als 3, 3 schlechter als 1)
+                    // Menge ist durch Bestellungen gedeckt, wir prüfen die "Farbe"
+                    // Die Ampel wird nur herabgestuft (0 > 2 > 3 > 1)
                     if ($bestellung_ok != 0) {
                         if ($lowest_po_status_for_pos == 2) {
-                            $bestellung_ok = 2;
+                            $bestellung_ok = 2; // Gelb gewinnt
                         } elseif ($lowest_po_status_for_pos == 3 && $bestellung_ok != 2) {
-                            $bestellung_ok = 3;
+                            $bestellung_ok = 3; // Blau gewinnt, falls nicht schon Gelb
                         }
                     }
                 }
@@ -12327,6 +12337,7 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
         }
     }
 
+    // Wert in die Datenbank schreiben
     $this->app->DB->Update("UPDATE auftrag SET bestellung_ok='$bestellung_ok' WHERE id='$auftrag' LIMIT 1");
 
     // bezahlung_ok CODE
