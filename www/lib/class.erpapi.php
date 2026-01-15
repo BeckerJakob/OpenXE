@@ -12184,51 +12184,67 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
     }
 
     // Lager Check
-    $positionen_vorhanden = 0;
-    $artikelzaehlen=0;
-    $cartikelarr = $artikelarr?count($artikelarr):0;
-    for($k=0;$k<$cartikelarr; $k++)  {
+    $positionen_voll_lieferbar = 0;
+    $positionen_teil_lieferbar = 0;
+    $artikelzaehlen = 0;
+    $cartikelarr = $artikelarr ? count($artikelarr) : 0;
+    
+    for($k=0; $k < $cartikelarr; $k++) {
       $menge = $artikelarr[$k]['menge'] - $artikelarr[$k]['geliefert_menge'];
       $artikel = $artikelarr[$k]['artikel'];
-      $artikel_position_id = $artikelarr[$k]['id'];
       $lagerartikel = $artikelarr[$k]['artlagerartikel'];
-      if($lagerartikel==1) {
-        // wenn artikel oefters im Auftrag nehme gesamte summe her
 
-        $gesamte_menge_im_auftrag= $this->app->DB->Select("SELECT SUM(menge-geliefert_menge) FROM auftrag_position WHERE auftrag='$auftrag' AND artikel='$artikel'");
+      if($lagerartikel == 1) {
+        $artikelzaehlen++;
+        
+        // Gesamte Menge im Auftrag berücksichtigen
+        $gesamte_menge_im_auftrag = $this->app->DB->Select("SELECT SUM(menge-geliefert_menge) FROM auftrag_position WHERE auftrag='$auftrag' AND artikel='$artikel'");
         if($gesamte_menge_im_auftrag > $menge) {
           $menge = $gesamte_menge_im_auftrag;
         }
-        $artikelzaehlen++;
-        if($this->LagerCheck($adresse,$artikel,$menge,"auftrag",$auftrag)>0) {
-          $positionen_vorhanden++;
-        }
-        elseif($positionen_vorhanden > 0) {
-          break;
-        }
-        //else { if($auftrag==314) {echo "Artikel $artikel Menge $menge";exit;} }
 
+        if($this->LagerCheck($adresse, $artikel, $menge, "auftrag", $auftrag) > 0) {
+          $positionen_voll_lieferbar++;
+        } else {
+             // Check for partial availability (Physical Stock > 0)
+             $stockSql = "SELECT SUM(lpi.menge) 
+                         FROM lager_platz_inhalt lpi 
+                         INNER JOIN lager_platz lp ON lp.id = lpi.lager_platz
+                         WHERE lpi.artikel = '$artikel' AND lp.sperrlager = 0";
+             $currentStock = $this->app->DB->Select($stockSql);
+             
+             if($currentStock > 0) {
+                 $positionen_teil_lieferbar++;
+             }
+        }
       }
     }
+    
     $projekt = $this->app->DB->Select("SELECT projekt FROM auftrag WHERE id='$auftrag' LIMIT 1");
-
     $this->app->DB->Update("UPDATE auftrag SET teillieferung_moeglich='0' WHERE id='$auftrag' LIMIT 1");
-    //echo "$positionen_vorhanden $artikelzaehlen<hr>";
-    if($positionen_vorhanden==$artikelzaehlen){
-      $this->app->DB->Update("UPDATE auftrag SET lager_ok='1' WHERE id='$auftrag' LIMIT 1");
+    
+    $lager_ok = 0;
+    
+    // Logic for lager_ok status
+    if ($artikelzaehlen > 0 && $positionen_voll_lieferbar == $artikelzaehlen) {
+        $lager_ok = 1;
+    } elseif ($positionen_voll_lieferbar > 0 || $positionen_teil_lieferbar > 0) {
+        $lager_ok = 2;
+    } else {
+        $lager_ok = 0;
     }
-    else {
-      $kommissionierverfahren = $this->app->DB->Select("SELECT kommissionierverfahren FROM projekt WHERE id = '$projekt' LIMIT 1");
-      if($kommissionierverfahren == 'rechnungsmail')
-      {
-        $this->app->DB->Update("UPDATE auftrag SET lager_ok='1' WHERE id='$auftrag' LIMIT 1");
-      }else{
-        $this->app->DB->Update("UPDATE auftrag SET lager_ok='0' WHERE id='$auftrag' LIMIT 1");
-      }
-      if($positionen_vorhanden > 0 && $artikelzaehlen > 0)
-      {
-        $this->app->DB->Update("UPDATE auftrag SET teillieferung_moeglich='1' WHERE id='$auftrag' LIMIT 1");
-      }
+
+    // Override for rechnungsmail project setting
+    $kommissionierverfahren = $this->app->DB->Select("SELECT kommissionierverfahren FROM projekt WHERE id = '$projekt' LIMIT 1");
+    if($kommissionierverfahren == 'rechnungsmail') {
+        $lager_ok = 1;
+    }
+
+    $this->app->DB->Update("UPDATE auftrag SET lager_ok='$lager_ok' WHERE id='$auftrag' LIMIT 1");
+
+    // Set teillieferung_moeglich if we have something but not everything fully (based on physical availability, ignoring override)
+    if (($positionen_voll_lieferbar > 0 || $positionen_teil_lieferbar > 0) && ($positionen_voll_lieferbar < $artikelzaehlen)) {
+         $this->app->DB->Update("UPDATE auftrag SET teillieferung_moeglich='1' WHERE id='$auftrag' LIMIT 1");
     }
 
     // Calculate bestellung_ok (Purchase Order Status)
