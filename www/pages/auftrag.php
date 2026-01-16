@@ -1659,40 +1659,43 @@ class Auftrag extends GenAuftrag
         LIMIT 1
     ", $id, $id));
 
-    $vollversandMoeglich = (!$vorhandenerLS && !$artikelFehlend);
+    // 3. Prüfen, ob überhaupt noch etwas offen ist (nicht geliefert)
+    $offenePositionen = $this->app->DB->Select(sprintf("
+        SELECT ap.id 
+        FROM auftrag_position ap
+        WHERE ap.auftrag = %d 
+        AND ap.menge > IFNULL((SELECT SUM(lp.menge) FROM lieferschein_position lp JOIN lieferschein l ON lp.lieferschein = l.id WHERE lp.auftrag_position_id = ap.id AND l.status != 'storniert'), 0)
+        LIMIT 1
+    ", $id));
 
-    // Prüfen, ob es noch Positionen gibt, die nicht vollständig im Lieferschein sind
-    $offenePositionenVorhanden = $this->app->DB->Select(sprintf("
+    // 4. Prüfen, ob MINDESTENS ein Artikel lieferbar ist
+    $mindestensEinerLieferbar = $this->app->DB->Select(sprintf("
         SELECT ap.id 
         FROM auftrag_position ap
         INNER JOIN artikel a ON ap.artikel = a.id
         WHERE ap.auftrag = %d 
         AND a.lagerartikel = 1
-        AND ap.menge > IFNULL((
-            SELECT SUM(lp.menge) 
-            FROM lieferschein_position lp 
-            JOIN lieferschein l ON lp.lieferschein = l.id 
-            WHERE lp.auftrag_position_id = ap.id 
-            AND l.status != 'storniert'
-        ), 0)
+        AND (
+            IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
+            - 
+            IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.parameter != %d OR r.objekt != 'auftrag')), 0)
+        ) > 0
         LIMIT 1
-    ", $id));
+    ", $id, $id));
 
     $optionDelivery = '';
-    if ($status === 'angelegt' || $status === 'freigegeben') {
-        $teillieferungen = '<option value="teillieferung">Teilauftrag erstellen</option>';
-    } 
+    $teillieferungen = '';
 
-    if ($status === 'freigegeben') {
-        // Voll-Lieferschein nur anbieten, wenn noch nichts geliefert wurde UND alles da ist
-        if ($vollversandMoeglich) {
+    if ($status === 'freigegeben' && $offenePositionen) {
+        // Bedingung: Kein LS vorhanden UND Alles auf Lager
+        if (!$vorhandenerLS && !$artikelFehlend) {
             $optionDelivery = '<option value="delivery">Lieferschein erstellen</option>';
+        } 
+        // Bedingung: LS vorhanden ODER nicht alles auf Lager (aber mindestens einer lieferbar)
+        elseif ($mindestensEinerLieferbar) {
+            $teillieferungen = '<option value="teillieferschein">Teillieferschein erstellen</option>';
         }
-
-        if ($offenePositionenVorhanden) {
-            $teillieferungen .= '<option value="teillieferschein">als Teillieferschein weiterf&uuml;hren</option>';
-        }
-    }  
+    }
 
     if($status==='freigegeben') {
     
@@ -1898,22 +1901,22 @@ class Auftrag extends GenAuftrag
         <!-- $kreditlimit -->
         <!-- $zertifikatoption -->
 
-        <optgroup label=\"Auftrag\">
-          <option value=\"abschluss\">Auftrag abschliessen</option>
-          $freigabe <!-- LABEL: Auftrag freigeben -->
-          $storno <!-- LABEL: Auftrag stornieren -->
-        </optgroup>
-        
         <optgroup label=\"Lager & Logistik\">
           $supplierorder <!-- LABEL: Fehlende Artikel bestellen : verfügbar wenn noch nicht für jeden fehlenden Artikel eine Bestellung existiert -->
           $optionDelivery <!-- LABEL: Lieferschein erstellen : verfügbar nur wenn alle artikel verfügbar sind -->
           $teillieferungen <!-- LABEL: Teillieferschein erstellen : verfügbar wenn ein teil der artikel verfügbar ist nicht wenn alle artikel verfügbar sind -->
         </optgroup>
-
+        
         <optgroup label=\"Buchhaltung\">
-          $alsrechnung <!-- LABEL: Rechnung erstellen -->
+         $alsrechnung <!-- LABEL: Rechnung erstellen -->
         </optgroup>
         
+        <optgroup label=\"Auftrag\">
+          <option value=\"abschluss\">Auftrag abschliessen</option>
+          $freigabe <!-- LABEL: Auftrag freigeben -->
+          $storno <!-- LABEL: Auftrag stornieren -->
+        </optgroup>
+
         <optgroup label=\"Dokument\">
           <option value=\"pdf\">PDF herunterladen</option>
           <option value=\"abschicken\">Dokument versenden</option>
@@ -4002,31 +4005,25 @@ class Auftrag extends GenAuftrag
     $vorhandenerLS = $this->app->DB->Select("SELECT id FROM lieferschein WHERE auftragid='$id' AND status!='storniert' LIMIT 1");
     
     if ($vorhandenerLS) {
-        $msg = $this->app->erp->base64_url_encode('<div class="error">Aktion abgebrochen: Es existieren bereits Teil-Lieferscheine für diesen Auftrag. Bitte nutzen Sie die Funktion "Teil-Lieferschein erstellen".</div>');
+        $msg = $this->app->erp->base64_url_encode('<div class="error">Aktion abgebrochen: Es existieren bereits Teil-Lieferscheine. Bitte nutzen Sie "Teillieferschein erstellen".</div>');
         $this->app->Location->execute("index.php?module=auftrag&action=edit&id=$id&msg=$msg");
         return;
     }
     
     // Sicherheits-Check: Ist wirklich alles da?
     $artikelFehlend = $this->app->DB->Select(sprintf("
-        SELECT ap.id 
-        FROM auftrag_position ap
-        INNER JOIN artikel a ON ap.artikel = a.id
-        WHERE ap.auftrag = %d 
-        AND a.lagerartikel = 1
-        AND ap.menge > (
-            IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
-            - 
-            IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.parameter != %d OR r.objekt != 'auftrag')), 0)
-        )
-        LIMIT 1
-    ", $id, $id));
+        SELECT ap.id FROM auftrag_position ap INNER JOIN artikel a ON ap.artikel = a.id
+        WHERE ap.auftrag = %d AND a.lagerartikel = 1
+        AND ap.menge > (IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
+        - IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.parameter != %d OR r.objekt != 'auftrag')), 0))
+        LIMIT 1", $id, $id));
 
     if ($artikelFehlend) {
-        $msg = $this->app->erp->base64_url_encode('<div class="error">Aktion abgebrochen: Nicht alle Artikel auf Lager. Bitte Teil-Lieferschein nutzen.</div>');
+        $msg = $this->app->erp->base64_url_encode('<div class="error">Aktion abgebrochen: Nicht alle Artikel sind ausreichend auf Lager.</div>');
         $this->app->Location->execute("index.php?module=auftrag&action=edit&id=$id&msg=$msg");
         return;
     }
+
     $posids = $this->app->Secure->GetGET('posids');
     if($posids)
     {
