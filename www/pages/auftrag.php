@@ -1887,13 +1887,13 @@ class Auftrag extends GenAuftrag
       $alsproduktion
       $supplierorder
       $optionDelivery
+      $teillieferungen
       $alsrechnung
       $proformarechnungoption
       <option value=\"abschluss\">als abgeschlossen markieren</option>
       $alsfreigegeben
       <!--<option value=\"deliveryinvoice\">manuell weiterf&uuml;hren + ausbuchen</option>-->
       $kreditlimit
-      $teillieferungen
       $auswahlentsprechendkommissionierung
       $zertifikatoption
       $artikeleinlagern
