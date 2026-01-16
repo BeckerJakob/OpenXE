@@ -1690,7 +1690,7 @@ class Auftrag extends GenAuftrag
         }
 
         if ($offenePositionenVorhanden) {
-            $teillieferungen .= '<option value="teillieferschein">Teil-Lieferschein erstellen / Restmenge</option>';
+            $teillieferungen .= '<option value="teillieferschein">als Teillieferschein weiterf&uuml;hren</option>';
         }
     }  
 
