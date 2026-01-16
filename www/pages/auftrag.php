@@ -1898,7 +1898,7 @@ class Auftrag extends GenAuftrag
         <!-- $kreditlimit -->
         <!-- $zertifikatoption -->
 
-        <optgroup label=\"Auftrag (Status)\">
+        <optgroup label=\"Auftrag\">
           <option value=\"abschluss\">Auftrag abschliessen</option>
           $freigabe <!-- LABEL: Auftrag freigeben -->
           $storno <!-- LABEL: Auftrag stornieren -->
@@ -1914,7 +1914,7 @@ class Auftrag extends GenAuftrag
           $alsrechnung <!-- LABEL: Rechnung erstellen -->
         </optgroup>
         
-        <optgroup label=\"Dokumente & Versand\">
+        <optgroup label=\"Dokument\">
           <option value=\"pdf\">PDF herunterladen</option>
           <option value=\"abschicken\">Dokument versenden</option>
         </optgroup>
