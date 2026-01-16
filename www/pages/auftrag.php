@@ -1686,7 +1686,7 @@ class Auftrag extends GenAuftrag
     if ($status === 'freigegeben') {
         // Voll-Lieferschein nur anbieten, wenn noch nichts geliefert wurde UND alles da ist
         if ($vollversandMoeglich) {
-            $optionDelivery = '<option value="delivery">als Lieferschein weiterf&uuml;hren</option>';
+            $optionDelivery = '<option value="delivery">Lieferschein erstellen</option>';
         }
 
         if ($offenePositionenVorhanden) {
@@ -1779,7 +1779,7 @@ class Auftrag extends GenAuftrag
     }
 
     if($lieferantenauftrag!='1') {
-      $alsrechnung = '<option value="invoice">als Rechnung weiterf&uuml;hren</option>';
+      $alsrechnung = '<option value="invoice">Rechnung erstellen</option>';
     }
 
     $hookoption = '';
@@ -1820,7 +1820,7 @@ class Auftrag extends GenAuftrag
     
     $supplierorder = '';
     if($showSupplierOrder) {
-        $supplierorder = '<option value="supplierorder">bei Lieferant(en) bestellen</option>';
+        $supplierorder = '<option value="supplierorder">Fehlende Artikel bestellen</option>';
     }
 
     $menu ="
@@ -1877,36 +1877,47 @@ class Auftrag extends GenAuftrag
 
 
       Aktion:&nbsp;<select id=\"aktion$prefix\" onchange=\"onchangeauftrag(this.value);\">
-      <option>bitte w&auml;hlen ...</option>
-      $storno
-      <option value=\"copy\">Auftrag kopieren</option>
-      $freigabe
-      <option value=\"abschicken\">Auftrag abschicken</option>
-      <!--<option value=\"proforma\">Proforma Rechnung &ouml;ffnen</option>-->
-      $alsbestellung
-      $alsproduktion
-      $supplierorder
-      $optionDelivery
-      $teillieferungen
-      $alsrechnung
-      $proformarechnungoption
-      <option value=\"abschluss\">als abgeschlossen markieren</option>
-      $alsfreigegeben
-      <!--<option value=\"deliveryinvoice\">manuell weiterf&uuml;hren + ausbuchen</option>-->
-      $kreditlimit
-      $auswahlentsprechendkommissionierung
-      $zertifikatoption
-      $artikeleinlagern
-      $artikelauslagern
-      $shopexport
-      $optionlieferkette
-      $optioncustom
-      $optionhook
-      $optionbelegeimport
-      $alleartikelreservieren
-      $hookoption
-      <option value=\"etiketten\">Etiketten drucken</option>
-      <option value=\"pdf\">PDF &ouml;ffnen</option>
+        <option>bitte w&auml;hlen ...</option>
+        
+        <!--<option value=\"copy\">Auftrag kopieren</option>-->
+        <!--<option value=\"proforma\">Proforma Rechnung &ouml;ffnen</option>-->
+        <!--<option value=\"deliveryinvoice\">manuell weiterf&uuml;hren + ausbuchen</option>-->
+        <!-- $auswahlentsprechendkommissionierung -->
+        <!-- $artikeleinlagern -->
+        <!-- $artikelauslagern -->
+        <!-- $shopexport -->
+        <!-- $optionlieferkette -->
+        <!-- $optioncustom -->
+        <!-- $optionhook -->
+        <!-- $optionbelegeimport -->
+        <!-- $alleartikelreservieren -->
+        <!-- $hookoption -->
+        <!-- <option value=\"etiketten\">Etiketten drucken</option> -->
+        <!-- $proformarechnungoption -->
+        <!-- $alsfreigegeben -->
+        <!-- $kreditlimit -->
+        <!-- $zertifikatoption -->
+
+        <optgroup label=\"Auftrag (Status)\">
+          <option value=\"abschluss\">Auftrag abschliessen</option>
+          $freigabe <!-- LABEL: Auftrag freigeben -->
+          $storno <!-- LABEL: Auftrag stornieren -->
+        </optgroup>
+        
+        <optgroup label=\"Lager & Logistik\">
+          $supplierorder <!-- LABEL: Fehlende Artikel bestellen : verfügbar wenn noch nicht für jeden fehlenden Artikel eine Bestellung existiert -->
+          $optionDelivery <!-- LABEL: Lieferschein erstellen : verfügbar nur wenn alle artikel verfügbar sind -->
+          $teillieferungen <!-- LABEL: Teillieferschein erstellen : verfügbar wenn ein teil der artikel verfügbar ist nicht wenn alle artikel verfügbar sind -->
+        </optgroup>
+
+        <optgroup label=\"Buchhaltung\">
+          $alsrechnung <!-- LABEL: Rechnung erstellen -->
+        </optgroup>
+        
+        <optgroup label=\"Dokumente & Versand\">
+          <option value=\"pdf\">PDF herunterladen</option>
+          <option value=\"abschicken\">Dokument versenden</option>
+        </optgroup>
       </select>&nbsp;
 
     <a href=\"index.php?module=auftrag&action=pdf&id=%value%\" title=\"PDF\"><img border=\"0\" src=\"./themes/new/images/pdf.svg\"></a>";

@@ -3432,7 +3432,7 @@ class YUI {
     $anzahl = 0;
     if($this->app->erp->Firmendaten("ampelbestellung")!="1")
     {
-      $go_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_bestellt.png\" style=\"margin-right:1px\" title=\"Ware auf Lager / Bestellung eingelagert\" border=\"0\">";
+      $go_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_bestellt.png\" style=\"margin-right:1px\" title=\"Ware auf Lager / Bestellung eingelagert / Ware nicht bestellbar\" border=\"0\">";
       $ready_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_bestellung_freigegeben.png\" style=\"margin-right:1px\" title=\"Bestellung wartet auf Wareneingang\" border=\"0\">";
       $wait_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_bestellung_angelegt.png\" style=\"margin-right:1px\" title=\"Bestellung noch nicht versendet\" border=\"0\">";
       $stop_bestellung = "<img src=\"./themes/{$this->app->Conf->WFconf['defaulttheme']}/images/ware_nicht_bestellt.png\" style=\"margin-right:1px\" title=\"Bestellung noch nicht erstellt\" border=\"0\">";
