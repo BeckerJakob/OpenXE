@@ -12376,79 +12376,77 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
     $this->app->DB->Update("UPDATE auftrag SET bezahlung_ok = '$bezahlung_ok' WHERE id = '$auftrag' LIMIT 1");
 
     // lieferschein_ok CODE
-    $lieferschein_ok = 0;
-    
-    // Check if Lieferscheine exist
-    $lieferscheine = $this->app->DB->SelectArr("SELECT id, status FROM lieferschein WHERE auftragid = '$auftrag' AND status != 'storniert'");
+    $lieferschein_ok = 0; // Standard: Noch nicht (vollständig) erstellt
 
-    if (is_array($lieferscheine) && count($lieferscheine) > 0) {
-        $check_step1 = true;
-        
-        // Schritt 1: Validierung der Vollständigkeit (Titel, Texte, Mengen)
-        foreach($lieferscheine as $ls) {
-            $sql_pos = "SELECT lp.menge as ls_menge, ap.menge as ap_menge, lp.bezeichnung as ls_bez, ap.bezeichnung as ap_bez, lp.beschreibung as ls_besch, ap.beschreibung as ap_besch 
-                        FROM lieferschein_position lp 
-                        LEFT JOIN auftrag_position ap ON lp.auftrag_position_id = ap.id 
-                        WHERE lp.lieferschein = '".$ls['id']."'";
-            $positions = $this->app->DB->SelectArr($sql_pos);
+    // 1. Alle Auftragspositionen holen
+    $auftrag_pos = $this->app->DB->SelectArr("SELECT id, bezeichnung, beschreibung, menge FROM auftrag_position WHERE auftragid = '$auftrag'");
+
+    $alles_erstellt = true;
+
+    if (is_array($auftrag_pos) && count($auftrag_pos) > 0) {
+        foreach ($auftrag_pos as $ap) {
+            // Summe der Mengen und Validierung der Texte über ALLE Lieferscheine für diese eine Position
+            $sql_sum = "SELECT SUM(lp.menge) as gesamt_ls_menge 
+                        FROM lieferschein_position lp
+                        JOIN lieferschein l ON lp.lieferschein = l.id
+                        WHERE lp.auftrag_position_id = '".$ap['id']."' 
+                        AND l.status != 'storniert'
+                        AND lp.bezeichnung = ".$this->app->DB->Escape($ap['bezeichnung'])."
+                        AND lp.beschreibung = ".$this->app->DB->Escape($ap['beschreibung']);
             
-            if(!$positions || count($positions) == 0) {
-                 $check_step1 = false; break;
+            $res = $this->app->DB->Select($sql_sum);
+            $gelieferte_summe = (float)$res;
+
+            // Wenn die Summe der Lieferscheine nicht der Auftragsmenge entspricht
+            if ($gelieferte_summe < (float)$ap['menge']) {
+                $alles_erstellt = false;
+                break;
+            }
+        }
+    } else {
+        $alles_erstellt = false;
+    }
+
+    // Wenn Schritt 1 (Vollständigkeit) bestanden ist, prüfen wir die weiteren Status
+    if ($alles_erstellt) {
+        
+        // Alle zugehörigen Lieferscheine für die weiteren Prüfungen holen
+        $lieferscheine = $this->app->DB->SelectArr("SELECT id, status FROM lieferschein WHERE auftragid = '$auftrag' AND status != 'storniert'");
+        
+        $alle_ausgelagert = true;
+        $alle_freigegeben = true;
+
+        foreach ($lieferscheine as $ls) {
+            // Schritt 2: Prüfung Auslagerung
+            $not_ausgelagert = $this->app->DB->Select("SELECT COUNT(*) FROM lieferschein_position WHERE lieferschein='".$ls['id']."' AND geliefert < menge");
+            if ($not_ausgelagert > 0) {
+                $alle_ausgelagert = false;
             }
 
-            foreach($positions as $pos) {
-                // Prüfe Texte "Gibt es Differenzen in Titeln, Texten..."
-                if($pos['ls_bez'] != $pos['ap_bez'] || $pos['ls_besch'] != $pos['ap_besch']) {
-                    $check_step1 = false; break;
-                }
-                // Prüfe Mengen "... oder Mengen zwischen Auftrag und Lieferschein"
-                if(abs($pos['ls_menge'] - $pos['ap_menge']) > 0.0001) {
-                    $check_step1 = false; break;
-                }
+            // Schritt 3: Prüfung Status (Druck/Freigabe)
+            // Hier prüfen wir auf deinen gewünschten Status "FREIGEGEBEN"
+            if ($ls['status'] !== 'FREIGEGEBEN') {
+                $alle_freigegeben = false;
             }
-            if(!$check_step1) break;
         }
 
-        if ($check_step1) {
-             // Schritt 2: Validierung der Auslagerung (Status 2)
-             // "Sind alle ... Lieferscheine bereits als 'ausgelagert' markiert?"
-             $check_step2 = true;
-             foreach($lieferscheine as $ls) {
-                 // Prüfe ob ausgelagert (geliefert >= menge)
-                 $not_ausgelagert = $this->app->DB->Select("SELECT COUNT(*) FROM lieferschein_position WHERE lieferschein='".$ls['id']."' AND geliefert < menge");
-                 if($not_ausgelagert > 0) {
-                     $check_step2 = false; break;
-                 }
-             }
-             
-             if (!$check_step2) {
-                 $lieferschein_ok = 2; // Status: Lieferschein noch nicht ausgelagert
-             } else {
-                 // Schritt 3: Validierung des Drucks/Status (Status 3 & 4)
-                 // "Stehen alle Lieferscheine auf 'VERSENDET'?"
-                 $check_step3 = true;
-                 foreach($lieferscheine as $ls) {
-                     if($ls['status'] != 'versendet' && $ls['status'] != 'abgeschlossen') {
-                         $check_step3 = false; break;
-                     }
-                 }
-                 
-                 if ($check_step3) {
-                     $lieferschein_ok = 1; // Status: Lieferschein ausgedruckt (Status 4 -> 1 in YUI)
-                 } else {
-                     $lieferschein_ok = 3; // Status: Lieferschein noch nicht gedruckt (Status 3 in YUI)
-                 }
-                 $this->app->DB->Update("UPDATE auftrag SET lager_ok = '1' WHERE id = '$auftrag'");
-             }
-
+        if (!$alle_ausgelagert) {
+            $lieferschein_ok = 2; // Lieferschein noch nicht ausgelagert
+        } elseif (!$alle_freigegeben) {
+            $lieferschein_ok = 3; // Lieferschein noch nicht gedruckt
         } else {
-            $lieferschein_ok = 0; // Status: Lieferschein noch nicht erstellt (Status 1 Fail -> 0 in YUI)
+            $lieferschein_ok = 1; // Lieferschein ausgedruckt (Status 4 in deiner Logik)
         }
         
+        // Lager_ok Flag setzen, wenn alles erstellt ist
+        $this->app->DB->Update("UPDATE auftrag SET lager_ok = '1' WHERE id = '$auftrag'");
+
     } else {
-        $lieferschein_ok = 0;
+        $lieferschein_ok = 0; // Lieferschein noch nicht (korrekt/vollständig) erstellt
+        $this->app->DB->Update("UPDATE auftrag SET lager_ok = '0' WHERE id = '$auftrag'");
     }
-    
+
+    // Finales Update des Auftragsstatus
     $this->app->DB->Update("UPDATE auftrag SET lieferschein_ok = '$lieferschein_ok' WHERE id = '$auftrag'");
 
     // projekt check start
