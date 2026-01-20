@@ -1901,11 +1901,14 @@ class Auftrag extends GenAuftrag
         <!-- $kreditlimit -->
         <!-- $zertifikatoption -->
 
-        <optgroup label=\"Lager & Logistik\">
-          $supplierorder <!-- LABEL: Fehlende Artikel bestellen : verfügbar wenn noch nicht für jeden fehlenden Artikel eine Bestellung existiert -->
-          $optionDelivery <!-- LABEL: Lieferschein erstellen : verfügbar nur wenn alle artikel verfügbar sind -->
-          $teillieferungen <!-- LABEL: Teillieferschein erstellen : verfügbar wenn ein teil der artikel verfügbar ist nicht wenn alle artikel verfügbar sind -->
-        </optgroup>
+        // GRUPPE: LAGER & LOGISTIK
+        if ($supplierorder != '' || $optionDelivery != '' || $teillieferungen != '') {
+            $menu .= "<optgroup label=\"Lager & Logistik\">";
+            $menu .= $supplierorder;   // Fehlende Artikel bestellen : verfügbar wenn noch nicht für jeden fehlenden Artikel eine Bestellung existiert
+            $menu .= $optionDelivery;  // Lieferschein erstellen : verfügbar nur wenn alle artikel verfügbar sind
+            $menu .= $teillieferungen; // Teillieferschein erstellen : verfügbar wenn ein teil der artikel verfügbar ist nicht wenn alle artikel verfügbar sind
+            $menu .= "</optgroup>";
+        }
         
         <optgroup label=\"Buchhaltung\">
          $alsrechnung <!-- LABEL: Rechnung erstellen -->
