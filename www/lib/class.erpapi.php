@@ -12376,16 +12376,44 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
     $this->app->DB->Update("UPDATE auftrag SET bezahlung_ok = '$bezahlung_ok' WHERE id = '$auftrag' LIMIT 1");
 
     // lieferschein_ok CODE
-    $lieferschein_ok = 1;
-    $sql = "UPDATE auftrag 
-            SET lieferschein_ok = '$lieferschein_ok' 
-            WHERE id = '$auftrag' 
-            /* Bedingung: Führe das Update nur aus, wenn ein Lieferschein existiert */
-            AND EXISTS (
-                SELECT 1 FROM lieferschein WHERE auftragid = '$auftrag'
-            )";
+    $offenePositionen = $this->app->DB->Select("
+        SELECT COUNT(ap.id) 
+        FROM auftrag_position ap 
+        LEFT JOIN artikel art ON ap.artikel = art.id
+        WHERE ap.auftrag = '$auftrag' 
+        AND art.lagerartikel = 1 
+        AND ap.geliefert = 0
+        AND ap.id NOT IN (SELECT auftrag_position_id FROM lieferschein_position WHERE lieferschein IN (SELECT id FROM lieferschein WHERE auftragid = '$auftrag'))
+    ");
 
-    $this->app->DB->Update($sql);
+    // 2. Aggregierte Zustände aller vorhandenen Lieferscheine abrufen
+    $lsAgg = $this->app->DB->SelectRow("
+        SELECT 
+            COUNT(id) as gesamt,
+            SUM(IF(status != 'abgeschlossen' AND versendet = 0, 1, 0)) as anzahl_entwurf,
+            SUM(IF(status = 'abgeschlossen' AND versendet = 0, 1, 0)) as anzahl_ausgelagert,
+            SUM(IF(versendet = 1, 1, 0)) as anzahl_versendet
+        FROM lieferschein 
+        WHERE auftragid = '$auftrag'
+    ");
+
+    // 3. Status-Ermittlung nach dem "Schwächsten-Glied-Prinzip"
+    if ($offenePositionen > 0 || $lsAgg['gesamt'] == 0) {
+        // Es fehlen noch Artikel in Lieferscheinen ODER es gibt gar keinen LS
+        $lieferschein_ok = 0; // Orange (ware_stop.png)
+    } elseif ($lsAgg['anzahl_entwurf'] > 0) {
+        // Wenn auch nur ein LS noch im Entwurf (gelb) ist
+        $lieferschein_ok = 3; // Gelb (ware_lieferschein_erstellt.png)
+    } elseif ($lsAgg['anzahl_ausgelagert'] > 0) {
+        // Wenn kein Entwurf mehr da ist, aber mindestens einer noch nicht gedruckt (blau)
+        $lieferschein_ok = 4; // Blau (ware_lieferschein_ausgelagert.png)
+    } else {
+        // Nur wenn alle Artikel verarbeitet UND alle Lieferscheine versendet sind
+        $lieferschein_ok = 1; // Grün (ware_go.png)
+    }
+
+    // Update im Auftrag
+    $this->app->DB->Update("UPDATE auftrag SET lieferschein_ok = '$lieferschein_ok' WHERE id = '$auftrag' LIMIT 1");
 
     // projekt check start
     $projektcheck = 0;
