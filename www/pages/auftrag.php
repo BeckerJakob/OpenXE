@@ -1826,8 +1826,7 @@ class Auftrag extends GenAuftrag
         $supplierorder = '<option value="supplierorder">Fehlende Artikel bestellen</option>';
     }
 
-    $menu ="
-
+    $menu = "
       <script type=\"text/javascript\">
       function onchangeauftrag(cmd)
       {
@@ -1878,6 +1877,47 @@ class Auftrag extends GenAuftrag
       }
     </script>
 
+    Aktion:&nbsp;<select id=\"aktion$prefix\" onchange=\"onchangeauftrag(this.value);\">
+      <option>bitte w&auml;hlen ...</option>";
+
+    // Gruppe: LAGER & LOGISTIK
+    if ($supplierorder != '' || $optionDelivery != '' || $teillieferungen != '') {
+        $menu .= "<optgroup label=\"Lager & Logistik\">";
+        $menu .= $supplierorder;
+        $menu .= $optionDelivery;
+        $menu .= $teillieferungen;
+        $menu .= "</optgroup>";
+    }
+
+    // Gruppe: BUCHHALTUNG
+    if ($alsrechnung != '') {
+        $menu .= "<optgroup label=\"Buchhaltung\">";
+        $menu .= $alsrechnung;
+        $menu .= "</optgroup>";
+    }
+
+    // Gruppe: AUFTRAG
+    if ($freigabe != '' || $storno != '') {
+        $menu .= "<optgroup label=\"Auftrag\">
+          <option value=\"abschluss\">Auftrag abschliessen</option>";
+        $menu .= $freigabe;
+        $menu .= $storno;
+        $menu .= "</optgroup>";
+    }
+
+    // Gruppe: DOKUMENT
+    $menu .= "
+      <optgroup label=\"Dokument\">
+        <option value=\"pdf\">PDF herunterladen</option>
+        <option value=\"abschicken\">Dokument versenden</option>
+      </optgroup>
+    </select>&nbsp;
+
+    <a href=\"index.php?module=auftrag&action=pdf&id=%value%\" title=\"PDF\"><img border=\"0\" src=\"./themes/new/images/pdf.svg\"></a>";
+
+    $menu = str_replace('%value%',$id,$menu);
+    return $menu.$proformapopup;
+    // --- BIS HIER ERSETZEN ---
 
       Aktion:&nbsp;<select id=\"aktion$prefix\" onchange=\"onchangeauftrag(this.value);\">
         <option>bitte w&auml;hlen ...</option>
