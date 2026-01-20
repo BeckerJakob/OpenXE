@@ -1781,8 +1781,12 @@ class Auftrag extends GenAuftrag
       $extendtext = 'HINWEIS: Es existiert bereits eine Rechnung zu diesem Auftrag! ';
     }
 
-    if($lieferantenauftrag!='1') {
+    $alsrechnung = '';
+    if($lieferantenauftrag != '1') {
       $alsrechnung = '<option value="invoice">Rechnung erstellen</option>';
+      if($checkifrgexists>0) {
+        $alsrechnung = '<option value="invoice">Weitere Rechnung erstellen</option>';
+      }
     }
 
     $hookoption = '';
