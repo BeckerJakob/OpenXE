@@ -12385,14 +12385,19 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
 
     if (is_array($auftrag_pos) && count($auftrag_pos) > 0) {
         foreach ($auftrag_pos as $ap) {
-            // Summe der Mengen und Validierung der Texte über ALLE Lieferscheine für diese eine Position
+            $bez_esc = $this->app->DB->RealEscapeString(trim($ap['bezeichnung']));
+            $besch_esc = $this->app->DB->RealEscapeString(trim($ap['beschreibung']));
+        
+            // Summe der Mengen über alle zugehörigen Lieferscheine prüfen
+            // Wir vergleichen hier ID, Bezeichnung und Beschreibung
             $sql_sum = "SELECT SUM(lp.menge) as gesamt_ls_menge 
                         FROM lieferschein_position lp
                         JOIN lieferschein l ON lp.lieferschein = l.id
                         WHERE lp.auftrag_position_id = '".$ap['id']."' 
                         AND l.status != 'storniert'
-                        AND lp.bezeichnung = ".$this->app->DB->Escape($ap['bezeichnung'])."
-                        AND lp.beschreibung = ".$this->app->DB->Escape($ap['beschreibung']);
+                        AND l.auftrag = '$auftrag'
+                        AND TRIM(lp.bezeichnung) = '$bez_esc'
+                        AND TRIM(lp.beschreibung) = '$besch_esc'";
             
             $res = $this->app->DB->Select($sql_sum);
             $gelieferte_summe = (float)$res;
