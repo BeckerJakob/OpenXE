@@ -12425,10 +12425,10 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
                  $lieferschein_ok = 2; // Status: Lieferschein noch nicht ausgelagert
              } else {
                  // Schritt 3: Validierung des Drucks/Status (Status 3 & 4)
-                 // "Stehen alle Lieferscheine auf 'FREIGEGEBEN'?"
+                 // "Stehen alle Lieferscheine auf 'VERSENDET'?"
                  $check_step3 = true;
                  foreach($lieferscheine as $ls) {
-                     if($ls['status'] != 'freigegeben' && $ls['status'] != 'versendet' && $ls['status'] != 'abgeschlossen') {
+                     if($ls['status'] != 'versendet' && $ls['status'] != 'abgeschlossen') {
                          $check_step3 = false; break;
                      }
                  }
