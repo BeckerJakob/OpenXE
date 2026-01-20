@@ -12387,9 +12387,11 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
                             ap.menge as soll_menge, 
                             IFNULL(SUM(lp.menge), 0) as ist_menge
                          FROM auftrag_position ap
+                         LEFT JOIN artikel a ON ap.artikel = a.id
                          LEFT JOIN lieferschein_position lp ON lp.auftrag_position_id = ap.id
                          LEFT JOIN lieferschein l ON lp.lieferschein = l.id AND l.status != 'storniert'
                          WHERE ap.auftrag = '$auftrag'
+                         AND a.lagerartikel = 1
                          GROUP BY ap.id";
                          
         $coverage_check = $this->app->DB->SelectArr($sql_coverage);
