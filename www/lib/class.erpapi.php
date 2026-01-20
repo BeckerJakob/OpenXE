@@ -12438,6 +12438,7 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
                  } else {
                      $lieferschein_ok = 3; // Status: Lieferschein noch nicht gedruckt (Status 3 in YUI)
                  }
+                 $this->app->DB->Update("UPDATE auftrag SET lager_ok = '1' WHERE id = '$auftrag'");
              }
 
         } else {
