@@ -1826,6 +1826,11 @@ class Auftrag extends GenAuftrag
         $supplierorder = '<option value="supplierorder">Fehlende Artikel bestellen</option>';
     }
 
+    $lagermenu = '';
+    if($supplierorder != '' || $optionDelivery != '' || $teillieferungen != '') {
+        $lagermenu = "<optgroup label=\"Lager & Logistik\">$supplierorder $optionDelivery $teillieferungen</optgroup>";
+    }
+
     $menu ="
 
       <script type=\"text/javascript\">
@@ -1901,13 +1906,7 @@ class Auftrag extends GenAuftrag
         <!-- $kreditlimit -->
         <!-- $zertifikatoption -->
 
-        if ($supplierorder != '' || $optionDelivery != '' || $teillieferungen != '') {
-          <optgroup label=\"Lager & Logistik\">
-            $supplierorder <!-- LABEL: Fehlende Artikel bestellen :  -->
-            $optionDelivery <!-- LABEL: Lieferschein erstellen : verfügbar nur wenn alle artikel verfügbar sind -->
-            $teillieferungen <!-- LABEL: Teillieferschein erstellen : verfügbar wenn ein teil der artikel verfügbar ist nicht wenn alle artikel verfügbar sind -->
-          </optgroup>
-        }
+        $lagermenu
         
         <optgroup label=\"Buchhaltung\">
          $alsrechnung <!-- LABEL: Rechnung erstellen -->
