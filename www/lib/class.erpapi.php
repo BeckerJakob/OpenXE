@@ -12376,17 +12376,11 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
     $this->app->DB->Update("UPDATE auftrag SET bezahlung_ok = '$bezahlung_ok' WHERE id = '$auftrag' LIMIT 1");
 
     // lieferschein_ok CODE
-// lieferschein_ok CODE
     $lieferschein_ok = 0;
     
-    // Check if Lieferscheine exist
     $lieferscheine = $this->app->DB->SelectArr("SELECT id, status FROM lieferschein WHERE auftragid = '$auftrag' AND status != 'storniert'");
 
     if (is_array($lieferscheine) && count($lieferscheine) > 0) {
-        
-        // SCHRITT 0: Vollständigkeitsprüfung (Coverage Check)
-        // Prüfen, ob ALLE Auftragspositionen vollständig in Lieferscheinen enthalten sind.
-        // Wenn auch nur eine Position fehlt oder eine Teilmenge offen ist, bleibt der Status 0.
         
         $sql_coverage = "SELECT 
                             ap.id, 
@@ -12399,89 +12393,51 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
                          GROUP BY ap.id";
                          
         $coverage_check = $this->app->DB->SelectArr($sql_coverage);
+        
         $is_fully_covered = true;
         
-        if (is_array($coverage_check)) {
+        if (is_array($coverage_check) && count($coverage_check) > 0) {
             foreach($coverage_check as $pos) {
-                // Wenn Bestellmenge > Lieferscheinmenge (mit kleiner Toleranz für Float)
                 if (($pos['soll_menge'] - $pos['ist_menge']) > 0.0001) {
                     $is_fully_covered = false;
                     break;
                 }
             }
         } else {
-            // Keine Positionen gefunden? Sicherheitshalber false.
             $is_fully_covered = false;
         }
 
-        // Nur weitermachen, wenn alles abgedeckt ist. Sonst bleibt $lieferschein_ok = 0.
         if ($is_fully_covered) {
             
-            $check_step1 = true;
+            $check_step2 = true;
             
-            // Schritt 1: Validierung der Inhalte (Titel, Texte)
             foreach($lieferscheine as $ls) {
-                $sql_pos = "SELECT lp.menge as ls_menge, ap.menge as ap_menge, lp.bezeichnung as ls_bez, ap.bezeichnung as ap_bez, lp.beschreibung as ls_besch, ap.beschreibung as ap_besch 
-                            FROM lieferschein_position lp 
-                            LEFT JOIN auftrag_position ap ON lp.auftrag_position_id = ap.id 
-                            WHERE lp.lieferschein = '".$ls['id']."'";
-                $positions = $this->app->DB->SelectArr($sql_pos);
-                
-                if(!$positions || count($positions) == 0) {
-                     $check_step1 = false; break;
-                }
-
-                foreach($positions as $pos) {
-                    // Prüfe Texte "Gibt es Differenzen in Titeln, Texten..."
-                    if($pos['ls_bez'] != $pos['ap_bez'] || $pos['ls_besch'] != $pos['ap_besch']) {
-                        $check_step1 = false; break;
-                    }
-                    // Hinweis: Mengenprüfung wurde bereits in Schritt 0 global erledigt, 
-                    // hier wird geprüft ob die Einzelposition im LS vom Auftrag abweicht (z.B. Texte).
-                }
-                if(!$check_step1) break;
+                 $not_ausgelagert = $this->app->DB->Select("SELECT COUNT(*) FROM lieferschein_position WHERE lieferschein='".$ls['id']."' AND geliefert < menge");
+                 if($not_ausgelagert > 0) {
+                     $check_step2 = false; break;
+                 }
             }
-
-            if ($check_step1) {
-                 // Schritt 2: Validierung der Auslagerung (Status 2)
-                 // "Sind alle ... Lieferscheine bereits als 'ausgelagert' markiert?"
-                 $check_step2 = true;
+            
+            if (!$check_step2) {
+                 $lieferschein_ok = 2;
+            } else {
+                 $check_step3 = true;
                  foreach($lieferscheine as $ls) {
-                     // Prüfe ob ausgelagert (geliefert >= menge)
-                     $not_ausgelagert = $this->app->DB->Select("SELECT COUNT(*) FROM lieferschein_position WHERE lieferschein='".$ls['id']."' AND geliefert < menge");
-                     if($not_ausgelagert > 0) {
-                         $check_step2 = false; break;
+                     if($ls['status'] != 'versendet' && $ls['status'] != 'abgeschlossen') {
+                         $check_step3 = false; break;
                      }
                  }
                  
-                 if (!$check_step2) {
-                     $lieferschein_ok = 2; // Status: Lieferschein noch nicht ausgelagert
+                 if ($check_step3) {
+                     $lieferschein_ok = 1;
                  } else {
-                     // Schritt 3: Validierung des Drucks/Status (Status 3 & 4)
-                     // "Stehen alle Lieferscheine auf 'VERSENDET'?"
-                     $check_step3 = true;
-                     foreach($lieferscheine as $ls) {
-                         if($ls['status'] != 'versendet' && $ls['status'] != 'abgeschlossen') {
-                             $check_step3 = false; break;
-                         }
-                     }
-                     
-                     if ($check_step3) {
-                         $lieferschein_ok = 1; // Status: Lieferschein ausgedruckt (Status 4 -> 1 in YUI)
-                     } else {
-                         $lieferschein_ok = 3; // Status: Lieferschein noch nicht gedruckt (Status 3 in YUI)
-                     }
-                     
-                     // Wenn wir hier sind, ist alles physikalisch da oder unterwegs
-                     $this->app->DB->Update("UPDATE auftrag SET lager_ok = '1' WHERE id = '$auftrag'");
+                     $lieferschein_ok = 3;
                  }
-
-            } else {
-                // Texte stimmen nicht überein
-                $lieferschein_ok = 0; 
+                 
+                 $this->app->DB->Update("UPDATE auftrag SET lager_ok = '1' WHERE id = '$auftrag'");
             }
+
         } else {
-            // Nicht alle Positionen sind in einem Lieferschein (Deine Anforderung)
             $lieferschein_ok = 0;
         }
         
