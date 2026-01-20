@@ -1650,12 +1650,11 @@ class Auftrag extends GenAuftrag
         INNER JOIN artikel a ON ap.artikel = a.id
         WHERE ap.auftrag = %d 
         AND a.lagerartikel = 1
-        AND ap.menge > (
-            -- Verfügbarer Netto-Bestand für diesen Artikel
+        AND (ap.menge - (
             IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
             - 
             IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.parameter != %d OR r.objekt != 'auftrag')), 0)
-        )
+        )) > 0.0001
         LIMIT 1
     ", $id, $id));
 
@@ -1664,7 +1663,7 @@ class Auftrag extends GenAuftrag
         SELECT ap.id 
         FROM auftrag_position ap
         WHERE ap.auftrag = %d 
-        AND ap.menge > IFNULL((SELECT SUM(lp.menge) FROM lieferschein_position lp JOIN lieferschein l ON lp.lieferschein = l.id WHERE lp.auftrag_position_id = ap.id AND l.status != 'storniert'), 0)
+        AND (ap.menge - IFNULL((SELECT SUM(lp.menge) FROM lieferschein_position lp JOIN lieferschein l ON lp.lieferschein = l.id WHERE lp.auftrag_position_id = ap.id AND l.status != 'storniert'), 0)) > 0.0001
         LIMIT 1
     ", $id));
 
@@ -1675,11 +1674,14 @@ class Auftrag extends GenAuftrag
         INNER JOIN artikel a ON ap.artikel = a.id
         WHERE ap.auftrag = %d 
         AND a.lagerartikel = 1
+        -- Nur betrachten, wenn Position noch offen ist (Menge > Geliefert)
+        AND (ap.menge - IFNULL((SELECT SUM(lp.menge) FROM lieferschein_position lp JOIN lieferschein l ON lp.lieferschein = l.id WHERE lp.auftrag_position_id = ap.id AND l.status != 'storniert'), 0)) > 0.0001
+        -- Und Bestand verfügbar ist
         AND (
             IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
             - 
             IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.parameter != %d OR r.objekt != 'auftrag')), 0)
-        ) > 0
+        ) > 0.0001
         LIMIT 1
     ", $id, $id));
 
