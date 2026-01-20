@@ -3818,11 +3818,12 @@ class YUI {
             CASE 
                 WHEN status = 'storniert' THEN '$storniert'
             ELSE CONCAT(                                
-                CASE
-                  WHEN a.lieferschein_ok = 1 THEN '$lieferschein_voll'
-                  WHEN a.lieferschein_ok = 2 THEN '$lieferschein_teil'
-                  WHEN a.lieferschein_ok = 3 THEN '$lieferschein_teil'
-                  ELSE '$lieferschein_kein'
+                CASE 
+                    WHEN lieferscheine <> '' AND vmenge = lmenge THEN '$lieferschein_voll'
+                    WHEN lieferschein_ohne_pos <> '' AND vmenge IS NULL THEN '$lieferschein_ohne_pos'
+                    WHEN lieferscheine <> '' THEN '$lieferschein_teil'
+                ELSE 
+                    '$lieferschein_kein'
                 END,
                 CASE 
                     WHEN tracking <> '' THEN '$paketmarke'
