@@ -12379,7 +12379,7 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
     $lieferschein_ok = 0; // Standard: Noch nicht (vollständig) erstellt
 
     // 1. Alle Auftragspositionen holen
-    $auftrag_pos = $this->app->DB->SelectArr("SELECT id, bezeichnung, beschreibung, menge FROM auftrag_position WHERE auftragid = '$auftrag'");
+    $auftrag_pos = $this->app->DB->SelectArr("SELECT id, bezeichnung, beschreibung, menge FROM auftrag_position WHERE auftrag = '$auftrag'");
 
     $alles_erstellt = true;
 
@@ -12411,7 +12411,7 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
     if ($alles_erstellt) {
         
         // Alle zugehörigen Lieferscheine für die weiteren Prüfungen holen
-        $lieferscheine = $this->app->DB->SelectArr("SELECT id, status FROM lieferschein WHERE auftragid = '$auftrag' AND status != 'storniert'");
+        $lieferscheine = $this->app->DB->SelectArr("SELECT id, status FROM lieferschein WHERE auftrag = '$auftrag' AND status != 'storniert'");
         
         $alle_ausgelagert = true;
         $alle_freigegeben = true;
