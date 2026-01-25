@@ -761,11 +761,18 @@ class Auftrag extends GenAuftrag
             // Verfügbar Netto Logic: Physisch - (Alle Reservierungen - Reservierungen für diesen Auftrag)
             // Reservierungen für diesen Auftrag ignorieren wir, da wir diese ja gerade erfüllen wollen.
             // (r.objekt != 'auftrag' OR r.parameter != $id)
+            // UPDATE: Wir müssen abziehen, was bereits in unversendeten Lieferscheinen für diesen Auftrag liegt, 
+            // da diese Ware zwar physisch da ist (noch nicht gebucht), aber logisch schon "weg" ist.
+            
+            $bereits_im_ls_unversendet_sql = "IFNULL((SELECT SUM(lp.menge) FROM lieferschein_position lp JOIN lieferschein l ON lp.lieferschein = l.id WHERE lp.auftrag_position_id = ap.id AND l.status != 'storniert' AND l.versendet = 0), 0)";
+
             $verfuegbar_netto_sql = "
                 (
                     IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
                     - 
                     IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.objekt != 'auftrag' OR r.parameter != $id)), 0)
+                    -
+                    $bereits_im_ls_unversendet_sql
                 )
             ";
             
