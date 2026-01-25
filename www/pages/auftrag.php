@@ -770,7 +770,16 @@ class Auftrag extends GenAuftrag
                 (
                     IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
                     - 
-                    IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.objekt != 'auftrag' OR r.parameter != $id)), 0)
+                    IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r 
+                        WHERE r.artikel = ap.artikel 
+                        AND (
+                            -- Ignoriere Reservierung des aktuellen Auftrags
+                            NOT (r.objekt = 'auftrag' AND r.parameter = $id)
+                            AND 
+                            -- NEU: Ignoriere Reservierung von Lieferscheinen DIESES Auftrags (da wir diese unten separat abziehen)
+                            NOT (r.objekt = 'lieferschein' AND r.parameter IN (SELECT id FROM lieferschein WHERE auftragid = $id))
+                        )
+                    ), 0)
                     -
                     $bereits_im_ls_unversendet_sql
                 )
