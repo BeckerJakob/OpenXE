@@ -242,7 +242,11 @@ class Auftrag extends GenAuftrag
             IF(
               a.internebemerkung = '',
               '',
-              ' <font color=red><strong>*</strong></font>'
+              CONCAT(
+                ' <font color=red title=\"',
+                REPLACE(a.internebemerkung, '\"', '&quot;'),
+                '\"><strong>*</strong></font>'
+              )
             ),
             IF(
               a.freitext = '',
