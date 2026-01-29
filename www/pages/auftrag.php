@@ -7882,10 +7882,10 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                         
                         // In beleg_zwischenpositionen einfügen
                         // Wir nutzen $current_sort_index für 'sort', damit es nach den gelieferten Artikeln kommt
-                        $pos = $current_sort_index - 1
+                        $pos = $current_sort_index - 1;
                         $this->app->DB->Insert("
                             INSERT INTO beleg_zwischenpositionen (doctype, doctypeid, pos, sort, postype, wert)
-                            VALUES ('lieferschein', $lieferschein_id, $pos, '0', 'gruppe', '".$this->app->DB->real_escape_string($json_wert)."')
+                            VALUES ('lieferschein', $lieferschein_id, $pos, 0, 'gruppe', '".$this->app->DB->real_escape_string($json_wert)."')
                         ");
                         
                         $current_sort_index++;
