@@ -32199,7 +32199,7 @@ function Firmendaten($field,$projekt="")
       }
 
 
-      function WeiterfuehrenAuftragZuLieferschein($id, $positionen = null, $zwischenpositionen = null)
+      function WeiterfuehrenAuftragZuLieferschein($id, $positionen = null, $zwischenpositionen = null, $allowZeroAmount = false)
       {
         if($id <= 0) {
           return null;
@@ -32261,11 +32261,16 @@ function Firmendaten($field,$projekt="")
           $poswheretmp .= ' AND ('.implode(' OR ',$posa).') ';
         }
 
+        $mengeSql = " AND ap.menge > 0 ";
+        if ($allowZeroAmount) {
+          $mengeSql = ""; // Filter entfernen, wenn Variable true ist
+        }
+
         if($nurlagerartikel)
         {
-          $pos = $this->app->DB->SelectArr("SELECT ap.*,art.porto AS artikelporto FROM auftrag_position ap INNER JOIN artikel art ON ap.artikel = art.id AND (art.lagerartikel = 1 OR (art.stueckliste = 1 AND art.juststueckliste = 1)) WHERE ap.auftrag='$id' AND ap.menge > 0 $poswheretmp ORDER BY ap.sort");
+          $pos = $this->app->DB->SelectArr("SELECT ap.*,art.porto AS artikelporto FROM auftrag_position ap INNER JOIN artikel art ON ap.artikel = art.id AND (art.lagerartikel = 1 OR (art.stueckliste = 1 AND art.juststueckliste = 1)) WHERE ap.auftrag='$id' $mengeSql $poswheretmp ORDER BY ap.sort");
         }else{
-          $pos = $this->app->DB->SelectArr("SELECT ap.*,art.porto AS artikelporto FROM auftrag_position ap LEFT JOIN artikel art ON ap.artikel = art.id WHERE ap.auftrag='$id' AND ap.menge > 0 $poswheretmp ORDER BY ap.sort");
+          $pos = $this->app->DB->SelectArr("SELECT ap.*,art.porto AS artikelporto FROM auftrag_position ap LEFT JOIN artikel art ON ap.artikel = art.id WHERE ap.auftrag='$id' $mengeSql $poswheretmp ORDER BY ap.sort");
         }
 
         if(empty($pos))

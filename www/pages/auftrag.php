@@ -7827,7 +7827,7 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                 $all_ids_for_ls = array_merge($pos_ids_to_process, $backlog_ids);
                 
                 // Erstellt Header, Adressen, Projektbezug und alle Mappings perfekt.
-                $lieferschein_id = $this->app->erp->WeiterfuehrenAuftragZuLieferschein($id, $all_ids_for_ls);
+                $lieferschein_id = $this->app->erp->WeiterfuehrenAuftragZuLieferschein($id, $all_ids_for_ls, null, true);
 
                 if ($lieferschein_id > 0) {
                     
