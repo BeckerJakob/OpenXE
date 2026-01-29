@@ -12353,15 +12353,14 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
     $rechnung = $this->app->DB->SelectRow("
         SELECT status, zahlungsstatus 
         FROM rechnung 
-        WHERE auftragid = '$auftrag' AND status != 'storniert' 
+        WHERE auftragid = '$auftrag' AND status != 'storniert' AND status != 'angelegt'
         ORDER BY id DESC LIMIT 1
     ");
 
     if ($rechnung) {
         $ist_bezahlt = ($rechnung['zahlungsstatus'] == 'bezahlt');
-        $ist_freigegeben = ($rechnung['status'] != 'angelegt');
 
-        if (!$ist_bezahlt && $ist_freigegeben) {
+        if (!$ist_bezahlt) {
             // Fall 2: Rechnung freigegeben, aber noch nicht bezahlt
             $bezahlung_ok = 2; // Blau
         } else {
