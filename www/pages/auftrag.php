@@ -5469,6 +5469,29 @@ class Auftrag extends GenAuftrag
         }
       }
 
+      // #106 --- START: GUTSCHRIFTEN LADEN ---
+      $foundInvoiceIds = array_keys($rechnungen);
+
+    if(!empty($foundInvoiceIds)) {
+        $idList = implode(',', $foundInvoiceIds);
+
+        $gutschriften = $this->app->DB->SelectPairs(
+            "SELECT id, belegnr FROM gutschrift WHERE rechnungid IN ($idList)"
+        );
+
+        // 4. Buttons generieren
+        if(!empty($gutschriften)) {
+            foreach($gutschriften as $gsId => $gsNumber) {
+                $optional .= "&nbsp;<input type=\"button\" value=\"GS "
+                    .$gsNumber
+                    ."\" onclick=\"window.location.href='index.php?module=gutschrift&action=edit&id="
+                    .$gsId."'\">";
+            }
+        }
+    }
+
+    // --- ENDE: GUTSCHRIFTEN LADEN ---
+
       $projekt = $this->app->DB->Select("SELECT projekt from auftrag where id = '$id' LIMIT 1");
     if($schreibschutz=='1' && $this->app->erp->RechteVorhanden('auftrag','schreibschutz')) {
       $this->app->Tpl->Add(
