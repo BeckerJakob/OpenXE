@@ -7804,7 +7804,7 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                             continue;
                         }
 
-                        // Prüfen, ob bereits alles geliefert wurde in vorherigen LS
+                        // Prüfen, ob bereits alles geliefert wurde in früheren Lieferscheinen
                         $bereits_geliefert = $this->app->DB->Select("
                             SELECT SUM(lp.menge) 
                             FROM lieferschein_position lp 
@@ -7862,11 +7862,10 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                         $current_sort_index++;
                     }
 
-                    // 4. Rückstandspositionen auf Menge 0 setzen und sortieren
+                    // 4. Rückstandspositionen auf Menge 0 setzen
                     if(!empty($backlog_ids)) {
                         
                         // A. Zwischenposition (Überschrift) einfügen
-                        // JSON für den Wert (Style)
                         $json_wert = json_encode(array(
                             "name" => "Folgende Artikel befinden sich im Rückstand und werden nachgeliefert:",
                             "kurztext" => "",
@@ -7880,8 +7879,6 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                             "Kurztext_Unterstrichen" => false
                         ));
                         
-                        // In beleg_zwischenpositionen einfügen
-                        // Wir nutzen $current_sort_index für 'sort', damit es nach den gelieferten Artikeln kommt
                         $this->app->DB->Insert("
                             INSERT INTO beleg_zwischenpositionen (doctype, doctypeid, pos, sort, postype, wert)
                             VALUES ('lieferschein', $lieferschein_id, $current_sort_index, $current_sort_index, 'gruppe', '".$this->app->DB->real_escape_string($json_wert)."')
@@ -7889,14 +7886,33 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                         
                         $current_sort_index++;
 
-                        // B. Rückstandsartikel updaten
+                        // B. Rückstandsartikel updaten UND Fallback-Insert
                         foreach($backlog_ids as $b_id) {
-                            $this->app->DB->Update("
+                            
+                            // Versuch 1: Update der bestehenden Zeile (falls sie durch die Standard-Funktion erstellt wurde)
+                            $update_sql = "
                                 UPDATE lieferschein_position 
                                 SET menge = 0, sort = $current_sort_index
                                 WHERE lieferschein = $lieferschein_id 
                                 AND auftrag_position_id = $b_id
-                            ");
+                            ";
+                            $this->app->DB->Update($update_sql);
+                            
+                            // Prüfung: Existiert die Zeile wirklich?
+                            // Falls die Standardfunktion Artikel zusammengefasst hat, fehlt diese Zeile für den Rückstand evtl.
+                            $check_exists = $this->app->DB->Select("SELECT id FROM lieferschein_position WHERE lieferschein = $lieferschein_id AND auftrag_position_id = $b_id");
+                            
+                            if(!$check_exists) {
+                                // FALLBACK: Manuelles Einfügen der Zeile, Kopie aus Auftragsposition
+                                $insert_sql = "
+                                    INSERT INTO lieferschein_position (lieferschein, auftrag_position_id, artikel, nummer, bezeichnung, menge, sort, einheit)
+                                    SELECT $lieferschein_id, id, artikel, nummer, bezeichnung, 0, $current_sort_index, einheit
+                                    FROM auftrag_position 
+                                    WHERE id = $b_id
+                                ";
+                                $this->app->DB->Insert($insert_sql);
+                            }
+
                             $current_sort_index++;
                         }
                     }
