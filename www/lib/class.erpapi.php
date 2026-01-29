@@ -12358,17 +12358,13 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
     ");
 
     if ($rechnung) {
-        $ist_versendet = ($rechnung['status'] == 'abgeschlossen' || $rechnung['status'] == 'versendet');
         $ist_bezahlt = ($rechnung['zahlungsstatus'] == 'bezahlt');
 
-        if (!$ist_versendet) {
-            // Fall 2: Rechnung da, aber noch nicht versendet (egal ob bezahlt oder nicht)
-            $bezahlung_ok = 2; // Gelb
-        } elseif (!$ist_bezahlt) {
-            // Fall 3: Rechnung versendet, aber wartet auf Geld
-            $bezahlung_ok = 3; // Blau
+        if (!$ist_bezahlt) {
+            // Fall 2: Rechnung freigegeben, aber noch nicht bezahlt
+            $bezahlung_ok = 2; // Blau
         } else {
-            // Fall 1: Rechnung versendet UND bezahlt
+            // Fall 1: Rechnung bezahlt (unabhängig von versandstatus)
             $bezahlung_ok = 1; // Grün
         }
     }
