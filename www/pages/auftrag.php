@@ -7875,8 +7875,8 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                         // A. Zwischenposition (Überschrift) einfügen
                         // JSON für den Wert (Style)
                         $json_wert = json_encode(array(
-                            "name" => "Folgende Artikel befinden sich im Rückstand und werden nachgeliefert:",
-                            "kurztext" => "",
+                            "name" => "",
+                            "kurztext" => "<strong><u>Folgende Artikel befinden sich im Rückstand und werden nachgeliefert:<\/u><\/strong>",
                             "Abstand_Oben" => 0,
                             "Abstand_Unten" => 5,
                             "Schriftgroesse" => 8,
