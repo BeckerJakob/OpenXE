@@ -7763,7 +7763,7 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
   } // AuftragTeillieferung 
 
   /**
-   * Create partial delivery note from order - Standard Conform Version
+   * Create partial delivery note from order - Standard Conform Version + Backlog Handling
    */
   function AuftragTeilLieferschein() {
     $id = (int)$this->app->Secure->GetGET('id');
@@ -7779,7 +7779,7 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
             $pos_ids_to_process = array();
             $qty_map = array();
 
-            // 1. Eingaben sammeln
+            // 1. Eingaben sammeln (Was wird JETZT geliefert)
             foreach ($teilmenge_input as $key => $value) {
                 if (strpos($key, 'teilmenge_') === 0 && (float)$value > 0) {
                     $posid = (int)substr($key, 10);
@@ -7789,12 +7789,51 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
             }
 
             if (!empty($pos_ids_to_process)) {
+                
+                // 1b. Rückstände ermitteln (Was ist noch offen, wird aber JETZT NICHT geliefert)
+                // Alle Positionen des Auftrags laden
+                $all_pos = $this->app->DB->SelectArr("SELECT id, menge FROM auftrag_position WHERE auftrag = $id ORDER BY sort ASC");
+                $backlog_ids = array();
+
+                if(is_array($all_pos)) {
+                    foreach($all_pos as $pos) {
+                        $ap_id = $pos['id'];
+                        
+                        // Wenn diese Position bereits für die aktuelle Lieferung markiert ist, überspringen
+                        if(in_array($ap_id, $pos_ids_to_process)) {
+                            continue;
+                        }
+
+                        // Prüfen, ob bereits alles geliefert wurde in vorherigen LS
+                        $bereits_geliefert = $this->app->DB->Select("
+                            SELECT SUM(lp.menge) 
+                            FROM lieferschein_position lp 
+                            JOIN lieferschein l ON lp.lieferschein = l.id 
+                            WHERE lp.auftrag_position_id = $ap_id 
+                            AND l.status != 'storniert'
+                        ");
+                        
+                        $offen = $pos['menge'] - floatval($bereits_geliefert);
+
+                        // Wenn noch was offen ist, muss es als 0-Position auf den LS
+                        if($offen > 0.0001) {
+                            $backlog_ids[] = $ap_id;
+                        }
+                    }
+                }
+
                 // 2. DIE STANDARD-FUNKTION NUTZEN
+                // Wir übergeben BEIDES: Die zu liefernden IDs und die Rückstands-IDs
+                $all_ids_for_ls = array_merge($pos_ids_to_process, $backlog_ids);
+                
                 // Erstellt Header, Adressen, Projektbezug und alle Mappings perfekt.
-                $lieferschein_id = $this->app->erp->WeiterfuehrenAuftragZuLieferschein($id, $pos_ids_to_process);
+                $lieferschein_id = $this->app->erp->WeiterfuehrenAuftragZuLieferschein($id, $all_ids_for_ls);
 
                 if ($lieferschein_id > 0) {
-                    // 3. Mengen anpassen & Reservierungsschutz (Netto-Prüfung)
+                    
+                    $current_sort_index = 1;
+
+                    // 3. Mengen anpassen & Reservierungsschutz (Netto-Prüfung) für GELIEFERTE Artikel
                     foreach ($qty_map as $auftrag_pos_id => $user_qty) {
                         
                         // Aktuelle Verfügbarkeit für diese Position prüfen
@@ -7813,17 +7852,57 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                         $final_qty = min($user_qty, $available);
                         if ($final_qty < 0) $final_qty = 0;
 
-                        // Menge im soeben erstellten Lieferschein korrigieren
+                        // Menge im soeben erstellten Lieferschein korrigieren und Sortierung setzen
                         $this->app->DB->Update("
                             UPDATE lieferschein_position 
-                            SET menge = $final_qty 
+                            SET menge = $final_qty, sort = $current_sort_index
                             WHERE lieferschein = $lieferschein_id 
                             AND auftrag_position_id = $auftrag_pos_id
                         ");
+                        $current_sort_index++;
                     }
 
-                    // 4. Abschluss
-                    $this->app->erp->AuftragProtokoll($id, "Teil-Lieferschein (Standard-Routine) erstellt: LS-$lieferschein_id");
+                    // 4. Rückstandspositionen auf Menge 0 setzen und sortieren
+                    if(!empty($backlog_ids)) {
+                        
+                        // A. Zwischenposition (Überschrift) einfügen
+                        // JSON für den Wert (Style)
+                        $json_wert = json_encode(array(
+                            "name" => "Folgende Artikel befinden sich im Rückstand und werden nachgeliefert:",
+                            "kurztext" => "",
+                            "Abstand_Oben" => 0,
+                            "Abstand_Unten" => 5,
+                            "Schriftgroesse" => 8,
+                            "Fett" => true,
+                            "Unterstrichen" => false,
+                            "Abstand_Links" => 0,
+                            "Kurztext_Abstand_Links" => 0,
+                            "Kurztext_Unterstrichen" => false
+                        ));
+                        
+                        // In beleg_zwischenpositionen einfügen
+                        // Wir nutzen $current_sort_index für 'sort', damit es nach den gelieferten Artikeln kommt
+                        $this->app->DB->Insert("
+                            INSERT INTO beleg_zwischenpositionen (doctype, doctypeid, pos, sort, postype, wert)
+                            VALUES ('lieferschein', $lieferschein_id, $current_sort_index, $current_sort_index, 'gruppe', '".$this->app->DB->real_escape_string($json_wert)."')
+                        ");
+                        
+                        $current_sort_index++;
+
+                        // B. Rückstandsartikel updaten
+                        foreach($backlog_ids as $b_id) {
+                            $this->app->DB->Update("
+                                UPDATE lieferschein_position 
+                                SET menge = 0, sort = $current_sort_index
+                                WHERE lieferschein = $lieferschein_id 
+                                AND auftrag_position_id = $b_id
+                            ");
+                            $current_sort_index++;
+                        }
+                    }
+
+                    // 5. Abschluss
+                    $this->app->erp->AuftragProtokoll($id, "Teil-Lieferschein (Standard-Routine + Rückstandsausweis) erstellt: LS-$lieferschein_id");
                     header('Location: index.php?module=lieferschein&action=edit&id='.$lieferschein_id);
                     exit;
                 } else {
