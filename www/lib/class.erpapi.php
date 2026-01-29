@@ -12359,8 +12359,9 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
 
     if ($rechnung) {
         $ist_bezahlt = ($rechnung['zahlungsstatus'] == 'bezahlt');
+        $ist_freigegeben = ($rechnung['status'] != 'angelegt');
 
-        if (!$ist_bezahlt) {
+        if (!$ist_bezahlt && $ist_freigegeben) {
             // Fall 2: Rechnung freigegeben, aber noch nicht bezahlt
             $bezahlung_ok = 2; // Blau
         } else {
