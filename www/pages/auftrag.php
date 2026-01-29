@@ -7888,7 +7888,7 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                                 $ls_pos_data['sort'] = 9999; // Vorerst ganz nach hinten, wird unten sortiert
                                 
                                 // 3. Als neue Zeile einfügen
-                                $this->app->DB->InsertArr("lieferschein_position", $ls_pos_data);
+                                $this->app->DB->InsertArr("lieferschein_position", $ls_pos_data, true);
                                 $new_split_id = $this->app->DB->GetInsertID();
                                 
                                 // 4. Merken für die Rückstandssortierung
