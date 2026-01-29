@@ -7875,20 +7875,32 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                         
                         // Toleranzbereich für Float-Vergleich
                         if (($original_open - $final_qty) > 0.0001) {
-                            // JA, wir haben einen Split! (z.B. 5 bestellt, 3 geliefert -> 2 fehlen noch)
-                            // Wir müssen die soeben bearbeitete Lieferscheinposition duplizieren.
+                            // JA, wir haben einen Split!
                             
                             // 1. Originale LS-Position holen
                             $ls_pos_data = $this->app->DB->SelectRow("SELECT * FROM lieferschein_position WHERE lieferschein = $lieferschein_id AND auftrag_position_id = $auftrag_pos_id LIMIT 1");
                             
                             if($ls_pos_data) {
-                                // 2. ID entfernen (für Auto-Increment) und Menge auf 0 setzen
-                                unset($ls_pos_data['id']);
+                                // 2. Daten bereinigen (WICHTIG für den Fix)
+                                unset($ls_pos_data['id']); // ID weg, da Auto-Increment
+                                
+                                // Das Array durchgehen und alles entfernen, was kein Skalar (Text/Zahl) ist
+                                foreach($ls_pos_data as $k => $v) {
+                                    if(is_array($v) || is_object($v)) {
+                                        unset($ls_pos_data[$k]); // Arrays entfernen, die den Fehler verursachen
+                                    }
+                                    if(is_int($k)) {
+                                        unset($ls_pos_data[$k]); // Nummerische Indexe entfernen (falls vorhanden)
+                                    }
+                                }
+
+                                // Neue Werte setzen
                                 $ls_pos_data['menge'] = 0; 
-                                $ls_pos_data['sort'] = 9999; // Vorerst ganz nach hinten, wird unten sortiert
+                                $ls_pos_data['sort'] = 9999; 
                                 
                                 // 3. Als neue Zeile einfügen
                                 $this->app->DB->InsertArr("lieferschein_position", $ls_pos_data, true);
+                                
                                 $new_split_id = $this->app->DB->GetInsertID();
                                 
                                 // 4. Merken für die Rückstandssortierung
