@@ -7762,9 +7762,6 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
     $this->app->Tpl->Parse('PAGE','auftrag_teillieferung.tpl');
   } // AuftragTeillieferung 
 
-  /**
-   * Create partial delivery note from order - Standard Conform Version + Backlog Handling
-   */
   function AuftragTeilLieferschein() {
     $id = (int)$this->app->Secure->GetGET('id');
     $this->AuftragMenu();
@@ -7779,9 +7776,11 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
             $pos_ids_to_process = array();
             $qty_map = array();
 
-            // 1. Eingaben sammeln
+            // 1. Eingaben sammeln (Was wird JETZT geliefert)
             foreach ($teilmenge_input as $key => $value) {
+                // HINWEIS: Wir runden den Input hier bereits auf 4 Stellen, um "1,0000001" Eingabefehler zu vermeiden
                 $val_float = round((float)str_replace(',', '.', $value), 4);
+                
                 if (strpos($key, 'teilmenge_') === 0 && $val_float > 0) {
                     $posid = (int)substr($key, 10);
                     $pos_ids_to_process[] = $posid;
@@ -7791,18 +7790,20 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
 
             if (!empty($pos_ids_to_process)) {
                 
-                // 1b. Rückstände ermitteln
+                // 1b. Rückstände ermitteln (Was ist noch offen, wird aber JETZT NICHT geliefert)
+                // Alle Positionen des Auftrags laden
                 $all_pos = $this->app->DB->SelectArr("SELECT id, menge FROM auftrag_position WHERE auftrag = $id ORDER BY sort ASC");
-                
-                $backlog_ids = array();     // IDs für die Standard-Funktion
-                $backlog_qty_map = array(); // NEU: ID => Menge (für die Text-Anzeige)
-                $split_map = array();       // ID => Restmenge
+                $backlog_ids = array();
+                $split_map = array(); 
 
                 if(is_array($all_pos)) {
                     foreach($all_pos as $pos) {
                         $ap_id = $pos['id'];
+                        
+                        // DB Menge holen und runden
                         $menge_total = round((float)$pos['menge'], 4);
                         
+                        // Prüfen, ob bereits alles geliefert wurde in vorherigen LS
                         $bereits_geliefert_raw = $this->app->DB->Select("
                             SELECT SUM(lp.menge) 
                             FROM lieferschein_position lp 
@@ -7810,78 +7811,103 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                             WHERE lp.auftrag_position_id = $ap_id 
                             AND l.status != 'storniert'
                         ");
+                        
+                        // Sicherstellen, dass wir eine Zahl haben und runden
                         $bereits_geliefert = round((float)$bereits_geliefert_raw, 4);
+                        
+                        // Offene Menge berechnen (Exakt)
                         $offen = round($menge_total - $bereits_geliefert, 4);
 
-                        // Fall: Artikel wird gerade (teil-)geliefert
+                        // Wenn diese Position bereits für die aktuelle Lieferung markiert ist, prüfen wir auf Split
                         if(in_array($ap_id, $pos_ids_to_process)) {
                              $input_menge = $qty_map[$ap_id];
                              
+                             // FIX: Wir prüfen, ob die Offene Menge signifikant größer ist als die Eingabe.
+                             // Durch das vorherige Round(..., 4) sind Mikro-Differenzen bereits eliminiert.
                              if ($offen > $input_menge) {
                                  $rest = round($offen - $input_menge, 4);
+                                 
+                                 // Nur wenn der Rest > 0 ist, ist es ein echter Rückstand
                                  if($rest > 0.0001) {
-                                     $split_map[$ap_id] = $rest; // Restmenge speichern
+                                     $split_map[$ap_id] = $rest;
                                  }
                              }
                              continue;
                         }
 
-                        // Fall: Artikel wird gar nicht geliefert (Reiner Rückstand)
+                        // Wenn noch was offen ist, muss es als 0-Position auf den LS (Reiner Rückstand)
                         if($offen > 0.0001) {
                             $backlog_ids[] = $ap_id;
-                            $backlog_qty_map[$ap_id] = $offen; // NEU: Menge speichern
                         }
                     }
                 }
 
-                // 2. Lieferschein erstellen
+                // 2. DIE STANDARD-FUNKTION NUTZEN
                 $all_ids_for_ls = array_merge($pos_ids_to_process, $backlog_ids);                
+                
                 $lieferschein_id = $this->app->erp->WeiterfuehrenAuftragZuLieferschein($id, $all_ids_for_ls);
 
                 if ($lieferschein_id > 0) {
                     
                     $current_sort_index = 1;
 
-                    // 3. Gelieferte Mengen anpassen
+                    // 3. Mengen anpassen & Reservierungsschutz
                     foreach ($qty_map as $auftrag_pos_id => $user_qty) {
-                        // Verfügbarkeitsprüfung (gekürzt für Übersichtlichkeit, Logik bleibt gleich)
-                        $check = $this->app->DB->SelectRow("SELECT ap.artikel, (IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) - IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.objekt != 'auftrag' OR r.parameter != $id)), 0)) as verfuegbar_netto FROM auftrag_position ap WHERE ap.id = $auftrag_pos_id");
                         
+                        $check = $this->app->DB->SelectRow("
+                            SELECT ap.artikel,
+                            (
+                                IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
+                                - 
+                                IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.objekt != 'auftrag' OR r.parameter != $id)), 0)
+                            ) as verfuegbar_netto
+                            FROM auftrag_position ap 
+                            WHERE ap.id = $auftrag_pos_id
+                        ");
+
                         $available = (float)$check['verfuegbar_netto'];
+                        // Menge darf nicht kleiner 0 sein
                         $final_qty = max(0, min($user_qty, $available));
 
-                        $this->app->DB->Update("UPDATE lieferschein_position SET menge = $final_qty, sort = $current_sort_index WHERE lieferschein = $lieferschein_id AND auftrag_position_id = $auftrag_pos_id");
+                        $this->app->DB->Update("
+                            UPDATE lieferschein_position 
+                            SET menge = $final_qty, sort = $current_sort_index
+                            WHERE lieferschein = $lieferschein_id 
+                            AND auftrag_position_id = $auftrag_pos_id
+                        ");
                         $current_sort_index++;
                     }
 
-                    // 4. Rückstandspositionen bearbeiten (Menge 0 + Text anpassen)
+                    // 4. Rückstandspositionen auf Menge 0 setzen und sortieren (INKLUSIVE SPLITS)
                     if(!empty($backlog_ids) || !empty($split_map)) {
                         
-                        // A. Zwischenüberschrift einfügen
+                        // JSON für den Wert (Style)
                         $json_wert = json_encode(array(
                             "name" => "",
                             "kurztext" => "<strong><u>Folgende Artikel befinden sich im Rückstand und werden nachgeliefert:<\/u><\/strong>",
-                            "Abstand_Oben" => 0, "Abstand_Unten" => 5, "Schriftgroesse" => 8, "Fett" => true, "Unterstrichen" => false, "Abstand_Links" => 0, "Kurztext_Abstand_Links" => 0, "Kurztext_Unterstrichen" => false
+                            "Abstand_Oben" => 0,
+                            "Abstand_Unten" => 5,
+                            "Schriftgroesse" => 8,
+                            "Fett" => true,
+                            "Unterstrichen" => false,
+                            "Abstand_Links" => 0,
+                            "Kurztext_Abstand_Links" => 0,
+                            "Kurztext_Unterstrichen" => false
                         ));
                         
                         $pos = $current_sort_index - 1;
-                        $this->app->DB->Insert("INSERT INTO beleg_zwischenpositionen (doctype, doctypeid, pos, sort, postype, wert) VALUES ('lieferschein', $lieferschein_id, $pos, 0, 'gruppe', '".$this->app->DB->real_escape_string($json_wert)."')");
+                        $this->app->DB->Insert("
+                            INSERT INTO beleg_zwischenpositionen (doctype, doctypeid, pos, sort, postype, wert)
+                            VALUES ('lieferschein', $lieferschein_id, $pos, 0, 'gruppe', '".$this->app->DB->real_escape_string($json_wert)."')
+                        ");
+                        
                         $current_sort_index++;
 
-                        // B. Reine Rückstandsartikel (Loop über die MAP, nicht mehr nur IDs)
-                        foreach($backlog_qty_map as $b_id => $b_menge) {
-                            
-                            // Menge formatieren (z.B. 5,00)
-                            $menge_txt = number_format($b_menge, 2, ',', '.');
-                            // Textzusatz bauen
-                            $zusatz = " (Rückstand: $menge_txt)";
-
-                            // Update mit CONCAT um den Namen zu erweitern
+                        // B. Reine Rückstandsartikel
+                        foreach($backlog_ids as $b_id) {
                             $this->app->DB->Update("
                                 UPDATE lieferschein_position 
-                                SET menge = 0, 
-                                    sort = $current_sort_index,
-                                    name = CONCAT(name, '$zusatz')
+                                SET menge = 0, sort = $current_sort_index
                                 WHERE lieferschein = $lieferschein_id 
                                 AND auftrag_position_id = $b_id
                             ");
@@ -7890,22 +7916,19 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
 
                         // C. Split-Artikel duplizieren
                         foreach($split_map as $s_id => $remainder) {
-                            
-                            // Menge formatieren
-                            $menge_txt = number_format($remainder, 2, ',', '.');
-                            $zusatz = " (Rückstand: $menge_txt)";
-
-                            $original_ls_pos = $this->app->DB->SelectRow("SELECT id FROM lieferschein_position WHERE lieferschein = $lieferschein_id AND auftrag_position_id = $s_id");
+                            $original_ls_pos = $this->app->DB->SelectRow("
+                                SELECT id FROM lieferschein_position 
+                                WHERE lieferschein = $lieferschein_id 
+                                AND auftrag_position_id = $s_id
+                            ");
 
                             if ($original_ls_pos) {
                                 $new_ls_pos_id = $this->app->DB->MysqlCopyRow('lieferschein_position', 'id', $original_ls_pos['id']);
                                 
-                                // Die Kopie auf 0 setzen UND Namen erweitern
+                                // Die Kopie ist jetzt der Rückstand -> Menge 0
                                 $this->app->DB->Update("
                                     UPDATE lieferschein_position
-                                    SET menge = 0, 
-                                        sort = $current_sort_index,
-                                        name = CONCAT(name, '$zusatz')
+                                    SET menge = 0, sort = $current_sort_index
                                     WHERE id = $new_ls_pos_id
                                 ");
                                 $current_sort_index++;
@@ -7914,11 +7937,11 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
                     }
 
                     // 5. Abschluss
-                    $this->app->erp->AuftragProtokoll($id, "Teil-Lieferschein erstellt: LS-$lieferschein_id");
+                    $this->app->erp->AuftragProtokoll($id, "Teil-Lieferschein (Standard-Routine + Rückstandsausweis) erstellt: LS-$lieferschein_id");
                     header('Location: index.php?module=lieferschein&action=edit&id='.$lieferschein_id);
                     exit;
                 } else {
-                    $msg = "Fehler beim Erstellen des Lieferscheins.";
+                    $msg = "Fehler beim Erstellen des Lieferscheins durch die System-Routine.";
                 }
             } else {
                 $msg = "Keine Mengen zum Liefern ausgewählt.";
