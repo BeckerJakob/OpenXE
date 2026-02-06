@@ -769,7 +769,7 @@ class Exportbuchhaltung
         }
 
         if ($bankbuchungen) {
-            // Zahlungsverkehr (Bank/Kasse) aus fibu_buchungen
+            // Zahlungsverkehr (Bank/Kasse) aus fibu_buchungen/kontoauszuege
             $sql_zahlung = "SELECT
             fb.id,
             fb.datum,
@@ -800,16 +800,17 @@ class Exportbuchhaltung
             LEFT JOIN kontorahmen kr
                 ON (fb.von_typ='kontorahmen' AND fb.von_id=kr.id)
                 OR (fb.nach_typ='kontorahmen' AND fb.nach_id=kr.id)
-            LEFT JOIN konten kb
-                ON (fb.von_typ='bank' AND fb.von_id=kb.id)
-                OR (fb.nach_typ='bank' AND fb.nach_id=kb.id)
+            LEFT JOIN kontoauszuege kz
+                ON (fb.von_typ='kontoauszuege' AND fb.von_id=kz.id)
+                OR (fb.nach_typ='kontoauszuege' AND fb.nach_id=kz.id)
+            LEFT JOIN konten kb ON kb.id = kz.konto
             LEFT JOIN kasse ka
                 ON (fb.von_typ='kasse' AND fb.von_id=ka.id)
                 OR (fb.nach_typ='kasse' AND fb.nach_id=ka.id)
             LEFT JOIN konten kk ON kk.id = ka.konto
         WHERE
             fb.datum BETWEEN '".date_format($von,"Y-m-d")."' AND '".date_format($bis,"Y-m-d")."'
-            AND (fb.von_typ IN ('bank','kasse') OR fb.nach_typ IN ('bank','kasse'))
+            AND (fb.von_typ IN ('kontoauszuege','kasse') OR fb.nach_typ IN ('kontoauszuege','kasse'))
             AND (
                 $projekt = 0
                 OR r.projekt = $projekt
@@ -830,7 +831,7 @@ class Exportbuchhaltung
                     $debitor = !empty($row['debitor']) ? $row['debitor'] : $row['debitor_fallback'];
                     $gegenkonto = !empty($debitor) ? $debitor : (!empty($row['sachkonto']) ? $row['sachkonto'] : '9999');
 
-                    $money_in = in_array($row['nach_typ'], array('bank','kasse'), true);
+                    $money_in = in_array($row['nach_typ'], array('kontoauszuege','kasse'), true);
                     $soll = $money_in ? 'S' : 'H';
                     if ((float)$row['betrag'] < 0) {
                         $soll = ($soll === 'S') ? 'H' : 'S';
