@@ -163,6 +163,7 @@ class Exportbuchhaltung
         $gschecked = $this->app->Secure->GetPOST("gutschrift");
         $vbchecked = $this->app->Secure->GetPOST("verbindlichkeit");
         $lgchecked = $this->app->Secure->GetPOST("lieferantengutschrift");
+        $bankchecked = $this->app->Secure->GetPOST("bankbuchungen");
         $diffignore = $this->app->Secure->GetPOST("diffignore");
     	$sachkonto = $this->app->Secure->GetPOST('sachkonto');
         $format = $this->app->Secure->GetPOST('format');
@@ -185,6 +186,7 @@ class Exportbuchhaltung
             $gschecked = true;
             $vbchecked = true;
             $lgchecked = true;
+            $bankchecked = true;
         }
 
         $missing_obligatory = array();
@@ -222,9 +224,10 @@ class Exportbuchhaltung
               !$rgchecked &&
               !$gschecked &&
               !$vbchecked &&
-              !$lgchecked
+              !$lgchecked &&
+              !$bankchecked
             ) {
-                $msg = "<div class=error>Bitte mindestens eine Belegart auswählen.</div>";
+                $msg = "<div class=error>Bitte mindestens eine Belegart oder Bank/Kasse ausw&auml;hlen.</div>";
                 $dataok = false;
             }
 
@@ -247,7 +250,7 @@ class Exportbuchhaltung
             if ($dataok) {
                 $filename_csv = "EXTF_".date('Ymd') . "_Buchungsstapel_DATEV_export.csv";
                 try {
-                    $csv = $this->DATEV_Buchuchungsstapel($rgchecked, $gschecked, $vbchecked, $lgchecked, $buchhaltung_berater, $buchhaltung_mandant, $buchhaltung_wj_beginn, (int)$buchhaltung_sachkontenlaenge, $von, $bis, $projekt, $filename_csv, $diffignore, $sachkonto_kennung, $format);
+                    $csv = $this->DATEV_Buchuchungsstapel($rgchecked, $gschecked, $vbchecked, $lgchecked, $bankchecked, $buchhaltung_berater, $buchhaltung_mandant, $buchhaltung_wj_beginn, (int)$buchhaltung_sachkontenlaenge, $von, $bis, $projekt, $filename_csv, $diffignore, $sachkonto_kennung, $format);
 
                     if ($pdfexport) {
 
@@ -375,6 +378,7 @@ class Exportbuchhaltung
         $this->app->Tpl->SET('GSCHECKED',$gschecked?'checked':'');
         $this->app->Tpl->SET('VBCHECKED',$vbchecked?'checked':'');
         $this->app->Tpl->SET('LGCHECKED',$lgchecked?'checked':'');
+        $this->app->Tpl->SET('BANKCHECKED',$bankchecked?'checked':'');
         $this->app->Tpl->SET('DIFFIGNORE',$diffignore?'checked':'');
         $this->app->Tpl->SET('PDFEXPORT',$pdfexport?'checked':'');
 
@@ -391,7 +395,7 @@ class Exportbuchhaltung
     * format: "ISO-8859-1", "UTF-8", "UTF-8-BOM"
     * @throws ConsistencyException with string (list of items) if consistency check fails and no sachkonto for differences is given
     */
-    function DATEV_Buchuchungsstapel(bool $rechnung, bool $gutschrift, bool $verbindlichkeit, bool $lieferantengutschrift, string $berater, string $mandant, datetime $wj_beginn, int $sachkontenlaenge, datetime $von, datetime $bis, int $projekt = 0, string $filename = 'EXTF_Buchungsstapel_DATEV_export.csv', $diffignore = false, $sachkonto_differences, string $format = "ISO-8859-1") : string {
+    function DATEV_Buchuchungsstapel(bool $rechnung, bool $gutschrift, bool $verbindlichkeit, bool $lieferantengutschrift, bool $bankbuchungen, string $berater, string $mandant, datetime $wj_beginn, int $sachkontenlaenge, datetime $von, datetime $bis, int $projekt = 0, string $filename = 'EXTF_Buchungsstapel_DATEV_export.csv', $diffignore = false, $sachkonto_differences, string $format = "ISO-8859-1") : string {
 
         $datev_header_definition = array (
             '1' => 'Kennzeichen',
@@ -764,8 +768,9 @@ class Exportbuchhaltung
             }
         }
 
-        // Zahlungsverkehr (Bank/Kasse) aus fibu_buchungen
-        $sql_zahlung = "SELECT
+        if ($bankbuchungen) {
+            // Zahlungsverkehr (Bank/Kasse) aus fibu_buchungen
+            $sql_zahlung = "SELECT
             fb.id,
             fb.datum,
             fb.betrag,
@@ -814,47 +819,48 @@ class Exportbuchhaltung
                 OR kr.projekt = $projekt
             )";
 
-        $zahlungen = $this->app->DB->SelectArr($sql_zahlung);
-        if (!empty($zahlungen)) {
-            foreach ($zahlungen as $row) {
-                $geldkonto = !empty($row['bank_datev']) ? $row['bank_datev'] : $row['kasse_datev'];
-                if (empty($geldkonto)) {
-                    continue;
+            $zahlungen = $this->app->DB->SelectArr($sql_zahlung);
+            if (!empty($zahlungen)) {
+                foreach ($zahlungen as $row) {
+                    $geldkonto = !empty($row['bank_datev']) ? $row['bank_datev'] : $row['kasse_datev'];
+                    if (empty($geldkonto)) {
+                        continue;
+                    }
+
+                    $debitor = !empty($row['debitor']) ? $row['debitor'] : $row['debitor_fallback'];
+                    $gegenkonto = !empty($debitor) ? $debitor : (!empty($row['sachkonto']) ? $row['sachkonto'] : '9999');
+
+                    $money_in = in_array($row['nach_typ'], array('bank','kasse'), true);
+                    $soll = $money_in ? 'S' : 'H';
+                    if ((float)$row['betrag'] < 0) {
+                        $soll = ($soll === 'S') ? 'H' : 'S';
+                    }
+
+                    $betrag = abs((float)$row['betrag']);
+                    if ($betrag == 0.0) {
+                        continue;
+                    }
+
+                    $belegfeld1 = !empty($row['belegnr']) ? $row['belegnr'] : ('FB'.$row['id']);
+                    if (empty($debitor) && empty($row['sachkonto'])) {
+                        $buchungstext = 'Vorkasse/ohne Beleg';
+                    } else {
+                        $buchungstext = !empty($row['belegnr']) ? ('Zahlung '.$row['belegnr']) : (!empty($row['intern']) ? $row['intern'] : 'Zahlung');
+                    }
+
+                    $data = array();
+                    $data['Umsatz'] = number_format($betrag, 2, ',', '');
+                    $data['Soll-/Haben-Kennzeichen'] = $soll;
+                    $data['WKZ Umsatz'] = $row['waehrung'];
+                    $data['Konto'] = $geldkonto;
+                    $data['Gegenkonto (ohne BU-Schlüssel)'] = $gegenkonto;
+                    $data['Belegdatum'] = date_format(date_create($row['datum']), "dm");
+                    $data['Belegfeld 1'] = mb_strimwidth($belegfeld1,0,36);
+                    $data['Belegfeld 2'] = 'FB'.$row['id'];
+                    $data['Buchungstext'] = mb_strimwidth($buchungstext,0,60);
+
+                    $csv .= $this->create_line($datev_buchungsstapel_definition,$data);
                 }
-
-                $debitor = !empty($row['debitor']) ? $row['debitor'] : $row['debitor_fallback'];
-                $gegenkonto = !empty($debitor) ? $debitor : (!empty($row['sachkonto']) ? $row['sachkonto'] : '9999');
-
-                $money_in = in_array($row['nach_typ'], array('bank','kasse'), true);
-                $soll = $money_in ? 'S' : 'H';
-                if ((float)$row['betrag'] < 0) {
-                    $soll = ($soll === 'S') ? 'H' : 'S';
-                }
-
-                $betrag = abs((float)$row['betrag']);
-                if ($betrag == 0.0) {
-                    continue;
-                }
-
-                $belegfeld1 = !empty($row['belegnr']) ? $row['belegnr'] : ('FB'.$row['id']);
-                if (empty($debitor) && empty($row['sachkonto'])) {
-                    $buchungstext = 'Vorkasse/ohne Beleg';
-                } else {
-                    $buchungstext = !empty($row['belegnr']) ? ('Zahlung '.$row['belegnr']) : (!empty($row['intern']) ? $row['intern'] : 'Zahlung');
-                }
-
-                $data = array();
-                $data['Umsatz'] = number_format($betrag, 2, ',', '');
-                $data['Soll-/Haben-Kennzeichen'] = $soll;
-                $data['WKZ Umsatz'] = $row['waehrung'];
-                $data['Konto'] = $geldkonto;
-                $data['Gegenkonto (ohne BU-Schlüssel)'] = $gegenkonto;
-                $data['Belegdatum'] = date_format(date_create($row['datum']), "dm");
-                $data['Belegfeld 1'] = mb_strimwidth($belegfeld1,0,36);
-                $data['Belegfeld 2'] = 'FB'.$row['id'];
-                $data['Buchungstext'] = mb_strimwidth($buchungstext,0,60);
-
-                $csv .= $this->create_line($datev_buchungsstapel_definition,$data);
             }
         }
 

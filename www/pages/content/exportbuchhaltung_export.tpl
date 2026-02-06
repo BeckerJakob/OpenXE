@@ -32,6 +32,10 @@
                                     <td><input type="checkbox" name="lieferantengutschrift" value="1" [LGCHECKED] /></td>
                                 </tr>
                                 <tr>
+                                    <td>{|Bank/Kasse (Zahlungsverkehr):|}</td>
+                                    <td><input type="checkbox" name="bankbuchungen" value="1" [BANKCHECKED] /></td>
+                                </tr>
+                                <tr>
                                     <td>Datum von:</td>
                                     <td><input type="text" name="von" id="von" value="[VON]" /></td>
                                 </tr>
