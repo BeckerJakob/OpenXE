@@ -390,13 +390,13 @@ class Verbindlichkeit {
                 $freigabe = $app->DB->Select("SELECT freigabe FROM verbindlichkeit WHERE id = '".$id."'");
                 $rechnungsfreigabe = $app->DB->Select("SELECT rechnungsfreigabe FROM verbindlichkeit WHERE id = '".$id."'");
 
-                $heading = array('',  'Paket-Nr.','Paket-Pos.', 'Bestellung', 'Artikel-Nr.','Artikel/Bezeichnung','Bemerkung','Menge','Preis','Steuersatz','Sachkonto');
-                $width = array(  '1%','1%',       '1%' ,        '2%',         '2%',         '20%',    '20%',   '1%',   '1%',        '3%',       '1%',       '1%');
+                $heading = array('', 'Artikel-Nr.','Artikel/Bezeichnung','Menge','Preis','Steuersatz','Sachkonto');
+                $width = array(  '1%','2%',         '20%',   '1%',   '1%',        '3%',       '1%',       '1%');
 
-                $findcols = array('vp.id','pd.paketannahme','pd.id','b.belegnr','art.nummer',"COALESCE(art.name_de, vp.bezeichnung)",'pd.bemerkung','vp.menge','vp.preis','vp.steuersatz',"CONCAT(skv.sachkonto,' ',skv.beschriftung)",'vp.id');
+                $findcols = array('vp.id','art.nummer',"COALESCE(art.name_de, vp.bezeichnung)",'vp.menge','vp.preis','vp.steuersatz',"CONCAT(skv.sachkonto,' ',skv.beschriftung)",'vp.id');
                 $searchsql = array('art.nummer', 'art.name_de', 'vp.bezeichnung', 'pd.bemerkung');
 
-                $alignright = array(8,9,10);
+                $alignright = array(5,6,7);
 
                 $defaultorder = 1;
                 $defaultorderdesc = 0;
@@ -413,20 +413,12 @@ class Verbindlichkeit {
 
         	    $box = "CONCAT('<input type=\"checkbox\" name=\"auswahl[]\" value=\"',vp.id,'\" />') AS `auswahl`";
 
-               $paketlink = array (
-                    'IF(pd.paketannahme IS NOT NULL, CONCAT(\'<a href="index.php?module=wareneingang&action=distriinhalt&id=\',pd.paketannahme,\'">\',pd.paketannahme,\'</a>\'), \'\')',
-                );
-
                 $sql = "
                     SELECT SQL_CALC_FOUND_ROWS
                         vp.id,
                         $box,
-                        ".$paketlink[0]." AS pa,
-                        pd.id AS paket_position,
-                        b.belegnr,
                         COALESCE(art.nummer, '') AS nummer,
                         COALESCE(art.name_de, vp.bezeichnung) AS name_de,
-                        COALESCE(pd.bemerkung, '') AS bemerkung,
                         vp.menge,
                         TRIM(vp.preis)+0,
                         vp.steuersatz,

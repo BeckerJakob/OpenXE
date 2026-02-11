@@ -130,7 +130,7 @@
                                                             <input type="text" name="skontobis" id="skontobis" value="[SKONTOBIS]" size="20" [SAVEDISABLED]>&nbsp;<input type="number" name="skontobis_tage" id="skontobis_tage" size="4" [SAVEDISABLED]>&nbsp;Tage
                                                         </td>
                                                     </tr>                                                                                                                                                                                                                                            
-                                                    <tr>
+                                                    <tr hidden>
                                                         <td>
                                                             {|Bestellung|}:
                                                         </td>
