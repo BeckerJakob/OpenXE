@@ -1918,6 +1918,12 @@ class Verbindlichkeit {
 
                 $this->app->erp->GetSteuerPosition("verbindlichkeit",$position['id'],$tmpsteuersatz,$tmpsteuertext,$erloes);
 
+                // Fallback: If GetSteuerPosition returned null (e.g. no article linked for manual positions),
+                // use the steuersatz stored directly on the position
+                if ($tmpsteuersatz === null && $position['steuersatz'] !== null) {
+                    $tmpsteuersatz = (float)$position['steuersatz'];
+                }
+
                 $position['steuersatz_berechnet'] = $tmpsteuersatz;
                 $position['steuertext_berechnet'] = $tmpsteuertext;
                 $position['steuererloes_berechnet'] = $erloes;
