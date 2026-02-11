@@ -390,13 +390,13 @@ class Verbindlichkeit {
                 $freigabe = $app->DB->Select("SELECT freigabe FROM verbindlichkeit WHERE id = '".$id."'");
                 $rechnungsfreigabe = $app->DB->Select("SELECT rechnungsfreigabe FROM verbindlichkeit WHERE id = '".$id."'");
 
-                $heading = array('', 'Artikel-Nr.','Artikel/Bezeichnung','Menge','Preis','Steuersatz','Sachkonto');
-                $width = array(  '1%','2%',         '20%',   '1%',   '1%',        '3%',       '1%',       '1%');
+                $heading = array('', 'Bezeichnung','Menge','Preis','Steuersatz','Sachkonto');
+                $width = array(  '1%','30%',   '1%',   '1%',        '3%',       '10%',       '1%');
 
-                $findcols = array('vp.id','art.nummer',"COALESCE(art.name_de, vp.bezeichnung)",'vp.menge','vp.preis','vp.steuersatz',"CONCAT(skv.sachkonto,' ',skv.beschriftung)",'vp.id');
+                $findcols = array('vp.id',"COALESCE(art.name_de, vp.bezeichnung)",'vp.menge','vp.preis','vp.steuersatz',"CONCAT(skv.sachkonto,' ',skv.beschriftung)",'vp.id');
                 $searchsql = array('art.nummer', 'art.name_de', 'vp.bezeichnung', 'pd.bemerkung');
 
-                $alignright = array(5,6,7);
+                $alignright = array(4,5,6);
 
                 $defaultorder = 1;
                 $defaultorderdesc = 0;
@@ -417,7 +417,6 @@ class Verbindlichkeit {
                     SELECT SQL_CALC_FOUND_ROWS
                         vp.id,
                         $box,
-                        COALESCE(art.nummer, '') AS nummer,
                         COALESCE(art.name_de, vp.bezeichnung) AS name_de,
                         vp.menge,
                         TRIM(vp.preis)+0,
