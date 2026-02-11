@@ -390,11 +390,11 @@ class Verbindlichkeit {
                 $freigabe = $app->DB->Select("SELECT freigabe FROM verbindlichkeit WHERE id = '".$id."'");
                 $rechnungsfreigabe = $app->DB->Select("SELECT rechnungsfreigabe FROM verbindlichkeit WHERE id = '".$id."'");
 
-                $heading = array('',  'Paket-Nr.','Paket-Pos.', 'Bestellung', 'Artikel-Nr.','Artikel','Bemerkung','Menge','Preis','Steuersatz','Sachkonto');
+                $heading = array('',  'Paket-Nr.','Paket-Pos.', 'Bestellung', 'Artikel-Nr.','Artikel/Bezeichnung','Bemerkung','Menge','Preis','Steuersatz','Sachkonto');
                 $width = array(  '1%','1%',       '1%' ,        '2%',         '2%',         '20%',    '20%',   '1%',   '1%',        '3%',       '1%',       '1%');
 
-                $findcols = array('vp.id','pd.paketannahme','pd.id','b.belegnr','art.nummer','art.name_de','pd.bemerkung','vp.menge','vp.preis','vp.steuersatz',"CONCAT(skv.sachkonto,' ',skv.beschriftung)",'vp.id');
-                $searchsql = array('p.nummer', 'p.name', 'p.bemerkung');
+                $findcols = array('vp.id','pd.paketannahme','pd.id','b.belegnr','art.nummer',"COALESCE(art.name_de, vp.bezeichnung)",'pd.bemerkung','vp.menge','vp.preis','vp.steuersatz',"CONCAT(skv.sachkonto,' ',skv.beschriftung)",'vp.id');
+                $searchsql = array('art.nummer', 'art.name_de', 'vp.bezeichnung', 'pd.bemerkung');
 
                 $alignright = array(8,9,10);
 
@@ -414,23 +414,19 @@ class Verbindlichkeit {
         	    $box = "CONCAT('<input type=\"checkbox\" name=\"auswahl[]\" value=\"',vp.id,'\" />') AS `auswahl`";
 
                $paketlink = array (
-                    '<a href="index.php?module=wareneingang&action=distriinhalt&id=',
-                    ['sql' => 'pd.paketannahme'],
-                    '">',
-                    ['sql' => 'pd.paketannahme'],
-                    '</a>'
+                    'IF(pd.paketannahme IS NOT NULL, CONCAT(\'<a href="index.php?module=wareneingang&action=distriinhalt&id=\',pd.paketannahme,\'">\',pd.paketannahme,\'</a>\'), \'\')',
                 );
 
                 $sql = "
                     SELECT SQL_CALC_FOUND_ROWS
                         vp.id,
                         $box,
-                        ".$this->app->erp->ConcatSQL($paketlink)." pa,
-                        pd.id paket_position,
+                        ".$paketlink[0]." AS pa,
+                        pd.id AS paket_position,
                         b.belegnr,
-                        art.nummer,
-                        art.name_de,
-                        pd.bemerkung,
+                        COALESCE(art.nummer, '') AS nummer,
+                        COALESCE(art.name_de, vp.bezeichnung) AS name_de,
+                        COALESCE(pd.bemerkung, '') AS bemerkung,
                         vp.menge,
                         TRIM(vp.preis)+0,
                         vp.steuersatz,
@@ -440,10 +436,10 @@ class Verbindlichkeit {
                         verbindlichkeit_position vp
                     INNER JOIN verbindlichkeit v ON
                         v.id = vp.verbindlichkeit
-                    INNER JOIN paketdistribution pd ON
-                        pd.id = vp.paketdistribution
-                    INNER JOIN artikel art ON
-                        art.id = pd.artikel
+                    LEFT JOIN paketdistribution pd ON
+                        pd.id = vp.paketdistribution AND vp.paketdistribution <> 0
+                    LEFT JOIN artikel art ON
+                        art.id = COALESCE(pd.artikel, vp.artikel)
                     INNER JOIN adresse adr ON
                         adr.id = v.adresse
                     LEFT JOIN bestellung_position bp ON pd.bestellung_position = bp.id
@@ -895,6 +891,43 @@ class Verbindlichkeit {
                     $this->app->DB->Update($sql);
                 }
             break;
+            case 'manuelle_position_hinzufuegen':
+
+                $freigabe = $this->app->DB->SelectArr("SELECT rechnungsfreigabe, freigabe FROM verbindlichkeit WHERE id =".$id)[0];
+                if ($freigabe['rechnungsfreigabe'] || $freigabe['freigabe']) {
+                    break;
+                }
+
+                $man_bezeichnung = $this->app->Secure->GetPOST('man_bezeichnung');
+                $man_menge = (float)$this->app->Secure->GetPOST('man_menge');
+                $man_preis = (float)$this->app->Secure->GetPOST('man_preis');
+                $man_steuersatz = (float)$this->app->Secure->GetPOST('man_steuersatz');
+                $man_sachkonto = $this->app->Secure->GetPOST('man_sachkonto');
+                $man_bruttoeingabe = $this->app->Secure->GetPOST('man_bruttoeingabe');
+
+                if (empty($man_bezeichnung)) {
+                    $this->app->YUI->Message('warning','Bitte eine Bezeichnung eingeben.');
+                    break;
+                }
+
+                if ($man_menge <= 0) {
+                    $this->app->YUI->Message('warning','Menge muss gr&ouml;&szlig;er als 0 sein.');
+                    break;
+                }
+
+                $kontorahmen = 0;
+                if (!empty($man_sachkonto)) {
+                    $kontorahmen = $this->app->erp->ReplaceKontorahmen(true,$man_sachkonto,false);
+                }
+
+                if ($man_bruttoeingabe && $man_steuersatz > 0) {
+                    $man_preis = $man_preis / (1 + ($man_steuersatz / 100));
+                }
+
+                $sql = "INSERT INTO verbindlichkeit_position (verbindlichkeit, bezeichnung, menge, preis, steuersatz, kontorahmen, paketdistribution) VALUES ($id, '".$this->app->DB->real_escape_string($man_bezeichnung)."', $man_menge, $man_preis, $man_steuersatz, $kontorahmen, 0)";
+                $this->app->DB->Insert($sql);
+
+            break;
         }
 
 
@@ -1139,9 +1172,17 @@ class Verbindlichkeit {
             $this->app->YUI->TableSearch('PAKETDISTRIBUTION', 'verbindlichkeit_paketdistribution_list', "show", "", "", basename(__FILE__), __CLASS__);
         }
 
+        // Standard-Steuersatz für manuelles Positionsformular
+        $standardsteuersatz = $this->app->erp->Firmendaten('steuersatz_normal');
+        if (empty($standardsteuersatz)) {
+            $standardsteuersatz = 19;
+        }
+        $this->app->Tpl->Set('STANDARDSTEUERSATZ', $standardsteuersatz);
+
         if (!empty($verbindlichkeit_from_db)) {
             // -- POSITIONEN
             $this->app->YUI->AutoComplete("positionen_sachkonto", "sachkonto", 1);
+            $this->app->YUI->AutoComplete("man_sachkonto", "sachkonto", 1);
             $this->app->YUI->TableSearch('POSITIONEN', 'verbindlichkeit_positionen', "show", "", "", basename(__FILE__), __CLASS__);
             $this->app->Tpl->Parse('POSITIONENTAB', "verbindlichkeit_positionen.tpl");
             // -- POSITIONEN
@@ -1164,6 +1205,7 @@ class Verbindlichkeit {
         $menge = $this->app->Secure->GetPOST('menge');
         $preis = $this->app->Secure->GetPOST('preis');
         $steuersatz = $this->app->Secure->GetPOST('steuersatz');
+        $bezeichnung = $this->app->Secure->GetPOST('bezeichnung');
 
         $kontorahmen = $this->app->erp->ReplaceKontorahmen(true,$sachkonto,false);
         if ($menge < 0) {
@@ -1202,7 +1244,8 @@ class Verbindlichkeit {
                         menge = '$menge',
                         preis = '$preis',
                         steuersatz = '$steuersatz',
-                        kontorahmen = '$kontorahmen'
+                        kontorahmen = '$kontorahmen',
+                        bezeichnung = '".$this->app->DB->real_escape_string($bezeichnung)."'
                     WHERE id = ".$posid."
                 ";
                 $this->app->DB->Update($sql);
@@ -1214,7 +1257,7 @@ class Verbindlichkeit {
 
         // Load values again from database
 	    $dropnbox = "'<img src=./themes/new/images/details_open.png class=details>' AS `open`, CONCAT('<input type=\"checkbox\" name=\"auswahl[]\" value=\"',v.id,'\" />') AS `auswahl`";
-        $result = $this->app->DB->SelectArr("SELECT SQL_CALC_FOUND_ROWS v.id, $dropnbox, v.steuersatz, v.preis, v.menge, v.kontorahmen, v.id FROM verbindlichkeit_position v"." WHERE id=$posid");
+        $result = $this->app->DB->SelectArr("SELECT SQL_CALC_FOUND_ROWS v.id, $dropnbox, v.steuersatz, v.preis, v.menge, v.kontorahmen, v.bezeichnung, v.id FROM verbindlichkeit_position v"." WHERE id=$posid");
 
         foreach ($result[0] as $key => $value) {
             $this->app->Tpl->Set(strtoupper($key), $value);
@@ -1372,6 +1415,18 @@ class Verbindlichkeit {
         }
 
         // Check wareneingang status
+    // Count positions with paketdistribution link
+    $sql_pd_positions = "SELECT COUNT(*) FROM verbindlichkeit_position WHERE verbindlichkeit='$id' AND paketdistribution <> 0";
+    $count_pd_positions = $this->app->DB->Select($sql_pd_positions);
+
+    // Count manual positions (without paketdistribution)
+    $sql_man_positions = "SELECT COUNT(*) FROM verbindlichkeit_position WHERE verbindlichkeit='$id' AND (paketdistribution = 0 OR paketdistribution IS NULL)";
+    $count_man_positions = $this->app->DB->Select($sql_man_positions);
+
+    $check_ok = false;
+
+    if ($count_pd_positions > 0) {
+        // If there are paketdistribution-linked positions, check their wareneingang status
         $sql = "SELECT
                     pa.id
                 FROM verbindlichkeit_position vp
@@ -1382,16 +1437,22 @@ class Verbindlichkeit {
                 AND
                     pa.status = 'abgeschlossen'
                 ";
-
         $check = $this->app->DB->SelectArr($sql);
+        if (!empty($check)) {
+            $check_ok = true;
+        }
+    } else if ($count_man_positions > 0) {
+        // Only manual positions: no wareneingang check needed
+        $check_ok = true;
+    }
 
-        if (empty($check)) {
-            if ($gotoedit) {
-                $this->app->YUI->Message('warning','Waren-/Leistungspr&uuml;fung (Einkauf) nicht abgeschlossen');
-            } else {
-                return('Waren-/Leistungspr&uuml;fung (Einkauf) nicht abgeschlossen '.$this->verbindlichkeit_get_belegnr($id));
-            }
+    if (!$check_ok) {
+        if ($gotoedit) {
+            $this->app->YUI->Message('warning','Waren-/Leistungspr&uuml;fung (Einkauf) nicht abgeschlossen');
         } else {
+            return('Waren-/Leistungspr&uuml;fung (Einkauf) nicht abgeschlossen '.$this->verbindlichkeit_get_belegnr($id));
+        }
+    } else {
             $sql = "UPDATE verbindlichkeit SET freigabe = 1 WHERE id=".$id;
             $this->app->DB->Update($sql);
 
