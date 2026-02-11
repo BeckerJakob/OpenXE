@@ -1874,6 +1874,9 @@ class Verbindlichkeit {
     // Check positions and return status and values
     function check_positions($id, $bruttobetrag_verbindlichkeit) : array {
 
+        // Ensure numeric value (may come as formatted string from FormatMengeBetrag)
+        $bruttobetrag_verbindlichkeit = (float)str_replace(',', '.', str_replace('.', '', $bruttobetrag_verbindlichkeit));
+
         $result = array(
             "pos_ok" => false,
             "betrag_netto" => 0,
@@ -1919,9 +1922,9 @@ class Verbindlichkeit {
                 $position['steuertext_berechnet'] = $tmpsteuertext;
                 $position['steuererloes_berechnet'] = $erloes;
 
-                $betrag_netto_pos = ($position['menge']*$position['preis']);
+                $betrag_netto_pos = ((float)$position['menge']*(float)$position['preis']);
                 $betrag_netto += $betrag_netto_pos;
-                $betrag_brutto_pos = ($position['menge']*$position['preis'])*(1+($tmpsteuersatz/100));
+                $betrag_brutto_pos = ((float)$position['menge']*(float)$position['preis'])*(1+((float)$tmpsteuersatz/100));
                 $betrag_brutto += $betrag_brutto_pos;
                 $betrag_brutto_pos_summe += round($betrag_brutto_pos,2);
                 $betrag_netto_pro_steuersatz[$tmpsteuersatz] += round($betrag_netto_pos,2);
@@ -1932,7 +1935,7 @@ class Verbindlichkeit {
             $result['betrag_brutto'] = round($betrag_brutto,2);
 
             foreach ($betrag_netto_pro_steuersatz as $steuersatz => $betrag_netto) {
-                $betrag_brutto_alternativ += round($betrag_netto*(1+($steuersatz/100)),2);
+                $betrag_brutto_alternativ += round($betrag_netto*(1+((float)$steuersatz/100)),2);
             }
 
             if ($bruttobetrag_verbindlichkeit == round($betrag_brutto,2)) {
