@@ -1004,6 +1004,15 @@ class Verbindlichkeit {
 
         if (!empty($result[0])) {
             $verbindlichkeit_from_db = $result[0];
+            if (!empty($verbindlichkeit_from_db['sachkonto'])) {
+                $sachkonto_display = $this->app->DB->Select(
+                    "SELECT CONCAT(sachkonto,' ',beschriftung) FROM kontorahmen WHERE sachkonto = '".
+                    $this->app->DB->real_escape_string($verbindlichkeit_from_db['sachkonto'])."' LIMIT 1"
+                );
+                if (!empty($sachkonto_display)) {
+                    $this->app->Tpl->Set('SACHKONTO', $sachkonto_display);
+                }
+            }
         }
 
         // Check  positions
@@ -1128,6 +1137,7 @@ class Verbindlichkeit {
         $this->app->YUI->AutoComplete("projekt", "projektname", 1);
         $this->app->Tpl->Set('PROJEKT',$this->app->erp->ReplaceProjekt(false,$verbindlichkeit_from_db['projekt'],false));
         $this->app->YUI->AutoComplete("kostenstelle", "kostenstelle", 1);
+        $this->app->YUI->AutoComplete("sachkonto", "sachkonto", 1);
         $this->app->Tpl->Set('KOSTENSTELLE',$this->app->DB->SELECT("SELECT nummer FROM kostenstellen WHERE id = '".$verbindlichkeit_from_db['kostenstelle']."'"));
 
         $waehrungenselect = $this->app->erp->GetSelect($this->app->erp->GetWaehrung(), $verbindlichkeit_from_db['waehrung']);
@@ -1300,7 +1310,28 @@ class Verbindlichkeit {
         $input['bestellung'] = $this->app->Secure->GetPOST('bestellung');
 	    $input['kostenstelle'] = $this->app->Secure->GetPOST('kostenstelle');
 	    $input['internebemerkung'] = $this->app->Secure->GetPOST('internebemerkung');
+        $input['sachkonto'] = $this->normalize_sachkonto($this->app->Secure->GetPOST('sachkonto'));
+        $input['ustnormal'] = $this->normalize_steuersatz($this->app->Secure->GetPOST('ustnormal'));
         return $input;
+    }
+
+    private function normalize_sachkonto($value): string
+    {
+        $value = trim((string)$value);
+        if ($value === '') {
+            return '';
+        }
+        $parts = preg_split('/\s+/', $value, 2);
+        return $parts[0];
+    }
+
+    private function normalize_steuersatz($value): string
+    {
+        $value = trim((string)$value);
+        if ($value === '') {
+            return '';
+        }
+        return str_replace(',', '.', $value);
     }
 
     function verbindlichkeit_menu($id) {
@@ -1381,9 +1412,75 @@ class Verbindlichkeit {
     function verbindlichkeit_freigabe()
     {
         $id = $this->app->Secure->GetGET('id');
+        $this->verbindlichkeit_kopfposition_anlegen($id);
         $this->app->erp->BelegFreigabe('verbindlichkeit',$id);
         $this->app->erp->BelegProtokoll("verbindlichkeit",$id,"Verbindlichkeit freigegeben");
         $this->verbindlichkeit_edit();
+    }
+
+    private function verbindlichkeit_kopfposition_anlegen($id): void
+    {
+        $id = (int)$id;
+        if ($id <= 0) {
+            return;
+        }
+
+        $verbindlichkeit = $this->app->DB->SelectRow(
+            "SELECT betrag, sachkonto, ustnormal FROM verbindlichkeit WHERE id = ".$id
+        );
+        if (empty($verbindlichkeit)) {
+            return;
+        }
+
+        $sachkonto = trim((string)$verbindlichkeit['sachkonto']);
+        $steuersatz_raw = $verbindlichkeit['ustnormal'];
+
+        if ($sachkonto === '' || $steuersatz_raw === '' || $steuersatz_raw === null) {
+            return;
+        }
+
+        $steuersatz_raw = str_replace(',', '.', (string)$steuersatz_raw);
+        if (!is_numeric($steuersatz_raw)) {
+            return;
+        }
+
+        $steuersatz = (float)$steuersatz_raw;
+        if ($steuersatz < 0) {
+            return;
+        }
+
+        $position_count = (int)$this->app->DB->Select(
+            "SELECT COUNT(*) FROM verbindlichkeit_position WHERE verbindlichkeit = ".$id
+        );
+        if ($position_count > 0) {
+            return;
+        }
+
+        $brutto_raw = $verbindlichkeit['betrag'];
+        if ($brutto_raw === '' || $brutto_raw === null) {
+            return;
+        }
+        $brutto = (float)str_replace(',', '.', (string)$brutto_raw);
+        if ($brutto <= 0) {
+            return;
+        }
+
+        $kontorahmen = (int)$this->app->erp->ReplaceKontorahmen(true, $sachkonto, false);
+        if ($kontorahmen <= 0) {
+            return;
+        }
+
+        $preis_netto = $brutto;
+        if ($steuersatz > 0) {
+            $preis_netto = $brutto / (1 + ($steuersatz / 100));
+        }
+        $preis_netto = round($preis_netto, 6);
+
+        $bezeichnung = $this->app->DB->real_escape_string('Gesamtbetrag');
+        $sql = "INSERT INTO verbindlichkeit_position ".
+               "(verbindlichkeit, bezeichnung, menge, preis, steuersatz, kontorahmen, paketdistribution) ".
+               "VALUES (".$id.", '".$bezeichnung."', 1, ".$preis_netto.", ".$steuersatz.", ".$kontorahmen.", 0)";
+        $this->app->DB->Insert($sql);
     }
 
     // Returns true or error message

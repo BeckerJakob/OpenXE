@@ -84,6 +84,22 @@
                                                     </tr>
                                                     <tr>
                                                         <td>
+                                                            {|Steuersatz %|}:
+                                                        </td>
+                                                        <td>
+                                                            <input type="number" step="0.01" min="0" name="ustnormal" id="ustnormal" value="[USTNORMAL]" placeholder="[STANDARDSTEUERSATZ]" size="20" [SAVEDISABLED]>
+                                                        </td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>
+                                                            {|Sachkonto|}:
+                                                        </td>
+                                                        <td>
+                                                            <input type="text" name="sachkonto" id="sachkonto" value="[SACHKONTO]" size="20" [SAVEDISABLED]>
+                                                        </td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>
                                                             {|Betrag Positionen brutto|}:
                                                         </td>
                                                         <td>
