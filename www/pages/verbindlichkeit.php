@@ -629,14 +629,31 @@ class Verbindlichkeit {
                 // Add checks here
 
                 $freigabe = $this->app->DB->SelectArr("SELECT rechnungsfreigabe, freigabe FROM verbindlichkeit WHERE id =".$id)[0];
+                $kopf_sachkonto = $input['sachkonto'] ?? '';
+                $kopf_ustnormal = $input['ustnormal'] ?? '';
+                $kopf_betrag = $input['betrag'] ?? '';
                 if ($freigabe['rechnungsfreigabe'] || $freigabe['freigabe']) {
                     $internebemerkung = $input['internebemerkung'];
                     $projekt = $input['projekt'];
                     $kostenstelle = $input['kostenstelle'];
+                    $kopfposition_erlaubt = false;
+                    $verbindlichkeit_id = (int)$id;
+                    if ($verbindlichkeit_id > 0) {
+                        $position_count = (int)$this->app->DB->Select(
+                            "SELECT COUNT(*) FROM verbindlichkeit_position WHERE verbindlichkeit = ".$verbindlichkeit_id
+                        );
+                        if ($position_count === 1 && empty($freigabe['rechnungsfreigabe'])) {
+                            $kopfposition_erlaubt = true;
+                        }
+                    }
                     unset($input);
                     $input['internebemerkung'] = $internebemerkung;
                     $input['projekt'] = $this->app->erp->ReplaceProjekt(true,$projekt,true);
                     $input['kostenstelle'] = $this->app->DB->Select("SELECT id FROM kostenstellen WHERE nummer = '".$kostenstelle."'");
+                    if ($kopfposition_erlaubt) {
+                        $input['sachkonto'] = $kopf_sachkonto;
+                        $input['ustnormal'] = $kopf_ustnormal;
+                    }
                 } else {
 
                     $input['rechnungsdatum'] = $this->app->erp->ReplaceDatum(true,$input['rechnungsdatum'],true); // Parameters: Target db?, value, from form?
@@ -711,6 +728,7 @@ class Verbindlichkeit {
 //               echo($sql);
 
                 $this->app->DB->Update($sql);
+                $this->verbindlichkeit_kopfposition_synchronisieren((int)$id, $kopf_sachkonto, $kopf_ustnormal, $kopf_betrag);
 
                 if ($id == 'NULL') {
                     $id = $this->app->DB->GetInsertID();
@@ -1002,6 +1020,8 @@ class Verbindlichkeit {
             $this->app->Tpl->Set(strtoupper($key), $value);
         }
 
+        $this->app->Tpl->Set('KOPFFELDERHIDDEN', '');
+        $this->app->Tpl->Set('KOPFFELDERDISABLED', '');
         if (!empty($result[0])) {
             $verbindlichkeit_from_db = $result[0];
             if (!empty($verbindlichkeit_from_db['sachkonto'])) {
@@ -1013,6 +1033,29 @@ class Verbindlichkeit {
                     $this->app->Tpl->Set('SACHKONTO', $sachkonto_display);
                 }
             }
+        }
+        if (!empty($verbindlichkeit_from_db)) {
+            $position_count = (int)$this->app->DB->Select(
+                "SELECT COUNT(*) FROM verbindlichkeit_position WHERE verbindlichkeit = ".$verbindlichkeit_from_db['id']
+            );
+            if ($position_count > 1 || (!empty($verbindlichkeit_from_db['freigabe']) && $position_count !== 1)) {
+                $this->app->Tpl->Set('KOPFFELDERHIDDEN', 'hidden');
+            }
+            $kopfFelderDisabled = '';
+            if (!empty($verbindlichkeit_from_db['rechnungsfreigabe'])) {
+                $kopfFelderDisabled = 'disabled';
+            } else if (!empty($verbindlichkeit_from_db['freigabe']) && $position_count !== 1) {
+                $kopfFelderDisabled = 'disabled';
+            }
+            $this->app->Tpl->Set('KOPFFELDERDISABLED', $kopfFelderDisabled);
+            $ustnormal_display = '';
+            if ($verbindlichkeit_from_db['ustnormal'] !== '' && $verbindlichkeit_from_db['ustnormal'] !== null) {
+                $ustnormal_value = (float)str_replace(',', '.', (string)$verbindlichkeit_from_db['ustnormal']);
+                if ($ustnormal_value >= 0) {
+                    $ustnormal_display = number_format($ustnormal_value, 2, '.', '');
+                }
+            }
+            $this->app->Tpl->Set('USTNORMAL', $ustnormal_display);
         }
 
         // Check  positions
@@ -1334,6 +1377,25 @@ class Verbindlichkeit {
         return str_replace(',', '.', $value);
     }
 
+    private function normalize_betrag($value): float
+    {
+        $value = trim((string)$value);
+        if ($value === '') {
+            return 0.0;
+        }
+        if (strpos($value, ',') !== false && strpos($value, '.') !== false) {
+            if (strrpos($value, ',') > strrpos($value, '.')) {
+                $value = str_replace('.', '', $value);
+                $value = str_replace(',', '.', $value);
+            } else {
+                $value = str_replace(',', '', $value);
+            }
+        } else {
+            $value = str_replace(',', '.', $value);
+        }
+        return (float)$value;
+    }
+
     function verbindlichkeit_menu($id) {
 
         $this->app->erp->MenuEintrag("index.php?module=verbindlichkeit&action=edit&id=$id", "Details");
@@ -1460,7 +1522,7 @@ class Verbindlichkeit {
         if ($brutto_raw === '' || $brutto_raw === null) {
             return;
         }
-        $brutto = (float)str_replace(',', '.', (string)$brutto_raw);
+        $brutto = $this->normalize_betrag($brutto_raw);
         if ($brutto <= 0) {
             return;
         }
@@ -1481,6 +1543,68 @@ class Verbindlichkeit {
                "(verbindlichkeit, bezeichnung, menge, preis, steuersatz, kontorahmen, paketdistribution) ".
                "VALUES (".$id.", '".$bezeichnung."', 1, ".$preis_netto.", ".$steuersatz.", ".$kontorahmen.", 0)";
         $this->app->DB->Insert($sql);
+    }
+
+    private function verbindlichkeit_kopfposition_synchronisieren(int $id, string $sachkonto, string $steuersatz_raw, $betrag_raw): void
+    {
+        if ($id <= 0) {
+            return;
+        }
+
+        $verbindlichkeit = $this->app->DB->SelectRow(
+            "SELECT betrag, rechnungsfreigabe FROM verbindlichkeit WHERE id = ".$id
+        );
+        if (empty($verbindlichkeit) || !empty($verbindlichkeit['rechnungsfreigabe'])) {
+            return;
+        }
+
+        $position_count = (int)$this->app->DB->Select(
+            "SELECT COUNT(*) FROM verbindlichkeit_position WHERE verbindlichkeit = ".$id
+        );
+        if ($position_count !== 1) {
+            return;
+        }
+
+        $position = $this->app->DB->SelectRow(
+            "SELECT id FROM verbindlichkeit_position WHERE verbindlichkeit = ".$id." LIMIT 1"
+        );
+        if (empty($position)) {
+            return;
+        }
+
+        $updates = [];
+
+        if ($sachkonto !== '') {
+            $kontorahmen = (int)$this->app->erp->ReplaceKontorahmen(true, $sachkonto, false);
+            if ($kontorahmen > 0) {
+                $updates[] = "kontorahmen = ".$kontorahmen;
+            }
+        }
+
+        $steuersatz = null;
+        if ($steuersatz_raw !== '' && is_numeric($steuersatz_raw)) {
+            $steuersatz = (float)$steuersatz_raw;
+            if ($steuersatz >= 0) {
+                $updates[] = "steuersatz = ".$steuersatz;
+            } else {
+                $steuersatz = null;
+            }
+        }
+
+        if ($steuersatz !== null) {
+            $brutto_basis = $betrag_raw !== '' ? $betrag_raw : $verbindlichkeit['betrag'];
+            $brutto = $this->normalize_betrag($brutto_basis);
+            if ($brutto > 0) {
+                $preis_netto = $brutto / (1 + ($steuersatz / 100));
+                $preis_netto = round($preis_netto, 6);
+                $updates[] = "preis = ".$preis_netto;
+            }
+        }
+
+        if (!empty($updates)) {
+            $sql = "UPDATE verbindlichkeit_position SET ".implode(', ', $updates)." WHERE id = ".$position['id'];
+            $this->app->DB->Update($sql);
+        }
     }
 
     // Returns true or error message
