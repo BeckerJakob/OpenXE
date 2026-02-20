@@ -13,8 +13,8 @@
                 <div class='col-xs-12 col-md-10 col-md-height'>
                     <div class='inside inside-full-height'>
                         <fieldset>
-                            <legend>{|Buchungsstapel|}</legend>
                             <table width="100%" border="0">
+                            <legend>{|Buchungsstapel|}</legend>
                                 <tr>
                                     <td>{|Rechnungen:|}</td>
                                     <td><input type="checkbox" name="rechnung" value="1" [RGCHECKED] /></td>
@@ -30,6 +30,10 @@
                                 <tr>
                                     <td>{|Lieferantengutschriften:|}</td>
                                     <td><input type="checkbox" name="lieferantengutschrift" value="1" [LGCHECKED] /></td>
+                                </tr>
+                                <tr>
+                                    <td>{|Bank/Kasse (Zahlungsverkehr):|}</td>
+                                    <td><input type="checkbox" name="bankbuchungen" value="1" [BANKCHECKED] /></td>
                                 </tr>
                                 <tr>
                                     <td>Datum von:</td>
