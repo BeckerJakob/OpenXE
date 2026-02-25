@@ -3146,6 +3146,7 @@ function LieferscheinEinlagern($id,$grund="Lieferschein Einlagern", $lpiids = nu
           }else{
             if($belegtyp=="lieferschein")
             {
+              $this->app->DB->Update("UPDATE lieferschein_position SET geliefert='$geliefert' WHERE id='$subid' LIMIT 1");
               $auftragposid=$this->app->DB->Select("SELECT auftrag_position_id FROM lieferschein_position WHERE id='$subid'");
               if($auftragposid>0)
               {
