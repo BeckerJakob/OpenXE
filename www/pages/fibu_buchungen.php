@@ -197,6 +197,7 @@ class Fibu_buchungen {
                 $linkend = '"><img src="./themes/'.$app->Conf->WFconf['defaulttheme'].'/images/forward.svg" border=0></a></td></tr></table>';
              
                 $typ = $this->app->User->GetParameter('fibu_buchungen_doc_typ');
+                $excludeAuftragFromVorschlag = " AND fo.typ <> 'auftrag'";
           
                 $objektlink = array (
                     '<a href=\"index.php?action=edit&module=',
@@ -341,7 +342,7 @@ class Fibu_buchungen {
                                 fibu_buchungen_alle fob
                             ON
                                 fo.typ = fob.typ AND fo.id = fob.id                          
-                            WHERE fo.is_beleg = 1
+                            WHERE fo.is_beleg = 1".$excludeAuftragFromVorschlag."
                             GROUP BY
                                 fo.typ,
                                 fo.id,
