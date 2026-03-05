@@ -97,7 +97,7 @@ class Verbindlichkeit {
 
                 $menu = "<table cellpadding=0 cellspacing=0><tr><td nowrap>" . "<a href=\"index.php?module=verbindlichkeit&action=edit&id=%value%\"><img src=\"./themes/{$app->Conf->WFconf['defaulttheme']}/images/edit.svg\" border=\"0\"></a>&nbsp;<a href=\"#\" onclick=DeleteDialog(\"index.php?module=verbindlichkeit&action=delete&id=%value%\");>" . "<img src=\"themes/{$app->Conf->WFconf['defaulttheme']}/images/delete.svg\" border=\"0\"></a>" . "</td></tr></table>";
 
-                $payment_status = "(SELECT payment_status FROM payment_transaction WHERE doc_typ = 'verbindlichkeit' AND doc_id = v.id)";
+                $fibu_fully_booked = "(SELECT IF(COUNT(*) > 0 AND ROUND(SUM(betrag), 2) = 0, 1, 0) FROM fibu_buchungen_alle WHERE typ = 'verbindlichkeit' AND id = v.id)";
 
                 $sql = "SELECT SQL_CALC_FOUND_ROWS
                             v.id,
@@ -110,7 +110,7 @@ class Verbindlichkeit {
                             ".$app->erp->FormatMenge('v.betrag',2).",
                             v.waehrung,
                             v.zahlungsweise,
-                            if(v.bezahlt,'bezahlt',COALESCE(".$payment_status.",'offen')),
+                            if(v.bezahlt OR COALESCE(".$fibu_fully_booked.",0) = 1,'bezahlt','offen'),
                             ".$app->erp->FormatDate("v.zahlbarbis").",
                             IF(v.skonto <> 0,".$app->erp->FormatDate("v.skontobis").",''),
                             IF(v.skonto <> 0,CONCAT(".$app->erp->FormatMenge('v.skonto',0).",'%'),''),
@@ -179,7 +179,7 @@ class Verbindlichkeit {
 
                     $more_data4 = $this->app->Secure->GetGET("more_data4");
                     if ($more_data4 == 1) {
-                       $where .= " AND v.bezahlt <> 1";
+                       $where .= " AND v.bezahlt <> 1 AND COALESCE(".$fibu_fully_booked.",0) <> 1";
                     }
                     else {
                     }
@@ -466,6 +466,7 @@ class Verbindlichkeit {
                 $ids = $this->app->DB->SelectArr($sql);
 
                 foreach ($ids as $verbindlichkeit) {
+                    $this->verbindlichkeit_sync_bezahlt_via_fibu((int)$verbindlichkeit['id'], false);
                     $this->verbindlichkeit_abschliessen($verbindlichkeit['id']);
                 }
 
@@ -1143,7 +1144,12 @@ class Verbindlichkeit {
         } else {
             $this->app->Tpl->Set('RUECKSETZENBUCHHALTUNGHIDDEN','hidden');
         }
-        if ($verbindlichkeit_from_db['bezahlt'] == '1') {
+        $ist_als_bezahlt_anzuzeigen = (
+            $verbindlichkeit_from_db['bezahlt'] == '1'
+            || $this->verbindlichkeit_is_vollstaendig_bebucht((int)$verbindlichkeit_from_db['id'])
+        );
+
+        if ($ist_als_bezahlt_anzuzeigen) {
             $this->app->Tpl->Set('FREIGABEBEZAHLTHIDDEN','hidden');
         } else {
             $this->app->Tpl->Set('RUECKSETZENBEZAHLTHIDDEN','hidden');
@@ -1151,7 +1157,7 @@ class Verbindlichkeit {
 
       	$this->app->Tpl->Set('WARENEINGANGCHECKED', $verbindlichkeit_from_db['freigabe']==1?"checked":"");
       	$this->app->Tpl->Set('RECHNUNGSFREIGABECHECKED', $verbindlichkeit_from_db['rechnungsfreigabe']==1?"checked":"");
-      	$this->app->Tpl->Set('BEZAHLTCHECKED', $verbindlichkeit_from_db['bezahlt']==1?"checked":"");
+      	$this->app->Tpl->Set('BEZAHLTCHECKED', $ist_als_bezahlt_anzuzeigen ? "checked" : "");
 
         $this->app->Tpl->Set('RECHNUNGSDATUM',$this->app->erp->ReplaceDatum(false,$verbindlichkeit_from_db['rechnungsdatum'],false));
         $this->app->YUI->DatePicker("rechnungsdatum");
@@ -1774,6 +1780,8 @@ class Verbindlichkeit {
             $gotoedit = true;
         }
 
+        $this->verbindlichkeit_sync_bezahlt_via_fibu((int)$id, false);
+
         $sql = "SELECT freigabe, rechnungsfreigabe, bezahlt, betrag FROM verbindlichkeit WHERE id =".$id;
         $verbindlichkeit = $this->app->DB->SelectRow($sql);
 
@@ -1836,6 +1844,37 @@ class Verbindlichkeit {
         if ($gotoedit) {
             $this->verbindlichkeit_edit();
         }
+    }
+
+    function verbindlichkeit_is_vollstaendig_bebucht($id)
+    {
+        $id = (int)$id;
+        if ($id <= 0) {
+            return false;
+        }
+
+        $sql = "SELECT IF(COUNT(*) > 0 AND ROUND(SUM(betrag), 2) = 0, 1, 0) FROM fibu_buchungen_alle WHERE typ = 'verbindlichkeit' AND id = ".$id;
+        return (int)$this->app->DB->Select($sql) === 1;
+    }
+
+    function verbindlichkeit_sync_bezahlt_via_fibu($id, $writeProtocol = false)
+    {
+        $id = (int)$id;
+        if ($id <= 0 || !$this->verbindlichkeit_is_vollstaendig_bebucht($id)) {
+            return false;
+        }
+
+        $isAlreadyMarked = (int)$this->app->DB->Select("SELECT bezahlt FROM verbindlichkeit WHERE id = ".$id." LIMIT 1");
+        if ($isAlreadyMarked === 1) {
+            return true;
+        }
+
+        $this->app->DB->Update("UPDATE verbindlichkeit SET bezahlt = 1 WHERE id = ".$id);
+        if ($writeProtocol) {
+            $this->app->erp->BelegProtokoll("verbindlichkeit",$id,"Verbindlichkeit automatisch als bezahlt markiert (vollst&auml;ndig bebucht)");
+        }
+
+        return true;
     }
   
 /*    function verbindlichkeit_schreibschutz($id = null)
