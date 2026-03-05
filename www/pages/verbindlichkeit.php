@@ -1782,19 +1782,11 @@ class Verbindlichkeit {
 
         $this->verbindlichkeit_sync_bezahlt_via_fibu((int)$id, false);
 
-        $sql = "SELECT freigabe, rechnungsfreigabe, bezahlt, betrag FROM verbindlichkeit WHERE id =".$id;
+        $sql = "SELECT bezahlt FROM verbindlichkeit WHERE id =".$id;
         $verbindlichkeit = $this->app->DB->SelectRow($sql);
 
-        if ($verbindlichkeit['freigabe'] != 1) {
-            $einkauf_check = $this->check_positions($id,$verbindlichkeit['betrag']);
-            if ($einkauf_check['pos_ok']) {
-                $this->verbindlichkeit_freigabeeinkauf($id);
-                $verbindlichkeit['freigabe'] = 1;
-            }
-        }
-
         $anzahldateien = $this->app->erp->AnzahlDateien("verbindlichkeit",$id);
-        if (!empty($anzahldateien) && $verbindlichkeit['freigabe'] && $verbindlichkeit['rechnungsfreigabe'] && $verbindlichkeit['bezahlt']) {
+        if (!empty($anzahldateien) && $verbindlichkeit['bezahlt']) {
             $sql = "UPDATE verbindlichkeit SET status = 'abgeschlossen' WHERE id=".$id;
             $this->app->DB->Update($sql);
             $this->app->erp->BelegProtokoll("verbindlichkeit",$id,"Verbindlichkeit abgeschlossen");
