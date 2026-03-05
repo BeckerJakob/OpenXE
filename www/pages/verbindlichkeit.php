@@ -1155,8 +1155,6 @@ class Verbindlichkeit {
             $this->app->Tpl->Set('RUECKSETZENBEZAHLTHIDDEN','hidden');
         }
 
-      	$this->app->Tpl->Set('WARENEINGANGCHECKED', $verbindlichkeit_from_db['freigabe']==1?"checked":"");
-      	$this->app->Tpl->Set('RECHNUNGSFREIGABECHECKED', $verbindlichkeit_from_db['rechnungsfreigabe']==1?"checked":"");
       	$this->app->Tpl->Set('BEZAHLTCHECKED', $ist_als_bezahlt_anzuzeigen ? "checked" : "");
 
         $this->app->Tpl->Set('RECHNUNGSDATUM',$this->app->erp->ReplaceDatum(false,$verbindlichkeit_from_db['rechnungsdatum'],false));

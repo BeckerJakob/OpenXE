@@ -156,27 +156,6 @@
                                                     </tr>
                                                     <tr>
                                                         <td>
-                                                            {|Waren-/Leistungsprüfung (Einkauf)|}:
-                                                        </td>
-                                                        <td>
-                                                            <input type="checkbox" id="wareneingang" value="1" [WARENEINGANGCHECKED] size="20" disabled>
-                                                            <a href="index.php?module=verbindlichkeit&action=freigabeeinkauf&id=[ID]" title="freigeben" [FREIGABEEINKAUFHIDDEN]><img src="themes/new/images/forward.svg" border="0" class="textfeld_icon"></a>                                                                                                                
-                                                            <a href="index.php?module=verbindlichkeit&action=ruecksetzeneinkauf&id=[ID]" title="r&uuml;cksetzen" [RUECKSETZENEINKAUFHIDDEN]><img src="themes/new/images/delete.svg" border="0" class="textfeld_icon"></a>
-                                                            <i [EINKAUFINFOHIDDEN]>Wird automatisch gesetzt wenn Positionen vollst&auml;ndig</a>
-                                                        </td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td>
-                                                            {|Rechnungseingangsprüfung (Buchhaltung)|}:
-                                                        </td>
-                                                        <td>
-                                                            <input type="checkbox" id="rechnungsfreigabe" [RECHNUNGSFREIGABECHECKED] size="20" disabled>
-                                                            <a href="index.php?module=verbindlichkeit&action=freigabebuchhaltung&id=[ID]" title="freigeben" [FREIGABEBUCHHALTUNGHIDDEN]><img src="themes/new/images/forward.svg" border="0" class="textfeld_icon"></a>                                                                                                                
-                                                            <a href="index.php?module=verbindlichkeit&action=ruecksetzenbuchhaltung&id=[ID]" title="r&uuml;cksetzen"  [RUECKSETZENBUCHHALTUNGHIDDEN]><img src="themes/new/images/delete.svg" border="0" class="textfeld_icon"></a>                                                                                                                
-                                                        </td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td>
                                                             {|Bezahlt|}:
                                                         </td>
                                                         <td>
