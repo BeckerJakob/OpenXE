@@ -17,20 +17,6 @@
                   </label>
                   <label for="anhang">{|Anhang fehlt|}</label>
                 </li>
-                 <li class="filter-item">
-                  <label for="wareneingang" class="switch">
-                    <input type="checkbox" id="wareneingang">
-                    <span class="slider round"></span>
-                  </label>
-                  <label for="wareneingang">{|Wareingang/Leistungspr&uuml;fung fehlt|}</label>
-                </li>                        
-                <li class="filter-item">
-                  <label for="rechnungsfreigabe" class="switch">
-                    <input type="checkbox" id="rechnungsfreigabe">
-                    <span class="slider round"></span>
-                  </label>
-                  <label for="rechnungsfreigabe">{|Rechnungseingangspr&uuml;fung fehlt|}</label>
-                </li>
                 <li class="filter-item">
                   <label for="nichtbezahlt" class="switch">
                     <input type="checkbox" id="nichtbezahlt">

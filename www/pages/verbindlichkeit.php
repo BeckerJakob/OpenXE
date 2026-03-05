@@ -133,8 +133,6 @@ class Verbindlichkeit {
                     $count = "SELECT count(DISTINCT id) FROM verbindlichkeit v WHERE $where";
                     // Toggle filters
                     $this->app->Tpl->Add('JQUERYREADY', "$('#anhang').click( function() { fnFilterColumn1( 0 ); } );");
-                    $this->app->Tpl->Add('JQUERYREADY', "$('#wareneingang').click( function() { fnFilterColumn2( 0 ); } );");
-                    $this->app->Tpl->Add('JQUERYREADY', "$('#rechnungsfreigabe').click( function() { fnFilterColumn3( 0 ); } );");
                     $this->app->Tpl->Add('JQUERYREADY', "$('#nichtbezahlt').click( function() { fnFilterColumn4( 0 ); } );");
                     $this->app->Tpl->Add('JQUERYREADY', "$('#stornierte').click( function() { fnFilterColumn5( 0 ); } );");
                     $this->app->Tpl->Add('JQUERYREADY', "$('#abgeschlossen').click( function() { fnFilterColumn6( 0 ); } );");
@@ -161,20 +159,6 @@ class Verbindlichkeit {
                     if ($more_data1 == 1) {
                        $where .= " AND datei_anzahl IS NULL";
                     } else {
-                    }
-
-                    $more_data2 = $this->app->Secure->GetGET("more_data2");
-                    if ($more_data2 == 1) {
-                       $where .= " AND v.freigabe <> '1'";
-                    }
-                    else {
-                    }
-
-                    $more_data3 = $this->app->Secure->GetGET("more_data3");
-                    if ($more_data3 == 1) {
-                       $where .= " AND v.rechnungsfreigabe <> '1'";
-                    }
-                    else {
                     }
 
                     $more_data4 = $this->app->Secure->GetGET("more_data4");
