@@ -1243,9 +1243,6 @@ class Verbindlichkeit {
         if ($menge < 0) {
             $menge = 0;
         }
-        if ($preis < 0) {
-            $preis = 0;
-        }
         if ($steuersatz < 0) {
             $steuersatz = 0;
         }

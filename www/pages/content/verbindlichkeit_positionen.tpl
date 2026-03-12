@@ -17,7 +17,7 @@
                             </tr>
                             <tr>
                                 <td>{|Preis|}:</td>
-                                <td><input type="number" name="man_preis" id="man_preis" value="0" step="0.01" min="0" size="10"></td>
+                                <td><input type="number" name="man_preis" id="man_preis" value="0" step="0.01" size="10"></td>
                             </tr>
                             <tr>
                                 <td>{|Steuersatz %|}:</td>
