@@ -796,14 +796,20 @@ class Fibu_buchungen {
     }
 
 
-    function fibu_buchungen_buchen(string $von_typ, int $von_id, string $nach_typ, int $nach_id, $betrag, string $waehrung, $datum, string $internebemerkung) {
-        $sql = "INSERT INTO `fibu_buchungen` (`von_typ`, `von_id`, `nach_typ`, `nach_id`, `datum`, `betrag`, `waehrung`, `benutzer`, `zeit`, `internebemerkung`) VALUES ('".$von_typ."','".$von_id."','".$nach_typ."', '".$nach_id."', '".$datum."', '".$betrag."', '".$waehrung."', '".$this->app->User->GetID()."','".date("Y-m-d H:i")."', '".$internebemerkung."')";
+    function fibu_buchungen_buchen(string $von_typ, int $von_id, string $nach_typ, int $nach_id, $betrag, string $waehrung, $datum, string $internebemerkung, string $buchungsschluessel = '') {
+        $validBuchungsschluessel = in_array($buchungsschluessel, array('80', '90'), true) ? $buchungsschluessel : '';
+        $sql = "INSERT INTO `fibu_buchungen` (`von_typ`, `von_id`, `nach_typ`, `nach_id`, `datum`, `betrag`, `waehrung`, `buchungsschluessel`, `benutzer`, `zeit`, `internebemerkung`) VALUES ('".$von_typ."','".$von_id."','".$nach_typ."', '".$nach_id."', '".$datum."', '".$betrag."', '".$waehrung."', '".$validBuchungsschluessel."', '".$this->app->User->GetID()."','".date("Y-m-d H:i")."', '".$internebemerkung."')";
         $this->app->DB->Insert($sql);      
     }    
 
     function fibu_buchungen_zuordnen() {
 
         $submit = $this->app->Secure->GetPOST('submit');
+        $buchungsschluessel = trim((string)$this->app->Secure->GetPOST('buchungsschluessel'));
+        if (!in_array($buchungsschluessel, array('', '80', '90'), true)) {
+            $buchungsschluessel = '';
+        }
+
         if ($submit == 'neuberechnen') {
             $this->fibu_rebuild_tables();
 
@@ -866,7 +872,7 @@ class Fibu_buchungen {
 //                                $sql = "INSERT INTO `fibu_buchungen` (`von_typ`, `von_id`, `nach_typ`, `nach_id`, `datum`, `betrag`, `waehrung`, `benutzer`, `zeit`, `internebemerkung`) VALUES ('".$von_typ."','".$von_id."','kontorahmen', '".$account_id."', '".$datum."', '".-$betrag."', '".$waehrung."', '".$this->app->User->GetID()."','".date("Y-m-d H:i")."', '')";
 //                                    echo($sql."\n");
 //                                $this->app->DB->Insert($sql);  
-                                    $this->fibu_buchungen_buchen($von_typ, $von_id, 'kontorahmen', $account_id, -$betrag, $waehrung, $datum, '');
+                                    $this->fibu_buchungen_buchen($von_typ, $von_id, 'kontorahmen', $account_id, -$betrag, $waehrung, $datum, '', $buchungsschluessel);
                             break;
                             case 'vorschlag_diff_sachkonto':
                                 if ($doc_id) {              
@@ -901,6 +907,9 @@ class Fibu_buchungen {
         // For transfer to tablesearch    
         $doc_typ = $this->app->Secure->GetGET('typ');
         $this->app->User->SetParameter('fibu_buchungen_doc_typ', $doc_typ);
+        $this->app->Tpl->Set('IS_KONTOAUSZUEGE', $doc_typ === 'kontoauszuege' ? '1' : '0');
+        $this->app->Tpl->Set('BUCHUNGSSCHLUESSEL_80_SELECTED', $buchungsschluessel === '80' ? 'selected="selected"' : '');
+        $this->app->Tpl->Set('BUCHUNGSSCHLUESSEL_90_SELECTED', $buchungsschluessel === '90' ? 'selected="selected"' : '');
 
         $this->app->erp->Headlines('Buchhaltung','zuordnen '.strtoupper($doc_typ));
 

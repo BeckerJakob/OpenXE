@@ -39507,6 +39507,17 @@
                     "Comment": ""
                 },
                 {
+                    "Field": "buchungsschluessel",
+                    "Type": "varchar(32)",
+                    "Collation": "utf8mb3_general_ci",
+                    "Null": "NO",
+                    "Key": "",
+                    "Default": "''",
+                    "Extra": "",
+                    "Privileges": "select,insert,update,references",
+                    "Comment": ""
+                },
+                {
                     "Field": "benutzer",
                     "Type": "int(11)",
                     "Collation": null,

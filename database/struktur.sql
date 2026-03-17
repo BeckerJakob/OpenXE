@@ -5499,6 +5499,7 @@ CREATE TABLE `fibu_buchungen` (
   `nach_id` int(11) NOT NULL,
   `betrag` decimal(10,2) NOT NULL,
   `waehrung` varchar(10) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci NOT NULL DEFAULT 'EUR',
+  `buchungsschluessel` varchar(32) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci NOT NULL DEFAULT '',
   `benutzer` int(11) NOT NULL,
   `zeit` datetime NOT NULL,
   `internebemerkung` varchar(128) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci NOT NULL,
