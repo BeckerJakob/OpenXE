@@ -396,6 +396,8 @@ class Exportbuchhaltung
     * @throws ConsistencyException with string (list of items) if consistency check fails and no sachkonto for differences is given
     */
     function DATEV_Buchuchungsstapel(bool $rechnung, bool $gutschrift, bool $verbindlichkeit, bool $lieferantengutschrift, bool $bankbuchungen, string $berater, string $mandant, datetime $wj_beginn, int $sachkontenlaenge, datetime $von, datetime $bis, int $projekt = 0, string $filename = 'EXTF_Buchungsstapel_DATEV_export.csv', $diffignore = false, $sachkonto_differences, string $format = "ISO-8859-1") : string {
+        // Per Schalter wieder aktivierbar: true = Zahlweise exportieren, false = Feld leer lassen
+        $exportZahlweise = false;
 
         $datev_header_definition = array (
             '1' => 'Kennzeichen',
@@ -717,7 +719,9 @@ class Exportbuchhaltung
                             $data['Buchungstext'] = "Differenz";
                             $data['EU-Mitgliedstaat u. UStID (Bestimmung)'] = $row['ustid'];
                             $data['Auftragsnummer'] = $row['auftrag'];
-                            $data['Zahlweise'] = $row['zahlweise'];
+                            if ($exportZahlweise) {
+                                $data['Zahlweise'] = $row['zahlweise'];
+                            }
                 		    $csv .= $this->create_line($datev_buchungsstapel_definition,$data);
                         }
         		    }
@@ -762,7 +766,9 @@ class Exportbuchhaltung
                 $data['EU-Mitgliedstaat u. UStID (Bestimmung)'] = $row['ustid'];
 
                 $data['Auftragsnummer'] = ($row['auftrag']!=0)?$row['auftrag']:'';
-                $data['Zahlweise'] = $row['zahlweise'];
+                if ($exportZahlweise) {
+                    $data['Zahlweise'] = $row['zahlweise'];
+                }
 
                 $csv .= $this->create_line($datev_buchungsstapel_definition,$data);
             }
