@@ -602,15 +602,15 @@ class Lieferschein extends GenLieferschein
           l.land,
           l.plz,
           l.ort,
-          l.telefon,
           l.datum,
           l.belegnr,
-          l.ihrebestellnummer,
           l.auftragid,
-          l.rechnungid,
-          IFNULL(adr.kundennummer, '') AS adresse_kundennummer
+          IFNULL(adr.kundennummer, '') AS adresse_kundennummer,
+          IFNULL(adr.telefon, '') AS adresse_telefon,
+          IFNULL(ab.belegnr, '') AS auftrag_belegnr
         FROM lieferschein l
         LEFT JOIN adresse adr ON adr.id = l.adresse
+        LEFT JOIN auftrag ab ON ab.id = l.auftragid
         WHERE l.id = %d
         LIMIT 1",
         $id
@@ -621,30 +621,8 @@ class Lieferschein extends GenLieferschein
       $this->app->ExitXentral();
     }
 
-    $invoiceNumber = $this->app->DB->Select(
-      sprintf(
-        "SELECT belegnr
-        FROM rechnung
-        WHERE lieferschein = %d
-        ORDER BY id DESC
-        LIMIT 1",
-        $id
-      )
-    );
-
-    if($invoiceNumber === '' && (int)$deliveryNote['rechnungid'] > 0) {
-      $invoiceNumber = $this->app->DB->Select(
-        sprintf(
-          "SELECT belegnr
-          FROM rechnung
-          WHERE id = %d
-          LIMIT 1",
-          (int)$deliveryNote['rechnungid']
-        )
-      );
-    }
-
-    if($invoiceNumber === '' && (int)$deliveryNote['auftragid'] > 0) {
+    $invoiceNumber = '';
+    if((int)$deliveryNote['auftragid'] > 0) {
       $invoiceNumber = $this->app->DB->Select(
         sprintf(
           "SELECT belegnr
@@ -686,10 +664,10 @@ class Lieferschein extends GenLieferschein
     $country = strtoupper(trim((string)$deliveryNote['land']));
     $postalCode = trim((string)$deliveryNote['plz']);
     $city = trim((string)$deliveryNote['ort']);
-    $phone = trim((string)$deliveryNote['telefon']);
+    $phone = trim((string)$deliveryNote['adresse_telefon']);
     $weight = number_format((float)$weight, 2, '.', '');
     $invoiceNumber = trim((string)$invoiceNumber);
-    $projectReferenceNumber = trim((string)$deliveryNote['ihrebestellnummer']);
+    $projectReferenceNumber = trim((string)$deliveryNote['auftrag_belegnr']);
     $deliveryId = '0';
     $deliveryNumber = trim((string)$deliveryNote['belegnr']);
     if($deliveryNumber === '' || $deliveryNumber === '0') {
