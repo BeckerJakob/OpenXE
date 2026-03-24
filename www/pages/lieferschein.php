@@ -181,6 +181,7 @@ class Lieferschein extends GenLieferschein
     $this->app->ActionHandler("list","LieferscheinList");
     $this->app->ActionHandler("create","LieferscheinCreate");
     $this->app->ActionHandler("paketmarke","LieferscheinPaketmarke");
+    $this->app->ActionHandler("dpdversanddateierstellen","DpdVersanddateiErstellen");
     $this->app->ActionHandler("positionen","LieferscheinPositionen");
     $this->app->ActionHandler("uplieferscheinposition","UpLieferscheinPosition");
     $this->app->ActionHandler("dellieferscheinposition","DelLieferscheinPosition");
@@ -579,6 +580,183 @@ class Lieferschein extends GenLieferschein
     $versandmodul->Paketmarke('TAB1', $id, gewicht: $gewicht);
     $this->app->Tpl->Parse('PAGE',"tabview.tpl");
   }
+
+  function DpdVersanddateiErstellen()
+  {
+    $id = (int)$this->app->Secure->GetGET('id');
+    if($id <= 0) {
+      $this->app->ExitXentral();
+    }
+
+    $deliveryNote = $this->app->DB->SelectRow(
+      sprintf(
+        "SELECT
+          l.id,
+          l.kundennummer,
+          l.email,
+          l.name,
+          l.ansprechpartner,
+          l.abteilung,
+          l.strasse,
+          l.adresszusatz,
+          l.land,
+          l.plz,
+          l.ort,
+          l.telefon,
+          l.datum,
+          l.belegnr,
+          l.ihrebestellnummer,
+          l.auftragid,
+          l.rechnungid,
+          IFNULL(adr.kundennummer, '') AS adresse_kundennummer
+        FROM lieferschein l
+        LEFT JOIN adresse adr ON adr.id = l.adresse
+        WHERE l.id = %d
+        LIMIT 1",
+        $id
+      )
+    );
+
+    if(empty($deliveryNote)) {
+      $this->app->ExitXentral();
+    }
+
+    $invoiceNumber = $this->app->DB->Select(
+      sprintf(
+        "SELECT belegnr
+        FROM rechnung
+        WHERE lieferschein = %d
+        ORDER BY id DESC
+        LIMIT 1",
+        $id
+      )
+    );
+
+    if($invoiceNumber === '' && (int)$deliveryNote['rechnungid'] > 0) {
+      $invoiceNumber = $this->app->DB->Select(
+        sprintf(
+          "SELECT belegnr
+          FROM rechnung
+          WHERE id = %d
+          LIMIT 1",
+          (int)$deliveryNote['rechnungid']
+        )
+      );
+    }
+
+    if($invoiceNumber === '' && (int)$deliveryNote['auftragid'] > 0) {
+      $invoiceNumber = $this->app->DB->Select(
+        sprintf(
+          "SELECT belegnr
+          FROM rechnung
+          WHERE auftragid = %d
+          ORDER BY id DESC
+          LIMIT 1",
+          (int)$deliveryNote['auftragid']
+        )
+      );
+    }
+
+    $weight = $this->app->DB->Select(
+      sprintf(
+        "SELECT IFNULL(SUM(IFNULL(lp.menge, 0) * IFNULL(a.gewicht, 0)), 0)
+        FROM lieferschein_position lp
+        LEFT JOIN artikel a ON a.id = lp.artikel
+        WHERE lp.lieferschein = %d",
+        $id
+      )
+    );
+
+    $transactionNumber = (string)$deliveryNote['id'];
+    $customerNumber = trim((string)$deliveryNote['kundennummer']);
+    if($customerNumber === '') {
+      $customerNumber = trim((string)$deliveryNote['adresse_kundennummer']);
+    }
+
+    $email = trim((string)$deliveryNote['email']);
+    $name1 = trim((string)$deliveryNote['name']);
+    $name2 = trim((string)$deliveryNote['ansprechpartner']);
+    if($name2 === '') {
+      $name2 = trim((string)$deliveryNote['abteilung']);
+    }
+
+    $deliveryAddress = trim(
+      trim((string)$deliveryNote['strasse']) . ' ' . trim((string)$deliveryNote['adresszusatz'])
+    );
+    $country = strtoupper(trim((string)$deliveryNote['land']));
+    $postalCode = trim((string)$deliveryNote['plz']);
+    $city = trim((string)$deliveryNote['ort']);
+    $phone = trim((string)$deliveryNote['telefon']);
+    $weight = number_format((float)$weight, 2, '.', '');
+    $invoiceNumber = trim((string)$invoiceNumber);
+    $projectReferenceNumber = trim((string)$deliveryNote['ihrebestellnummer']);
+    $deliveryId = '0';
+    $deliveryNumber = trim((string)$deliveryNote['belegnr']);
+    if($deliveryNumber === '' || $deliveryNumber === '0') {
+      $deliveryNumber = (string)$id;
+    }
+    $deliveryDate = '';
+    if(!empty($deliveryNote['datum']) && $deliveryNote['datum'] !== '0000-00-00') {
+      $deliveryDate = date('d.m.Y', strtotime($deliveryNote['datum']));
+    }
+
+    $quoteCsv = function($value) {
+      return '"' . str_replace('"', '""', (string)$value) . '"';
+    };
+
+    $headerLine = implode(';', array(
+      $quoteCsv('Fortlaufende Transaktionsnummer'),
+      $quoteCsv('Kundennummer'),
+      $quoteCsv('dk_email'),
+      $quoteCsv('Name 1 Empfänger'),
+      $quoteCsv('Name 2 Empfänger'),
+      $quoteCsv('dk_delivery_adresse'),
+      $quoteCsv('Landescode ISO-3166-A2 Empfänger'),
+      $quoteCsv('PLZ Empfänger'),
+      $quoteCsv('Ort Empfänger'),
+      $quoteCsv('Telefonnummer Empfänger'),
+      $quoteCsv('Gewicht d. Pakets in kg'),
+      $quoteCsv('Anzahl Sendungen'),
+      $quoteCsv('Rechnungs-Nummer'),
+      $quoteCsv('Projekt-Referenznummer'),
+      $quoteCsv('dk_delivery_id'),
+      $quoteCsv('Lieferschein-Nummer'),
+      $quoteCsv('Lieferscheindatum')
+    ));
+
+    $dataLine = implode(';', array(
+      $transactionNumber,
+      $customerNumber === '' ? '0' : $customerNumber,
+      $quoteCsv($email),
+      $quoteCsv($name1),
+      $quoteCsv($name2),
+      $quoteCsv($deliveryAddress),
+      $quoteCsv($country),
+      $quoteCsv($postalCode),
+      $quoteCsv($city),
+      $quoteCsv($phone),
+      $weight,
+      '1',
+      $quoteCsv($invoiceNumber),
+      $quoteCsv($projectReferenceNumber),
+      $deliveryId,
+      $quoteCsv($deliveryNumber),
+      $quoteCsv($deliveryDate)
+    ));
+
+    $filename = 'versand-DPD DELISprint '.$deliveryNumber.'.csv';
+
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="'.$filename.'"');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+
+    echo $headerLine . "\r\n";
+    echo $dataLine . "\r\n";
+
+    $this->app->ExitXentral();
+  }
   
   function LieferscheinEditable()
   { 
@@ -657,6 +835,8 @@ class Lieferschein extends GenLieferschein
 
     $optioncustom = $this->Custom('option');
     $casecustom = $this->Custom('case');
+    $casedpdversanddatei = "case 'dpdversanddatei': window.location.href='index.php?module=lieferschein&action=dpdversanddateierstellen&id=%value%'; document.getElementById('aktion$prefix').selectedIndex = 0; break;";
+    $optiondpdversanddatei = "<option value=\"dpdversanddatei\">DPD Versanddatei erstellen</option>";
 
     $projekt = $this->app->DB->Select("SELECT projekt FROM lieferschein WHERE id='$id' LIMIT 1");
     $auslagern = '';
@@ -742,6 +922,7 @@ class Lieferschein extends GenLieferschein
           case 'auslagern': if(!confirm('Wirklich$erneut auslagern?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=lieferschein&action=auslagern&id=%value%'; break;
           case 'rechnung': if(!confirm('".$extendtext."Wirklich als Rechnung weiterführen?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=lieferschein&action=rechnung&id=%value%'; break;
           case 'proformarechnung': if(!confirm('".$extendtext."Wirklich als Proformarechnung weiterführen?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=lieferschein&action=proformarechnung&id=%value%'; break;
+          $casedpdversanddatei
           $casecustom
           $casehook
           $hookcase 
@@ -763,6 +944,7 @@ class Lieferschein extends GenLieferschein
       $optionumlagern
       $alsrechnung
       $optionbelegeimport
+      $optiondpdversanddatei
       <option value=\"pdf\">PDF &ouml;ffnen</option>
       $etiketten
       $optioncustom
