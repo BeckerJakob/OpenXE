@@ -632,13 +632,7 @@ class Fibu_buchungen {
         $this->app->Tpl->Set(
             'BUCHUNGSSCHLUESSEL_OPTIONS',
             $this->app->erp->getSelectAsso(
-                array(
-                    ''   => 'ohne Buchungsschluessel',
-                    '9'  => '9 - 19% Vorsteuer',
-                    '8'  => '8 - 7% Vorsteuer',
-                    '80' => '80 - Systemstandard',
-                    '90' => '90 - Systemstandard',
-                ),
+                $this->getBuchungsschluesselOptions($input['buchungsschluessel']),
                 $input['buchungsschluessel']
             )
         );
@@ -648,6 +642,24 @@ class Fibu_buchungen {
         $this->app->YUI->AutoComplete('habenkonto', 'sachkonto');
 
         $this->app->Tpl->Parse('PAGE', "fibu_buchungen_create.tpl");
+    }
+
+    private function getBuchungsschluesselOptions(string $selected = ''): array {
+        $options = array(
+            ''  => 'ohne Buchungsschluessel',
+            '9' => '9 - 19% Vorsteuer',
+            '8' => '8 - 7% Vorsteuer',
+        );
+
+        // Legacy values are still accepted and shown only when already selected.
+        if ($selected === '80') {
+            $options['80'] = '80 - Alt (abwaertskompatibel)';
+        }
+        if ($selected === '90') {
+            $options['90'] = '90 - Alt (abwaertskompatibel)';
+        }
+
+        return $options;
     }
 
     private function fibu_get_kontorahmen_id(string $kontoInput): int {
@@ -976,7 +988,7 @@ class Fibu_buchungen {
 
         $submit = $this->app->Secure->GetPOST('submit');
         $buchungsschluessel = trim((string)$this->app->Secure->GetPOST('buchungsschluessel'));
-        if (!in_array($buchungsschluessel, array('', '80', '90'), true)) {
+        if (!in_array($buchungsschluessel, array('', '8', '9', '80', '90'), true)) {
             $buchungsschluessel = '';
         }
 
@@ -1078,8 +1090,13 @@ class Fibu_buchungen {
         $doc_typ = $this->app->Secure->GetGET('typ');
         $this->app->User->SetParameter('fibu_buchungen_doc_typ', $doc_typ);
         $this->app->Tpl->Set('IS_KONTOAUSZUEGE', $doc_typ === 'kontoauszuege' ? '1' : '0');
-        $this->app->Tpl->Set('BUCHUNGSSCHLUESSEL_80_SELECTED', $buchungsschluessel === '80' ? 'selected="selected"' : '');
-        $this->app->Tpl->Set('BUCHUNGSSCHLUESSEL_90_SELECTED', $buchungsschluessel === '90' ? 'selected="selected"' : '');
+        $this->app->Tpl->Set(
+            'BUCHUNGSSCHLUESSEL_OPTIONS',
+            $this->app->erp->getSelectAsso(
+                $this->getBuchungsschluesselOptions($buchungsschluessel),
+                $buchungsschluessel
+            )
+        );
 
         $this->app->erp->Headlines('Buchhaltung','zuordnen '.strtoupper($doc_typ));
 

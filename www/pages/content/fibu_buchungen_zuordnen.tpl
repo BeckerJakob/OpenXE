@@ -50,9 +50,7 @@
                                         <input type="hidden" id="is_kontoauszuege" value="[IS_KONTOAUSZUEGE]">
                                         <span id="buchungsschluessel_wrapper" style="display:none;">&nbsp;Buchungsschl&uuml;ssel:
                                             <select form="buchungenform" id="buchungsschluessel" name="buchungsschluessel">
-                                                <option value="">{|ohne Buchungsschl&uuml;ssel|}</option>
-                                                <option value="80" [BUCHUNGSSCHLUESSEL_80_SELECTED]>80</option>
-                                                <option value="90" [BUCHUNGSSCHLUESSEL_90_SELECTED]>90</option>
+                                                [BUCHUNGSSCHLUESSEL_OPTIONS]
                                             </select>
                                         </span>
                                         <button name="submit" form="buchungenform" value="BUCHEN" class="ui-button-icon">{|BUCHEN|}</button>
