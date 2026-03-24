@@ -871,6 +871,82 @@ class Exportbuchhaltung
             }
         }
 
+        if ($bankbuchungen) {
+            // Manuelle Dialogbuchungen (Sollkonto an Habenkonto) aus fibu_buchungen exportieren
+            // Voraussetzung: von_typ = kontorahmen, nach_typ = kontorahmen
+            $sql_dialogbuchungen = "SELECT
+                fb.id,
+                fb.datum,
+                fb.betrag,
+                fb.waehrung,
+                fb.internebemerkung AS intern,
+                kr_soll.sachkonto AS sollkonto,
+                kr_haben.sachkonto AS habenkonto,
+                kr_soll.projekt AS sollkonto_projekt,
+                kr_haben.projekt AS habenkonto_projekt
+            FROM
+                fibu_buchungen fb
+                INNER JOIN kontorahmen kr_soll
+                    ON fb.von_typ = 'kontorahmen'
+                    AND fb.von_id = kr_soll.id
+                INNER JOIN kontorahmen kr_haben
+                    ON fb.nach_typ = 'kontorahmen'
+                    AND fb.nach_id = kr_haben.id
+            WHERE
+                fb.datum BETWEEN '".date_format($von,"Y-m-d")."' AND '".date_format($bis,"Y-m-d")."'
+                AND fb.von_typ = 'kontorahmen'
+                AND fb.nach_typ = 'kontorahmen'
+                AND (
+                    $projekt = 0
+                    OR kr_soll.projekt = $projekt
+                    OR kr_haben.projekt = $projekt
+                )";
+
+            $dialogbuchungen = $this->app->DB->SelectArr($sql_dialogbuchungen);
+
+            if (!empty($dialogbuchungen)) {
+                foreach ($dialogbuchungen as $row) {
+                    $betragRaw = (float)$row['betrag'];
+                    $betrag = abs($betragRaw);
+                    if ($betrag == 0.0) {
+                        continue;
+                    }
+
+                    // Standard: Konto = Sollkonto, Gegenkonto = Habenkonto, Kennzeichen = S
+                    $konto = $row['sollkonto'];
+                    $gegenkonto = $row['habenkonto'];
+                    $kennzeichen = 'S';
+
+                    // Defensive Behandlung historischer negativer Werte
+                    if ($betragRaw < 0) {
+                        $konto = $row['habenkonto'];
+                        $gegenkonto = $row['sollkonto'];
+                        $kennzeichen = 'S';
+                    }
+
+                    if (empty($konto) || empty($gegenkonto)) {
+                        continue;
+                    }
+
+                    $buchungstext = !empty($row['intern']) ? $row['intern'] : 'Manuelle Buchung';
+                    $belegfeld1 = 'FB'.$row['id'];
+
+                    $data = array();
+                    $data['Umsatz'] = number_format($betrag, 2, ',', '');
+                    $data['Soll-/Haben-Kennzeichen'] = $kennzeichen;
+                    $data['WKZ Umsatz'] = $row['waehrung'];
+                    $data['Konto'] = $konto;
+                    $data['Gegenkonto (ohne BU-Schlüssel)'] = $gegenkonto;
+                    $data['Belegdatum'] = date_format(date_create($row['datum']), "dm");
+                    $data['Belegfeld 1'] = mb_strimwidth($belegfeld1, 0, 36);
+                    $data['Belegfeld 2'] = 'FB'.$row['id'];
+                    $data['Buchungstext'] = mb_strimwidth($buchungstext, 0, 60);
+
+                    $csv .= $this->create_line($datev_buchungsstapel_definition, $data);
+                }
+            }
+        }
+
         $includeTestbuchung = (int)$this->app->erp->Firmendaten('neuesdatevformattestbuchung') === 1;
         if ($includeTestbuchung) {
             $csv .= '"0";"S";"EUR";"0";"";"";"1234";"1370";"";"101";"";"";"";"Testbuchung";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"0";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""'; // Testbuchung
