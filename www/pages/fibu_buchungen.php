@@ -608,6 +608,7 @@ class Fibu_buchungen {
             'buchungstext' => '',
             'betrag' => '',
             'waehrung' => 'EUR',
+            'buchungsschluessel' => '',
             'sollkonto' => '',
             'habenkonto' => '',
         );
@@ -628,6 +629,19 @@ class Fibu_buchungen {
         $this->app->Tpl->Set('SOLLKONTO', htmlentities((string)$input['sollkonto']));
         $this->app->Tpl->Set('HABENKONTO', htmlentities((string)$input['habenkonto']));
         $this->app->Tpl->Set('WAEHRUNG', $this->app->erp->getSelectAsso($this->app->erp->GetWaehrung(), $input['waehrung']));
+        $this->app->Tpl->Set(
+            'BUCHUNGSSCHLUESSEL_OPTIONS',
+            $this->app->erp->getSelectAsso(
+                array(
+                    ''   => 'ohne Buchungsschluessel',
+                    '9'  => '9 - 19% Vorsteuer',
+                    '8'  => '8 - 7% Vorsteuer',
+                    '80' => '80 - Systemstandard',
+                    '90' => '90 - Systemstandard',
+                ),
+                $input['buchungsschluessel']
+            )
+        );
 
         $this->app->YUI->DatePicker('datum');
         $this->app->YUI->AutoComplete('sollkonto', 'sachkonto');
@@ -655,6 +669,7 @@ class Fibu_buchungen {
             'buchungstext' => trim((string)$this->app->Secure->GetPOST('buchungstext')),
             'betrag' => trim((string)$this->app->Secure->GetPOST('betrag')),
             'waehrung' => trim((string)$this->app->Secure->GetPOST('waehrung')),
+            'buchungsschluessel' => trim((string)$this->app->Secure->GetPOST('buchungsschluessel')),
             'sollkonto' => trim((string)$this->app->Secure->GetPOST('sollkonto')),
             'habenkonto' => trim((string)$this->app->Secure->GetPOST('habenkonto')),
         );
@@ -662,6 +677,9 @@ class Fibu_buchungen {
         $input['waehrung'] = strtoupper($input['waehrung']);
         if ($input['waehrung'] === '' || !preg_match('/^[A-Z0-9_-]{1,10}$/', $input['waehrung'])) {
             $input['waehrung'] = 'EUR';
+        }
+        if (!in_array($input['buchungsschluessel'], array('', '8', '9', '80', '90'), true)) {
+            $input['buchungsschluessel'] = '';
         }
 
         $errors = array();
@@ -737,7 +755,8 @@ class Fibu_buchungen {
             $betrag,
             $input['waehrung'],
             $datumSql,
-            $internebemerkung
+            $internebemerkung,
+            $input['buchungsschluessel']
         );
 
         $this->fibu_rebuild_tables();
@@ -948,7 +967,7 @@ class Fibu_buchungen {
 
 
     function fibu_buchungen_buchen(string $von_typ, int $von_id, string $nach_typ, int $nach_id, $betrag, string $waehrung, $datum, string $internebemerkung, string $buchungsschluessel = '') {
-        $validBuchungsschluessel = in_array($buchungsschluessel, array('80', '90'), true) ? $buchungsschluessel : '';
+        $validBuchungsschluessel = in_array($buchungsschluessel, array('8', '9', '80', '90'), true) ? $buchungsschluessel : '';
         $sql = "INSERT INTO `fibu_buchungen` (`von_typ`, `von_id`, `nach_typ`, `nach_id`, `datum`, `betrag`, `waehrung`, `buchungsschluessel`, `benutzer`, `zeit`, `internebemerkung`) VALUES ('".$von_typ."','".$von_id."','".$nach_typ."', '".$nach_id."', '".$datum."', '".$betrag."', '".$waehrung."', '".$validBuchungsschluessel."', '".$this->app->User->GetID()."','".date("Y-m-d H:i")."', '".$internebemerkung."')";
         $this->app->DB->Insert($sql);      
     }    

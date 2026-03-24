@@ -880,6 +880,7 @@ class Exportbuchhaltung
                 fb.betrag,
                 fb.waehrung,
                 fb.internebemerkung AS intern,
+                fb.buchungsschluessel AS buchungsschluessel,
                 kr_soll.sachkonto AS sollkonto,
                 kr_haben.sachkonto AS habenkonto,
                 kr_soll.projekt AS sollkonto_projekt,
@@ -937,6 +938,7 @@ class Exportbuchhaltung
                     $data['WKZ Umsatz'] = $row['waehrung'];
                     $data['Konto'] = $konto;
                     $data['Gegenkonto (ohne BU-Schlüssel)'] = $gegenkonto;
+                    $data['BU-Schlüssel'] = $row['buchungsschluessel'];
                     $data['Belegdatum'] = date_format(date_create($row['datum']), "dm");
                     $data['Belegfeld 1'] = mb_strimwidth($belegfeld1, 0, 36);
                     $data['Belegfeld 2'] = 'FB'.$row['id'];

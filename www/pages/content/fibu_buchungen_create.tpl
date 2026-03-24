@@ -34,6 +34,10 @@
                                         <td><select name="waehrung" id="waehrung">[WAEHRUNG]</select></td>
                                     </tr>
                                     <tr>
+                                        <td>{|Buchungsschl&uuml;ssel|}:</td>
+                                        <td><select name="buchungsschluessel" id="buchungsschluessel">[BUCHUNGSSCHLUESSEL_OPTIONS]</select></td>
+                                    </tr>
+                                    <tr>
                                         <td>{|Sollkonto|}:</td>
                                         <td><input type="text" name="sollkonto" id="sollkonto" value="[SOLLKONTO]" size="40"></td>
                                     </tr>
