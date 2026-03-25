@@ -610,7 +610,7 @@ class Fibu_buchungen {
             'waehrung' => 'EUR',
             'buchungsschluessel' => '',
             'sollkonto' => '',
-            'habenkonto' => '',
+            'habenkonto' => '1890',
         );
 
         $input = array_merge($defaults, $input);
