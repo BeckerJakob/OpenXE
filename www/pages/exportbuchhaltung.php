@@ -150,6 +150,29 @@ class Exportbuchhaltung
         $this->app->erp->Headlines('Buchhaltung Export DATEV');
     }
 
+    private function isGenericPaymentText(string $buchungstext): bool
+    {
+        $buchungstext = trim($buchungstext);
+
+        return $buchungstext === ''
+            || in_array($buchungstext, array('Zahlung', 'Manuelle Buchung'), true);
+    }
+
+    private function normalizePaymentText(string $buchungstext): string
+    {
+        $buchungstext = trim($buchungstext);
+
+        if ($buchungstext === '') {
+            return '';
+        }
+
+        if (stripos($buchungstext, 'Zahlung ') === 0) {
+            return $buchungstext;
+        }
+
+        return 'Zahlung '.$buchungstext;
+    }
+
     function ExportBuchhaltungList() {
         $submit = $this->app->Secure->GetPOST('submit');
         $von_form = $this->app->Secure->GetPOST("von");
@@ -800,6 +823,7 @@ class Exportbuchhaltung
             kb.datevkonto AS bank_datev,
             kk.datevkonto AS kasse_datev,
             fb.internebemerkung AS intern,
+            kz.buchungstext AS kontoauszug_buchungstext,
             fb.buchungsschluessel AS buchungsschluessel,
             r.projekt AS rechnung_projekt,
             g.projekt AS gutschrift_projekt,
@@ -877,10 +901,20 @@ class Exportbuchhaltung
                     }
 
                     $belegfeld1 = !empty($row['belegnr']) ? $row['belegnr'] : ('FB'.$row['id']);
+                    $internerZahlungstext = trim((string)$row['intern']);
+                    $kontoauszugZahlungstext = $this->normalizePaymentText((string)$row['kontoauszug_buchungstext']);
                     if (empty($debitor) && empty($kreditor) && empty($row['sachkonto'])) {
                         $buchungstext = 'Vorkasse/ohne Beleg';
+                    } else if (!empty($row['belegnr'])) {
+                        $buchungstext = 'Zahlung '.$row['belegnr'];
+                    } else if (!$this->isGenericPaymentText($internerZahlungstext)) {
+                        $buchungstext = $internerZahlungstext;
+                    } else if ($kontoauszugZahlungstext !== '') {
+                        $buchungstext = $kontoauszugZahlungstext;
+                    } else if ($internerZahlungstext !== '') {
+                        $buchungstext = $internerZahlungstext;
                     } else {
-                        $buchungstext = !empty($row['belegnr']) ? ('Zahlung '.$row['belegnr']) : (!empty($row['intern']) ? $row['intern'] : 'Zahlung');
+                        $buchungstext = 'Zahlung';
                     }
 
                     $data = array();

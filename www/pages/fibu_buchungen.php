@@ -978,8 +978,55 @@ class Fibu_buchungen {
     }
 
 
+    private function fibu_buchungen_get_kontoauszug_buchungstext(string $von_typ, int $von_id, string $nach_typ, int $nach_id): string {
+        $kontoauszugIds = array();
+
+        if ($von_typ === 'kontoauszuege') {
+            $kontoauszugIds[] = (int)$von_id;
+        }
+
+        if ($nach_typ === 'kontoauszuege' && $nach_id !== $von_id) {
+            $kontoauszugIds[] = (int)$nach_id;
+        }
+
+        foreach ($kontoauszugIds as $kontoauszugId) {
+            $buchungstext = trim((string)$this->app->DB->Select(
+                "SELECT buchungstext FROM kontoauszuege WHERE id = ".$kontoauszugId." LIMIT 1"
+            ));
+
+            if ($buchungstext !== '') {
+                return $buchungstext;
+            }
+        }
+
+        return '';
+    }
+
+    private function fibu_buchungen_automatische_internebemerkung(string $von_typ, int $von_id, string $nach_typ, int $nach_id): string {
+        $buchungstext = $this->fibu_buchungen_get_kontoauszug_buchungstext($von_typ, $von_id, $nach_typ, $nach_id);
+
+        if ($buchungstext === '') {
+            return '';
+        }
+
+        if (stripos($buchungstext, 'Zahlung ') === 0) {
+            return substr($buchungstext, 0, 128);
+        }
+
+        return substr('Zahlung '.$buchungstext, 0, 128);
+    }
+
     function fibu_buchungen_buchen(string $von_typ, int $von_id, string $nach_typ, int $nach_id, $betrag, string $waehrung, $datum, string $internebemerkung, string $buchungsschluessel = '') {
         $validBuchungsschluessel = in_array($buchungsschluessel, array('8', '9', '80', '90'), true) ? $buchungsschluessel : '';
+        $internebemerkung = trim($internebemerkung);
+
+        if ($internebemerkung === '') {
+            $internebemerkung = $this->fibu_buchungen_automatische_internebemerkung($von_typ, $von_id, $nach_typ, $nach_id);
+            if ($internebemerkung !== '') {
+                $internebemerkung = $this->app->DB->real_escape_string($internebemerkung);
+            }
+        }
+
         $sql = "INSERT INTO `fibu_buchungen` (`von_typ`, `von_id`, `nach_typ`, `nach_id`, `datum`, `betrag`, `waehrung`, `buchungsschluessel`, `benutzer`, `zeit`, `internebemerkung`) VALUES ('".$von_typ."','".$von_id."','".$nach_typ."', '".$nach_id."', '".$datum."', '".$betrag."', '".$waehrung."', '".$validBuchungsschluessel."', '".$this->app->User->GetID()."','".date("Y-m-d H:i")."', '".$internebemerkung."')";
         $this->app->DB->Insert($sql);      
     }    
