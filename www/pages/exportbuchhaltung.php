@@ -673,6 +673,7 @@ class Exportbuchhaltung
                 ".$typ['field_betrag_gesamt']." as betrag_gesamt,
                 b.waehrung,
                 ROUND(".$typ['field_betrag'].",2) as betrag,
+                p.steuersatz as pos_steuersatz,
                 ".$sql_gegenkonto." as gegenkonto,
                 b.waehrung as pos_waehrung
             FROM
@@ -719,11 +720,14 @@ class Exportbuchhaltung
                         foreach ($result as $row) {
 
                             $posid = $row['pos_id'];
-                            $tmpsteuersatz = 0;
+                            $tmpsteuersatz = null;
                             $tmpsteuertext = '';
                             $erloes = '';
                             $result = array();
                             $this->app->erp->GetSteuerPosition($typ['typ'], $posid, $tmpsteuersatz, $tmpsteuertext, $erloes);
+                            if ($tmpsteuersatz === null && $row['pos_steuersatz'] !== null && $row['pos_steuersatz'] !== '') {
+                                $tmpsteuersatz = (float)$row['pos_steuersatz'];
+                            }
 
                             $data = array();
 
@@ -755,11 +759,14 @@ class Exportbuchhaltung
             $arr = $this->app->DB->Query($sql);
             while ($row = $this->app->DB->Fetch_Assoc($arr)) {
                 $posid = $row['pos_id'];
-                $tmpsteuersatz = 0;
+                $tmpsteuersatz = null;
                 $tmpsteuertext = '';
                 $erloes = '';
                 $result = array();
                 $this->app->erp->GetSteuerPosition($typ['typ'], $posid, $tmpsteuersatz, $tmpsteuertext, $erloes);
+                if ($tmpsteuersatz === null && $row['pos_steuersatz'] !== null && $row['pos_steuersatz'] !== '') {
+                    $tmpsteuersatz = (float)$row['pos_steuersatz'];
+                }
 
                 $data = array();
 

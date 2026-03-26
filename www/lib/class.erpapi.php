@@ -35148,16 +35148,148 @@ function Firmendaten($field,$projekt="")
    * @param null|string $ustid
    * @param int         $projekt
    */
-      public function getErloesFirmendaten($artikel, $ust_befreit,$aufwendung,  &$tmpsteuersatz,  &$tmpsteuertext, &$tmperloes, $umsatzsteuerpos, $ustid = null, $projekt = 0) {
+      private function normalizeUmsatzsteuerklasse($umsatzsteuer)
+      {
+        $umsatzsteuer = trim((string)$umsatzsteuer);
+        if($umsatzsteuer === 'ermaessigt' || $umsatzsteuer === 'befreit' || $umsatzsteuer === 'normal') {
+          return $umsatzsteuer;
+        }
+
+        return '';
+      }
+
+      private function getUmsatzsteuerklasseAusPositionsdaten($ust_befreit, $umsatzsteuerpos, $steuersatzpos, $fallbackUmsatzsteuer = '', $steuertyp = '', $steuertypid = 0)
+      {
+        $fallbackUmsatzsteuer = $this->normalizeUmsatzsteuerklasse($fallbackUmsatzsteuer);
+        $umsatzsteuerpos = $this->normalizeUmsatzsteuerklasse($umsatzsteuerpos);
+
+        if($steuersatzpos !== '' && $steuersatzpos !== null && is_numeric($steuersatzpos))
+        {
+          $steuersatzpos = (float)$steuersatzpos;
+          if($steuersatzpos > 0)
+          {
+            $steuersatzermaessigt = (float)$this->Firmendaten('steuersatz_ermaessigt');
+            if(!empty($steuertyp) && (int)$steuertypid > 0) {
+              $tmpsteuersatzermaessigt = $this->GetSteuersatzErmaessigt(false, (int)$steuertypid, $steuertyp);
+              if(is_numeric($tmpsteuersatzermaessigt) && (float)$tmpsteuersatzermaessigt > 0) {
+                $steuersatzermaessigt = (float)$tmpsteuersatzermaessigt;
+              }
+            }
+            if($steuersatzermaessigt > 0 && abs($steuersatzpos - $steuersatzermaessigt) < 0.00001) {
+              return 'ermaessigt';
+            }
+
+            return 'normal';
+          }
+
+          if(abs($steuersatzpos) < 0.00001)
+          {
+            if($umsatzsteuerpos !== '') {
+              return $umsatzsteuerpos;
+            }
+            if((int)$ust_befreit === 0) {
+              return 'befreit';
+            }
+            if($fallbackUmsatzsteuer !== '') {
+              return $fallbackUmsatzsteuer;
+            }
+
+            return 'normal';
+          }
+        }
+
+        if($umsatzsteuerpos !== '') {
+          return $umsatzsteuerpos;
+        }
+        if($fallbackUmsatzsteuer !== '') {
+          return $fallbackUmsatzsteuer;
+        }
+
+        return 'normal';
+      }
+
+      private function getErloesOhneArtikel($ust_befreit, $aufwendung, &$tmpsteuertext, &$tmperloes, $umsatzsteuer, $ustid = null, $projekt = 0)
+      {
+        $tmpsteuertext = '';
+        $tmperloes = '';
+        $field = '';
+        $projectRow = null;
+        if($projekt) {
+          $projectRow = $this->app->DB->SelectRow(
+            sprintf(
+              'SELECT * FROM projekt WHERE id = %d',
+              (int)$projekt
+            )
+          );
+        }
+
+        switch($ust_befreit) {
+          case 1:
+            if($aufwendung) {
+              if(trim((string)$ustid) !== '') {
+                $field = 'steuer_aufwendung_inland_euermaessigt';
+              } elseif($umsatzsteuer === 'ermaessigt') {
+                $field = 'steuer_aufwendung_inland_euermaessigt';
+              } else {
+                $field = 'steuer_aufwendung_inland_eunormal';
+              }
+            } else {
+              if(trim((string)$ustid) !== '') {
+                $field = 'steuer_erloese_inland_innergemeinschaftlich';
+              } elseif($umsatzsteuer === 'ermaessigt') {
+                $field = 'steuer_erloese_inland_euermaessigt';
+              } else {
+                $field = 'steuer_erloese_inland_eunormal';
+              }
+            }
+            break;
+          case 2:
+            $field = $aufwendung ? 'steuer_aufwendung_inland_import' : 'steuer_erloese_inland_export';
+            break;
+          case 3:
+            $field = $aufwendung ? 'steuer_aufwendung_inland_nichtsteuerbar' : 'steuer_erloese_inland_nichtsteuerbar';
+            break;
+          default:
+            if($aufwendung) {
+              if($umsatzsteuer === 'ermaessigt') {
+                $field = 'steuer_aufwendung_inland_ermaessigt';
+              } elseif($umsatzsteuer === 'befreit') {
+                $field = 'steuer_aufwendung_inland_nichtsteuerbar';
+              } else {
+                $field = 'steuer_aufwendung_inland_normal';
+              }
+            } else {
+              if($umsatzsteuer === 'ermaessigt') {
+                $field = 'steuer_erloese_inland_ermaessigt';
+              } elseif($umsatzsteuer === 'befreit') {
+                $field = 'steuer_erloese_inland_nichtsteuerbar';
+              } else {
+                $field = 'steuer_erloese_inland_normal';
+              }
+            }
+            break;
+        }
+
+        if($field === '') {
+          return;
+        }
+
+        if(!empty($projectRow[$field])) {
+          $tmperloes = $projectRow[$field];
+          return;
+        }
+
+        $tmperloes = $this->Firmendaten($field);
+      }
+
+      public function getErloesFirmendaten($artikel, $ust_befreit,$aufwendung,  &$tmpsteuersatz,  &$tmpsteuertext, &$tmperloes, $umsatzsteuerpos, $ustid = null, $projekt = 0, $steuersatzpos = null, $steuertyp = '', $steuertypid = 0) {
         $tmperloes = '';
         $artikeldata = $this->app->DB->SelectRow("SELECT * FROM artikel WHERE id = '$artikel' LIMIT 1");
         if(empty($artikeldata)) {
           return;
         }
-        $umsatzsteuer = $artikeldata['umsatzsteuer'] === 'ermaessigt'?'ermaessigt':($artikeldata['umsatzsteuer']==='befreit'?'befreit':'normal');
-        if($umsatzsteuerpos) {
-          $umsatzsteuer = $umsatzsteuerpos;
-        }
+        $fallbackUmsatzsteuer = $artikeldata['umsatzsteuer'] === 'ermaessigt' ? 'ermaessigt' : ($artikeldata['umsatzsteuer'] === 'befreit' ? 'befreit' : 'normal');
+        $umsatzsteuer = $this->getUmsatzsteuerklasseAusPositionsdaten($ust_befreit, $umsatzsteuerpos, $steuersatzpos, $fallbackUmsatzsteuer, $steuertyp, $steuertypid);
         switch($ust_befreit) {
           case 1:
             if($aufwendung) {
@@ -35240,17 +35372,15 @@ function Firmendaten($field,$projekt="")
       * @param null|string $ustid
       * @param int         $projekt
       */
-      function GetArtikelSteuer($artikel, $ust_befreit,$aufwendung,  &$tmpsteuersatz,  &$tmpsteuertext, &$tmperloes, $umsatzsteuerpos, $ustid = null, $projekt = 0)
+      function GetArtikelSteuer($artikel, $ust_befreit,$aufwendung,  &$tmpsteuersatz,  &$tmpsteuertext, &$tmperloes, $umsatzsteuerpos, $ustid = null, $projekt = 0, $steuersatzpos = null, $steuertyp = '', $steuertypid = 0)
       {
         $tmperloes = '';
         $artikeldata = $this->app->DB->SelectRow("SELECT * FROM artikel WHERE id = '$artikel' LIMIT 1");
         if(empty($artikeldata)) {
           return;
         }
-        $umsatzsteuer = $artikeldata['umsatzsteuer'] === 'ermaessigt'?'ermaessigt':($artikeldata['umsatzsteuer']==='befreit'?'befreit':'normal');
-        if($umsatzsteuerpos) {
-          $umsatzsteuer = $umsatzsteuerpos;
-        }
+        $fallbackUmsatzsteuer = $artikeldata['umsatzsteuer'] === 'ermaessigt' ? 'ermaessigt' : ($artikeldata['umsatzsteuer'] === 'befreit' ? 'befreit' : 'normal');
+        $umsatzsteuer = $this->getUmsatzsteuerklasseAusPositionsdaten($ust_befreit, $umsatzsteuerpos, $steuersatzpos, $fallbackUmsatzsteuer, $steuertyp, $steuertypid);
         $projectRow = null;
         if($projekt) {
           $projectRow = $this->app->DB->SelectRow(
@@ -35516,36 +35646,20 @@ function Firmendaten($field,$projekt="")
             (int)$posid
           )
         );
-
-        if(empty($posRow['artikel'])) {
+        if(empty($posRow)) {
           return;
         }
+        $typid = $posRow[$typ];
         $projekt = (int)$this->app->DB->Select(
           sprintf(
             'SELECT projekt FROM `%s` WHERE id = %d',
-            $typ, $posRow[$typ]
+            $typ, $typid
           )
         );
-        $artikel = $posRow['artikel'];
-
         $tmpsteuersatz = $posRow['steuersatz'];
         if($tmpsteuersatz === '') {
           $tmpsteuersatz = null;
         }
-        $typid = $posRow[$typ];
-        if($tmpsteuersatz < 0 || $tmpsteuersatz === null)
-        {
-          if($posRow['umsatzsteuer'] === 'ermaessigt')
-          {
-            $tmpsteuersatz = $this->GetSteuersatzErmaessigt(false,$typid,$typ);
-          }elseif($posRow['umsatzsteuer'] === 'befreit')
-          {
-            $tmpsteuersatz = 0;
-          }else{
-            $tmpsteuersatz = $this->GetSteuersatzNormal(false,$typid,$typ);
-          }
-        }
-
         $ust_befreit = $this->app->DB->Select("SELECT ust_befreit FROM $typ WHERE id = '$typid' LIMIT 1");
         $ustid = $this->app->DB->Select("SELECT ustid FROM $typ WHERE id = '$typid' LIMIT 1");
         $aufwendung = false;
@@ -35557,10 +35671,53 @@ function Firmendaten($field,$projekt="")
             $aufwendung = true;
           break;
         }
+        $umsatzsteuerPosition = $this->getUmsatzsteuerklasseAusPositionsdaten(
+          $ust_befreit,
+          isset($posRow['umsatzsteuer']) ? $posRow['umsatzsteuer'] : '',
+          $tmpsteuersatz,
+          '',
+          $typ,
+          $typid
+        );
 
-        $this->GetArtikelSteuer($artikel, $ust_befreit, $aufwendung, $tmpsteuersatz, $tmpsteuertext, $erloes, $posRow['umsatzsteuer'], $ustid, $projekt);
+        if(empty($posRow['artikel'])) {
+          if(isset($posRow['steuertext']) && trim((string)$posRow['steuertext']) !== '') {
+            $tmpsteuertext = $posRow['steuertext'];
+          }
+          if(isset($posRow['erloese']) && trim((string)$posRow['erloese']) !== '') {
+            $erloes = $posRow['erloese'];
+          }
+          if($tmpsteuersatz === null) {
+            if($umsatzsteuerPosition === 'ermaessigt') {
+              $tmpsteuersatz = $this->GetSteuersatzErmaessigt(false, $typid, $typ);
+            } elseif($umsatzsteuerPosition === 'normal') {
+              $tmpsteuersatz = $this->GetSteuersatzNormal(false, $typid, $typ);
+            } elseif((int)$ust_befreit === 0) {
+              $tmpsteuersatz = 0;
+            }
+          }
+          if(!$erloes) {
+            $this->getErloesOhneArtikel($ust_befreit, $aufwendung, $tmpsteuertext, $erloes, $umsatzsteuerPosition, $ustid, $projekt);
+          }
+          return;
+        }
+        $artikel = $posRow['artikel'];
+        if($tmpsteuersatz < 0 || $tmpsteuersatz === null)
+        {
+          if($umsatzsteuerPosition === 'ermaessigt')
+          {
+            $tmpsteuersatz = $this->GetSteuersatzErmaessigt(false,$typid,$typ);
+          }elseif($umsatzsteuerPosition === 'befreit' && (int)$ust_befreit === 0)
+          {
+            $tmpsteuersatz = 0;
+          }else{
+            $tmpsteuersatz = $this->GetSteuersatzNormal(false,$typid,$typ);
+          }
+        }
 
-        $this->getErloesFirmendaten($artikel, $ust_befreit, $aufwendung, $tmpsteuersatzFD, $tmpsteuertextFD, $tmperloesFD, $posRow['umsatzsteuer'], $ustid, $projekt);
+        $this->GetArtikelSteuer($artikel, $ust_befreit, $aufwendung, $tmpsteuersatz, $tmpsteuertext, $erloes, $posRow['umsatzsteuer'], $ustid, $projekt, $tmpsteuersatz, $typ, $typid);
+
+        $this->getErloesFirmendaten($artikel, $ust_befreit, $aufwendung, $tmpsteuersatzFD, $tmpsteuertextFD, $tmperloesFD, $posRow['umsatzsteuer'], $ustid, $projekt, $tmpsteuersatz, $typ, $typid);
 
         if (!$tmpsteuersatz) {
             $tmpsteuersatz = $tmpsteuersatzFD;
@@ -35943,13 +36100,13 @@ function Firmendaten($field,$projekt="")
           $steuersatzermaessigt = $this->GetSteuersatzErmaessigt(true,$id,'rechnung');
           $steuersatznormal = $this->GetSteuersatzNormal(true,$id,'rechnung');
           foreach($arr as $k => $v) {
-            $_ust_befreit = $ust_befreit;
-            if($v['steuersatz'] !== null && $v['steuersatz'] == 0 && $ust_befreit == 0) {
-              $ust_befreit = 3;
+            $position_ust_befreit = $ust_befreit;
+            if($v['steuersatz'] !== null && $v['steuersatz'] == 0 && $position_ust_befreit == 0) {
+              $position_ust_befreit = 3;
             }
-            $erloese = $this->Gegenkonto($ust_befreit, $ustid, 'rechnung', $id);
+            $erloese = $this->Gegenkonto($position_ust_befreit, $ustid, 'rechnung', $id);
             $this->GetArtikelSteuer(
-              $v['artikel'], $ust_befreit,0, $dummysteuersatz, $tmpsteuertext, $tmperloes,$v['usteuer'], $ustid, $projekt
+              $v['artikel'], $position_ust_befreit,0, $dummysteuersatz, $tmpsteuertext, $tmperloes,$v['usteuer'], $ustid, $projekt, $v['steuersatz'], 'rechnung', $id
             );
             if(!$this->RechnungMitUmsatzeuer($id)){
               $v['steuersatz'] = 0;
@@ -35974,20 +36131,20 @@ function Firmendaten($field,$projekt="")
               {
                 $arr[$k]['erloese'] = $tmperloes;
               }else{
-                if($v['usteuer'] === 'befreit' && $ust_befreit == 0)
+                if($v['usteuer'] === 'befreit' && $position_ust_befreit == 0)
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten("steuer_erloese_inland_nichtsteuerbar");
                 }
-                elseif($v['usteuer'] === 'ermaessigt' && $ust_befreit == 0)
+                elseif($v['usteuer'] === 'ermaessigt' && $position_ust_befreit == 0)
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten("steuer_erloese_inland_ermaessigt");
-                }elseif($v['usteuer'] === 'ermaessigt' && $ust_befreit == 1 && (String)$ustid === '')
+                }elseif($v['usteuer'] === 'ermaessigt' && $position_ust_befreit == 1 && (String)$ustid === '')
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten("steuer_erloese_inland_euermaessigt");
-                }elseif($ust_befreit == 1 && (String)$ustid !== ''){
+                }elseif($position_ust_befreit == 1 && (String)$ustid !== ''){
                   
                   $arr[$k]['erloese'] = $this->Firmendaten("steuer_erloese_inland_innergemeinschaftlich");
-                }elseif($v['usteuer'] !== 'ermaessigt' && $v['usteuer'] !== 'befreit' && $ust_befreit == 1 && (String)$ustid === '')
+                }elseif($v['usteuer'] !== 'ermaessigt' && $v['usteuer'] !== 'befreit' && $position_ust_befreit == 1 && (String)$ustid === '')
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten("steuer_erloese_inland_eunormal");
                 }
@@ -35997,7 +36154,6 @@ function Firmendaten($field,$projekt="")
             if($gruppierenpositionen) {
               $arr[$k]['summe'] = round($arr[$k]['summe'], 2);
             }
-            $ust_befreit = $_ust_befreit;
           }
         }
         if($gruppierenpositionen) {
@@ -36464,7 +36620,10 @@ function Firmendaten($field,$projekt="")
             $row['erloese'],
             $umsatzsteuerpos,
             $doc['ustid'],
-            $doc['projekt']
+            $doc['projekt'],
+            $row['steuersatz'],
+            $belegtyp,
+            $id
           );
           if(!empty($row['erloese'])) {
             $ret[$key]['erloese'] = $row['erloese'];
@@ -36479,7 +36638,10 @@ function Firmendaten($field,$projekt="")
             $row['erloese'],
             $umsatzsteuerpos,
             $doc['ustid'],
-            $doc['projekt']
+            $doc['projekt'],
+            $row['steuersatz'],
+            $belegtyp,
+            $id
           );
           if(!empty($row['erloese'])) {
             $ret[$key]['erloese'] = $row['erloese'];
@@ -36738,12 +36900,13 @@ function Firmendaten($field,$projekt="")
           $steuersatzermaessigt = $this->GetSteuersatzErmaessigt(true,$id,'gutschrift');
           $steuersatznormal = $this->GetSteuersatzNormal(true,$id,'gutschrift');
           foreach($arr as $k => $v)  {
-            if($v['steuersatz'] !== null && $v['steuersatz'] == 0 && $ust_befreit == 0) {
-              $ust_befreit = 3;
+            $position_ust_befreit = $ust_befreit;
+            if($v['steuersatz'] !== null && $v['steuersatz'] == 0 && $position_ust_befreit == 0) {
+              $position_ust_befreit = 3;
             }
-            $erloese = $this->Gegenkonto($ust_befreit, $ustid, 'gutschrift', $id);
+            $erloese = $this->Gegenkonto($position_ust_befreit, $ustid, 'gutschrift', $id);
             $this->GetArtikelSteuer(
-              $v['artikel'], $ust_befreit,0, $dummysteuersatz, $tmpsteuertext, $tmperloes, $v['usteuer'], $ustid, $projekt
+              $v['artikel'], $position_ust_befreit,0, $dummysteuersatz, $tmpsteuertext, $tmperloes, $v['usteuer'], $ustid, $projekt, $v['steuersatz'], 'gutschrift', $id
             );
             if(!$this->GutschriftMitUmsatzeuer($id)){
               $v['steuersatz'] = 0;
@@ -36769,19 +36932,19 @@ function Firmendaten($field,$projekt="")
               {
                 $arr[$k]['erloese'] = $tmperloes;
               }else{
-                if($v['usteuer'] === 'befreit' && $ust_befreit == 0)
+                if($v['usteuer'] === 'befreit' && $position_ust_befreit == 0)
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten('steuer_erloese_inland_nichtsteuerbar');
-                }elseif($v['usteuer'] === 'ermaessigt' && $ust_befreit == 0)
+                }elseif($v['usteuer'] === 'ermaessigt' && $position_ust_befreit == 0)
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten('steuer_erloese_inland_ermaessigt');
-                }elseif($v['usteuer'] === 'ermaessigt' && $ust_befreit == 1 && (String)$ustid === '')
+                }elseif($v['usteuer'] === 'ermaessigt' && $position_ust_befreit == 1 && (String)$ustid === '')
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten('steuer_erloese_inland_euermaessigt');
-                }elseif($ust_befreit == 1 && (String)$ustid !== ''){
+                }elseif($position_ust_befreit == 1 && (String)$ustid !== ''){
                   
                   $arr[$k]['erloese'] = $this->Firmendaten('steuer_erloese_inland_innergemeinschaftlich');
-                }elseif($v['usteuer'] !== 'ermaessigt' && $v['usteuer'] !== 'befreit' && $ust_befreit == 1 && (String)$ustid === '')
+                }elseif($v['usteuer'] !== 'ermaessigt' && $v['usteuer'] !== 'befreit' && $position_ust_befreit == 1 && (String)$ustid === '')
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten('steuer_erloese_inland_eunormal');
                 }

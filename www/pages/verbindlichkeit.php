@@ -1381,6 +1381,20 @@ class Verbindlichkeit {
         return (float)$value;
     }
 
+    private function verbindlichkeit_position_umsatzsteuerklasse(float $steuersatz, int $verbindlichkeitId): string
+    {
+        if ($steuersatz <= 0) {
+            return 'befreit';
+        }
+
+        $steuersatz_ermaessigt = (float)$this->get_steuersatz('ermaessigt', $verbindlichkeitId);
+        if ($steuersatz_ermaessigt > 0 && abs($steuersatz - $steuersatz_ermaessigt) < 0.00001) {
+            return 'ermaessigt';
+        }
+
+        return 'normal';
+    }
+
     function verbindlichkeit_menu($id) {
 
         $this->app->erp->MenuEintrag("index.php?module=verbindlichkeit&action=edit&id=$id", "Details");
@@ -1522,11 +1536,14 @@ class Verbindlichkeit {
             $preis_netto = $brutto / (1 + ($steuersatz / 100));
         }
         $preis_netto = round($preis_netto, 6);
+        $umsatzsteuer = $this->app->DB->real_escape_string(
+            $this->verbindlichkeit_position_umsatzsteuerklasse($steuersatz, $id)
+        );
 
         $bezeichnung = $this->app->DB->real_escape_string('Gesamtbetrag');
         $sql = "INSERT INTO verbindlichkeit_position ".
-               "(verbindlichkeit, bezeichnung, menge, preis, steuersatz, kontorahmen, paketdistribution) ".
-               "VALUES (".$id.", '".$bezeichnung."', 1, ".$preis_netto.", ".$steuersatz.", ".$kontorahmen.", 0)";
+               "(verbindlichkeit, bezeichnung, menge, preis, steuersatz, umsatzsteuer, kontorahmen, paketdistribution) ".
+               "VALUES (".$id.", '".$bezeichnung."', 1, ".$preis_netto.", ".$steuersatz.", '".$umsatzsteuer."', ".$kontorahmen.", 0)";
         $this->app->DB->Insert($sql);
     }
 
@@ -1571,6 +1588,9 @@ class Verbindlichkeit {
             $steuersatz = (float)$steuersatz_raw;
             if ($steuersatz >= 0) {
                 $updates[] = "steuersatz = ".$steuersatz;
+                $updates[] = "umsatzsteuer = '".$this->app->DB->real_escape_string(
+                    $this->verbindlichkeit_position_umsatzsteuerklasse($steuersatz, $id)
+                )."'";
             } else {
                 $steuersatz = null;
             }
