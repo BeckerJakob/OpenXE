@@ -800,6 +800,7 @@ class Exportbuchhaltung
             kb.datevkonto AS bank_datev,
             kk.datevkonto AS kasse_datev,
             fb.internebemerkung AS intern,
+            fb.buchungsschluessel AS buchungsschluessel,
             r.projekt AS rechnung_projekt,
             g.projekt AS gutschrift_projekt,
             v.projekt AS verbindlichkeit_projekt,
@@ -888,6 +889,7 @@ class Exportbuchhaltung
                     $data['WKZ Umsatz'] = $row['waehrung'];
                     $data['Konto'] = $geldkonto;
                     $data['Gegenkonto (ohne BU-Schlüssel)'] = $gegenkonto;
+                    $data['BU-Schlüssel'] = $row['buchungsschluessel'];
                     $data['Belegdatum'] = date_format(date_create($row['datum']), "dm");
                     $data['Belegfeld 1'] = mb_strimwidth($belegfeld1,0,36);
                     $data['Belegfeld 2'] = 'FB'.$row['id'];
