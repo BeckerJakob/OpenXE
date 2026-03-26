@@ -2052,6 +2052,10 @@ class Rechnung extends GenRechnung
     if (!empty($rechnung_schnelleingabe_konto)) {
         $this->app->Tpl->Set('SCHNELLEINGABE_TOOLTIP_HIDDEN', 'hidden');
         if ($speichern!='' && $this->app->erp->RechteVorhanden('rechnung','manuellbezahltmarkiert') && !empty($zahlbetrag)) {
+            $zahlungswaehrung = $this->app->DB->Select("SELECT IF(waehrung <> '', waehrung, 'EUR') FROM rechnung WHERE id = '".(int)$id."' LIMIT 1");
+            if (empty($zahlungswaehrung)) {
+                $zahlungswaehrung = 'EUR';
+            }
             if ($bezahlt_am == '0000-00-00') {
                 $bezahlt_am = date('Y-m-d');
             }
@@ -2073,13 +2077,13 @@ class Rechnung extends GenRechnung
                     '".date("Y-m-d")."',
                     'Rechnung ".$nummer." Schnelleingabe',
                     $zahlbetrag,
-                    'EUR',
+                    '".$zahlungswaehrung."',
                     '".$this->app->User->GetName()."'
                 )
             ";
             $this->app->DB->Insert($sql);
             $kontoauszug = $this->app->DB->GetInsertID();
-            $this->app->erp->fibu_buchungen_buchen("kontoauszuege",$kontoauszug, "rechnung", $id, -$zahlbetrag, 'EUR', $bezahlt_am, "Rechnung ".$nummer." Schnelleingabe");
+            $this->app->erp->fibu_buchungen_buchen("kontoauszuege",$kontoauszug, "rechnung", $id, -$zahlbetrag, $zahlungswaehrung, $bezahlt_am, "Rechnung ".$nummer." Schnelleingabe");
             $this->rechnung_zahlstatus_berechnen($id);
         }       
     } else {    

@@ -97,7 +97,7 @@ class Verbindlichkeit {
 
                 $menu = "<table cellpadding=0 cellspacing=0><tr><td nowrap>" . "<a href=\"index.php?module=verbindlichkeit&action=edit&id=%value%\"><img src=\"./themes/{$app->Conf->WFconf['defaulttheme']}/images/edit.svg\" border=\"0\"></a>&nbsp;<a href=\"#\" onclick=DeleteDialog(\"index.php?module=verbindlichkeit&action=delete&id=%value%\");>" . "<img src=\"themes/{$app->Conf->WFconf['defaulttheme']}/images/delete.svg\" border=\"0\"></a>" . "</td></tr></table>";
 
-                $fibu_fully_booked = "(SELECT IF(COUNT(*) > 0 AND ROUND(SUM(betrag), 2) = 0, 1, 0) FROM fibu_buchungen_alle WHERE typ = 'verbindlichkeit' AND id = v.id)";
+                $fibu_fully_booked = $this->verbindlichkeit_fully_paid_sql('v.id');
 
                 $sql = "SELECT SQL_CALC_FOUND_ROWS
                             v.id,
@@ -1817,6 +1817,17 @@ class Verbindlichkeit {
         }
     }
 
+    private function verbindlichkeit_has_payment_sql(string $idField): string
+    {
+        return "(SELECT IF(COUNT(*) > 0, 1, 0) FROM fibu_buchungen fb WHERE ((fb.von_typ = 'verbindlichkeit' AND fb.von_id = ".$idField." AND fb.nach_typ IN ('kontoauszuege','kasse')) OR (fb.nach_typ = 'verbindlichkeit' AND fb.nach_id = ".$idField." AND fb.von_typ IN ('kontoauszuege','kasse'))))";
+    }
+
+    private function verbindlichkeit_fully_paid_sql(string $idField): string
+    {
+        $hasPaymentSql = $this->verbindlichkeit_has_payment_sql($idField);
+        return "(SELECT IF(COUNT(*) > 0 AND ROUND(SUM(betrag), 2) = 0 AND ".$hasPaymentSql." = 1, 1, 0) FROM fibu_buchungen_alle WHERE typ = 'verbindlichkeit' AND id = ".$idField.")";
+    }
+
     function verbindlichkeit_is_vollstaendig_bebucht($id)
     {
         $id = (int)$id;
@@ -1824,7 +1835,7 @@ class Verbindlichkeit {
             return false;
         }
 
-        $sql = "SELECT IF(COUNT(*) > 0 AND ROUND(SUM(betrag), 2) = 0, 1, 0) FROM fibu_buchungen_alle WHERE typ = 'verbindlichkeit' AND id = ".$id;
+        $sql = $this->verbindlichkeit_fully_paid_sql((string)$id);
         return (int)$this->app->DB->Select($sql) === 1;
     }
 

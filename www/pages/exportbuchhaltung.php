@@ -785,14 +785,24 @@ class Exportbuchhaltung
             fb.von_id,
             fb.nach_typ,
             fb.nach_id,
-            r.belegnr AS belegnr,
-            a.kundennummer_buchhaltung AS debitor,
-            a.kundennummer AS debitor_fallback,
+            COALESCE(
+                NULLIF(r.belegnr, ''),
+                NULLIF(g.belegnr, ''),
+                NULLIF(v.buha_belegfeld1, ''),
+                NULLIF(v.rechnung, ''),
+                NULLIF(v.belegnr, '')
+            ) AS belegnr,
+            COALESCE(NULLIF(ar.kundennummer_buchhaltung, ''), NULLIF(ag.kundennummer_buchhaltung, '')) AS debitor,
+            COALESCE(NULLIF(ar.kundennummer, ''), NULLIF(ag.kundennummer, '')) AS debitor_fallback,
+            av.lieferantennummer_buchhaltung AS kreditor,
+            av.lieferantennummer AS kreditor_fallback,
             kr.sachkonto AS sachkonto,
             kb.datevkonto AS bank_datev,
             kk.datevkonto AS kasse_datev,
             fb.internebemerkung AS intern,
             r.projekt AS rechnung_projekt,
+            g.projekt AS gutschrift_projekt,
+            v.projekt AS verbindlichkeit_projekt,
             ka.projekt AS kasse_projekt,
             kb.projekt AS bank_projekt,
             kk.projekt AS kassekonten_projekt,
@@ -802,7 +812,15 @@ class Exportbuchhaltung
             LEFT JOIN rechnung r
                 ON (fb.von_typ='rechnung' AND fb.von_id=r.id)
                 OR (fb.nach_typ='rechnung' AND fb.nach_id=r.id)
-            LEFT JOIN adresse a ON a.id = r.adresse
+            LEFT JOIN adresse ar ON ar.id = r.adresse
+            LEFT JOIN gutschrift g
+                ON (fb.von_typ='gutschrift' AND fb.von_id=g.id)
+                OR (fb.nach_typ='gutschrift' AND fb.nach_id=g.id)
+            LEFT JOIN adresse ag ON ag.id = g.adresse
+            LEFT JOIN verbindlichkeit v
+                ON (fb.von_typ='verbindlichkeit' AND fb.von_id=v.id)
+                OR (fb.nach_typ='verbindlichkeit' AND fb.nach_id=v.id)
+            LEFT JOIN adresse av ON av.id = v.adresse
             LEFT JOIN kontorahmen kr
                 ON (fb.von_typ='kontorahmen' AND fb.von_id=kr.id)
                 OR (fb.nach_typ='kontorahmen' AND fb.nach_id=kr.id)
@@ -820,6 +838,8 @@ class Exportbuchhaltung
             AND (
                 $projekt = 0
                 OR r.projekt = $projekt
+                OR g.projekt = $projekt
+                OR v.projekt = $projekt
                 OR ka.projekt = $projekt
                 OR kb.projekt = $projekt
                 OR kk.projekt = $projekt
@@ -835,7 +855,14 @@ class Exportbuchhaltung
                     }
 
                     $debitor = !empty($row['debitor']) ? $row['debitor'] : $row['debitor_fallback'];
-                    $gegenkonto = !empty($debitor) ? $debitor : (!empty($row['sachkonto']) ? $row['sachkonto'] : '9999');
+                    $kreditor = !empty($row['kreditor']) ? $row['kreditor'] : $row['kreditor_fallback'];
+                    if (!empty($debitor)) {
+                        $gegenkonto = $debitor;
+                    } else if (!empty($kreditor)) {
+                        $gegenkonto = $kreditor;
+                    } else {
+                        $gegenkonto = !empty($row['sachkonto']) ? $row['sachkonto'] : '9999';
+                    }
 
                     $money_in = in_array($row['nach_typ'], array('kontoauszuege','kasse'), true);
                     $soll = $money_in ? 'S' : 'H';
@@ -849,7 +876,7 @@ class Exportbuchhaltung
                     }
 
                     $belegfeld1 = !empty($row['belegnr']) ? $row['belegnr'] : ('FB'.$row['id']);
-                    if (empty($debitor) && empty($row['sachkonto'])) {
+                    if (empty($debitor) && empty($kreditor) && empty($row['sachkonto'])) {
                         $buchungstext = 'Vorkasse/ohne Beleg';
                     } else {
                         $buchungstext = !empty($row['belegnr']) ? ('Zahlung '.$row['belegnr']) : (!empty($row['intern']) ? $row['intern'] : 'Zahlung');
