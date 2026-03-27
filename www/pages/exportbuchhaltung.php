@@ -182,17 +182,17 @@ class Exportbuchhaltung
         $projektkuerzel = $this->app->Secure->GetPOST("projekt");
         $projekt = $this->app->erp->ReplaceProjekt(true, $projektkuerzel, true);
 
-        $rgchecked = $this->app->Secure->GetPOST("rechnung");
-        $gschecked = $this->app->Secure->GetPOST("gutschrift");
-        $vbchecked = $this->app->Secure->GetPOST("verbindlichkeit");
-        $lgchecked = $this->app->Secure->GetPOST("lieferantengutschrift");
-        $bankchecked = $this->app->Secure->GetPOST("bankbuchungen");
-        $diffignore = $this->app->Secure->GetPOST("diffignore");
+        $rgchecked = (bool)$this->app->Secure->GetPOST("rechnung");
+        $gschecked = (bool)$this->app->Secure->GetPOST("gutschrift");
+        $vbchecked = (bool)$this->app->Secure->GetPOST("verbindlichkeit");
+        $lgchecked = (bool)$this->app->Secure->GetPOST("lieferantengutschrift");
+        $bankchecked = (bool)$this->app->Secure->GetPOST("bankbuchungen");
+        $diffignore = (bool)$this->app->Secure->GetPOST("diffignore");
     	$sachkonto = $this->app->Secure->GetPOST('sachkonto');
         $format = $this->app->Secure->GetPOST('format');
-        $pdfexport = $this->app->Secure->GetPOST("pdfexport");
-        $buchungsstapel_export = $this->app->Secure->GetPOST("buchungsstapel_export");
-        $stammdaten_export = $this->app->Secure->GetPOST("stammdaten_export");
+        $pdfexport = (bool)$this->app->Secure->GetPOST("pdfexport");
+        $buchungsstapel_export = (bool)$this->app->Secure->GetPOST("buchungsstapel_export");
+        $stammdaten_export = (bool)$this->app->Secure->GetPOST("stammdaten_export");
         $sachkonto_kennung = null;
 
     	if (!empty($sachkonto)) {
@@ -214,6 +214,14 @@ class Exportbuchhaltung
             $bankchecked = true;
             $buchungsstapel_export = true;
             $stammdaten_export = true;
+        }
+
+        if ($buchungsstapel_export) {
+            $rgchecked = true;
+            $gschecked = true;
+            $vbchecked = true;
+            $lgchecked = true;
+            $bankchecked = true;
         }
 
         $missing_obligatory = array();
@@ -311,11 +319,17 @@ class Exportbuchhaltung
                     }
 
                     if ($pdfexport || count($export_files) > 1) {
-
                         $dateinamezip = 'Export_Buchhaltung_'.date('Y-m-d').'.zip';
+                        $dateinamezip_temp = tempnam(sys_get_temp_dir(), 'exportbuchhaltung_');
+                        if ($dateinamezip_temp === false) {
+                            throw new \RuntimeException('ZIP-Datei konnte nicht erstellt werden.');
+                        }
 
                         $zip = new ZipArchive;
-                        $zip->open($dateinamezip, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+                        if ($zip->open($dateinamezip_temp, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+                            @unlink($dateinamezip_temp);
+                            throw new \RuntimeException('ZIP-Datei konnte nicht erstellt werden.');
+                        }
 
                         foreach ($export_files as $filename => $contents) {
                             $zip->addFromString($filename, $contents);
@@ -391,14 +405,20 @@ class Exportbuchhaltung
                                 }
                             }
                         }
-                        $zip->close();
+                        if (!$zip->close()) {
+                            @unlink($dateinamezip_temp);
+                            throw new \RuntimeException('ZIP-Datei konnte nicht erstellt werden.');
+                        }
+
+                        // Nach dem Schreiben kann unter Windows noch eine veraltete Dateigroesse gecacht sein.
+                        clearstatcache(true, $dateinamezip_temp);
                         // download
                         header('Content-Type: application/zip');
                         header("Content-Disposition: attachment; filename=$dateinamezip");
-                        header('Content-Length: ' . filesize($dateinamezip));
+                        header('Content-Length: ' . filesize($dateinamezip_temp));
 
-                        readfile($dateinamezip);
-                        unlink($dateinamezip);
+                        readfile($dateinamezip_temp);
+                        unlink($dateinamezip_temp);
                     } else {
                         reset($export_files);
                         $single_filename = key($export_files);
@@ -426,6 +446,9 @@ class Exportbuchhaltung
                         }
                     }
                     $msg .= "</div>";
+                }
+                catch (\RuntimeException $e) {
+                    $msg = "<div class=error>".$e->getMessage()."</div>";
                 }
             }
         }

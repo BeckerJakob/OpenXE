@@ -24,24 +24,8 @@
                                     <td><input type="checkbox" name="stammdaten_export" value="1" [STAMMDATENEXPORT] /></td>
                                 </tr>
                                 <tr>
-                                    <td>{|Rechnungen:|}</td>
-                                    <td><input type="checkbox" name="rechnung" value="1" [RGCHECKED] /></td>
-                                </tr>
-                                <tr>
-                                    <td>{|Gutschriften:|}</td>
-                                    <td><input type="checkbox" name="gutschrift" value="1" [GSCHECKED] /></td>
-                                </tr>
-                                <tr>
-                                    <td>{|Verbindlichkeiten:|}</td>
-                                    <td><input type="checkbox" name="verbindlichkeit" value="1" [VBCHECKED] /></td>
-                                </tr>
-                                <tr>
-                                    <td>{|Lieferantengutschriften:|}</td>
-                                    <td><input type="checkbox" name="lieferantengutschrift" value="1" [LGCHECKED] /></td>
-                                </tr>
-                                <tr>
-                                    <td>{|Bank/Kasse (Zahlungsverkehr):|}</td>
-                                    <td><input type="checkbox" name="bankbuchungen" value="1" [BANKCHECKED] /></td>
+                                    <td>{|Im Buchungsstapel-Export enthalten:|}</td>
+                                    <td>{|Rechnungen, Gutschriften, Verbindlichkeiten, Lieferantengutschriften und Bank/Kasse (Zahlungsverkehr)|}</td>
                                 </tr>
                                 <tr>
                                     <td>Datum von:</td>
