@@ -540,7 +540,7 @@ class Exportbuchhaltung
                             sachkonto_missing: $sachkontofehlend_kennung,
                             format: $format,
                             zusaetzliche_buchungen: $zusaetzliche_buchungen,
-                            include_testbuchung: ((int)$this->app->erp->Firmendaten('neuesdatevformattestbuchung') === 1)
+                            includeTestbuchung: ((int)$this->app->erp->Firmendaten('neuesdatevformattestbuchung') === 1)
                         );
                     }
 
