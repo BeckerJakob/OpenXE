@@ -191,10 +191,12 @@ class Exportbuchhaltung
     	$sachkonto = $this->app->Secure->GetPOST('sachkonto');
         $format = $this->app->Secure->GetPOST('format');
         $pdfexport = $this->app->Secure->GetPOST("pdfexport");
-	    $account_id = null;
+        $buchungsstapel_export = $this->app->Secure->GetPOST("buchungsstapel_export");
+        $stammdaten_export = $this->app->Secure->GetPOST("stammdaten_export");
+        $sachkonto_kennung = null;
+
     	if (!empty($sachkonto)) {
     	    $sachkonto_kennung = explode(' ',$sachkonto)[0];
-                $account_id = $this->app->DB->SelectArr("SELECT id from kontorahmen WHERE sachkonto = '".$sachkonto_kennung."'")[0]['id'];
     	}
 
         $msg = "";
@@ -210,6 +212,8 @@ class Exportbuchhaltung
             $vbchecked = true;
             $lgchecked = true;
             $bankchecked = true;
+            $buchungsstapel_export = true;
+            $stammdaten_export = true;
         }
 
         $missing_obligatory = array();
@@ -243,7 +247,17 @@ class Exportbuchhaltung
         //---------- DOWNLOAD HERE
         if ($submit == 'Download') {
             $dataok = true;
+            $export_buchungsstapel = (bool)$buchungsstapel_export;
+            $export_stammdaten = (bool)$stammdaten_export;
+            $pdfexport = (bool)$pdfexport && $export_buchungsstapel;
+
+            if (!$export_buchungsstapel && !$export_stammdaten) {
+                $msg = "<div class=error>Bitte mindestens eine Exportdatei ausw&auml;hlen.</div>";
+                $dataok = false;
+            }
+
             if (
+              $export_buchungsstapel &&
               !$rgchecked &&
               !$gschecked &&
               !$vbchecked &&
@@ -254,101 +268,126 @@ class Exportbuchhaltung
                 $dataok = false;
             }
 
-            $von_next_year = clone $von;
-            $von_next_year = $von_next_year->modify("+1 year");;
+            $buchhaltung_wj_beginn_date = null;
+            if ($export_buchungsstapel) {
+                if (!($von instanceof DateTime) || !($bis instanceof DateTime)) {
+                    $msg = "<div class=error>Ung&uuml;ltiger Datumsbereich.</div>";
+                    $dataok = false;
+                } else {
+                    $von_next_year = clone $von;
+                    $von_next_year = $von_next_year->modify("+1 year");
 
-            $buchhaltung_wj_beginn = date_create(date_format($von,'Y').$buchhaltung_wj_beginn);
-            if ($buchhaltung_wj_beginn > $von) {
-                $buchhaltung_wj_beginn = $buchhaltung_wj_beginn->modify("-1 year");
-            }
+                    $buchhaltung_wj_beginn_date = date_create(date_format($von,'Y').$buchhaltung_wj_beginn);
+                    if (!($buchhaltung_wj_beginn_date instanceof DateTime)) {
+                        $msg = "<div class=error>Ung&uuml;ltiger Datumsbereich.</div>";
+                        $dataok = false;
+                    } else {
+                        if ($buchhaltung_wj_beginn_date > $von) {
+                            $buchhaltung_wj_beginn_date = $buchhaltung_wj_beginn_date->modify("-1 year");
+                        }
 
-            $buchhaltung_wj_beginn_next_year = clone $buchhaltung_wj_beginn;
-            $buchhaltung_wj_beginn_next_year->modify("+1 year");
+                        $buchhaltung_wj_beginn_next_year = clone $buchhaltung_wj_beginn_date;
+                        $buchhaltung_wj_beginn_next_year->modify("+1 year");
 
-            if ($bis < $von || $bis > $von_next_year || $bis >= $buchhaltung_wj_beginn_next_year) {
-                $msg = "<div class=error>Ung&uuml;ltiger Datumsbereich.</div>";
-                $dataok = false;
+                        if ($bis < $von || $bis > $von_next_year || $bis >= $buchhaltung_wj_beginn_next_year) {
+                            $msg = "<div class=error>Ung&uuml;ltiger Datumsbereich.</div>";
+                            $dataok = false;
+                        }
+                    }
+                }
             }
 
             if ($dataok) {
-                $filename_csv = "EXTF_".date('Ymd') . "_Buchungsstapel_DATEV_export.csv";
                 try {
-                    $csv = $this->DATEV_Buchuchungsstapel($rgchecked, $gschecked, $vbchecked, $lgchecked, $bankchecked, $buchhaltung_berater, $buchhaltung_mandant, $buchhaltung_wj_beginn, (int)$buchhaltung_sachkontenlaenge, $von, $bis, $projekt, $filename_csv, $diffignore, $sachkonto_kennung, $format);
+                    $export_files = array();
+                    if ($export_buchungsstapel) {
+                        $filename_csv = "EXTF_".date('Ymd') . "_Buchungsstapel_DATEV_export.csv";
+                        $export_files[$filename_csv] = $this->DATEV_Buchuchungsstapel($rgchecked, $gschecked, $vbchecked, $lgchecked, $bankchecked, $buchhaltung_berater, $buchhaltung_mandant, $buchhaltung_wj_beginn_date, (int)$buchhaltung_sachkontenlaenge, $von, $bis, $projekt, $filename_csv, $diffignore, $sachkonto_kennung, $format);
+                    }
 
-                    if ($pdfexport) {
+                    if ($export_stammdaten) {
+                        $filename_stammdaten = "EXTF_".date('Ymd') . "_Stammdaten_DebitorenKreditoren_DATEV_export.csv";
+                        $export_files[$filename_stammdaten] = $this->DATEV_DebitorenKreditorenStammdaten($buchhaltung_berater, $buchhaltung_mandant, $buchhaltung_wj_beginn, (int)$buchhaltung_sachkontenlaenge, $projekt, $filename_stammdaten, $format);
+                    }
+
+                    if ($pdfexport || count($export_files) > 1) {
 
                         $dateinamezip = 'Export_Buchhaltung_'.date('Y-m-d').'.zip';
 
                         $zip = new ZipArchive;
-                        $zip->open($dateinamezip, ZipArchive::CREATE);
+                        $zip->open($dateinamezip, ZipArchive::CREATE | ZipArchive::OVERWRITE);
 
-                        $zip->addFromString($typ['typ']."/".$filename_csv, $csv);
+                        foreach ($export_files as $filename => $contents) {
+                            $zip->addFromString($filename, $contents);
+                        }
 
-                        $typen = $this->typen($rgchecked, $gschecked, $vbchecked, $lgchecked);
+                        if ($pdfexport) {
+                            $typen = $this->typen($rgchecked, $gschecked, $vbchecked, $lgchecked);
 
-                        foreach ($typen as $typ) {
-                            $sql = "
-                                SELECT id, ".$typ['field_belegnr']." belegnr FROM ".$typ['typ']." b
-                                WHERE
-                                b.".$typ['field_date']." BETWEEN '".date_format($von,"Y-m-d")."' AND '".date_format($bis,"Y-m-d")."' AND (b.projekt=$projekt OR $projekt=0)".$typ['condition_where'];
-                            $belege = $this->app->DB->SelectArr($sql);
+                            foreach ($typen as $typ) {
+                                $sql = "
+                                    SELECT id, ".$typ['field_belegnr']." belegnr FROM ".$typ['typ']." b
+                                    WHERE
+                                    b.".$typ['field_date']." BETWEEN '".date_format($von,"Y-m-d")."' AND '".date_format($bis,"Y-m-d")."' AND (b.projekt=$projekt OR $projekt=0)".$typ['condition_where'];
+                                $belege = $this->app->DB->SelectArr($sql);
 
-                            foreach ($belege as $beleg) {
-                                if (!$typ['do']) {
-                                    continue;
-                                }
-
-                                $action = $typ['pdf'];
-
-                                if ($typ['typ'] == 'rechnung') {
-                                    if ($this->app->DB->Select("SELECT xmlrechnung FROM rechnung WHERE id = ".$beleg['id'])) {
-                                        $action = 'load';
+                                foreach ($belege as $beleg) {
+                                    if (!$typ['do']) {
+                                        continue;
                                     }
-                                }
-                                switch ($action) {
-                                    case 'print':
-                                        switch ($typ['typ']) {
-                                            case 'rechnung':
-                                                if(class_exists('GutschriftPDFCustom')) {
-                                                    $Brief = new RechnungPDFCustom($this->app,$projekt);
-                                                }
-                                                else{
-                                                    $Brief = new RechnungPDF($this->app,$projekt);
-                                                }
-                                                $Brief->GetRechnung($beleg['id']);
-                                            break;
-                                            case 'gutschrift':
-                                                if(class_exists('RechnungPDFCustom')) {
-                                                    $Brief = new GutschriftPDFCustom($this->app,$projekt);
-                                                }
-                                                else{
-                                                    $Brief = new GutschriftPDF($this->app,$projekt);
-                                                }
-                                                $Brief->GetGutschrift($beleg['id']);
-                                            break;
-                                            default:
-                                                exit();
-                                            break;
+
+                                    $action = $typ['pdf'];
+
+                                    if ($typ['typ'] == 'rechnung') {
+                                        if ($this->app->DB->Select("SELECT xmlrechnung FROM rechnung WHERE id = ".$beleg['id'])) {
+                                            $action = 'load';
                                         }
-                                        $tmpfile = $Brief->displayTMP();
-                                        $file_name = $beleg['belegnr'].".pdf";
-                                        $zip->addFromString($typ['typ']."/".$file_name, file_get_contents($tmpfile));
-             			            break;
-                                    case 'load':
-                                        $file_attachments = $this->app->erp->GetDateiSubjektObjekt('%',$typ['typ'],$beleg['id']);
-                                        $suffix = "";
-                                        $count = 0;
-                                        foreach ($file_attachments as $file_attachment) {
-		                    			    $ending = $this->app->erp->GetDateiEndung($file_attachment);
-                                            if (in_array($ending,['pdf','xml'])) {
-                                                $file_contents = $this->app->erp->GetDatei($file_attachment);
-                                                $file_name = filter_var($beleg['belegnr'],FILTER_SANITIZE_EMAIL).$suffix.".".$ending;
-                                                $zip->addFromString($typ['typ']."/".$file_name, $file_contents);
-                                                $count++;
-                                                $suffix = "_".$count;
+                                    }
+                                    switch ($action) {
+                                        case 'print':
+                                            switch ($typ['typ']) {
+                                                case 'rechnung':
+                                                    if(class_exists('GutschriftPDFCustom')) {
+                                                        $Brief = new RechnungPDFCustom($this->app,$projekt);
+                                                    }
+                                                    else{
+                                                        $Brief = new RechnungPDF($this->app,$projekt);
+                                                    }
+                                                    $Brief->GetRechnung($beleg['id']);
+                                                break;
+                                                case 'gutschrift':
+                                                    if(class_exists('RechnungPDFCustom')) {
+                                                        $Brief = new GutschriftPDFCustom($this->app,$projekt);
+                                                    }
+                                                    else{
+                                                        $Brief = new GutschriftPDF($this->app,$projekt);
+                                                    }
+                                                    $Brief->GetGutschrift($beleg['id']);
+                                                break;
+                                                default:
+                                                    exit();
+                                                break;
                                             }
-                                        }
-                                    break;
+                                            $tmpfile = $Brief->displayTMP();
+                                            $file_name = $beleg['belegnr'].".pdf";
+                                            $zip->addFromString($typ['typ']."/".$file_name, file_get_contents($tmpfile));
+                 			            break;
+                                        case 'load':
+                                            $file_attachments = $this->app->erp->GetDateiSubjektObjekt('%',$typ['typ'],$beleg['id']);
+                                            $suffix = "";
+                                            $count = 0;
+                                            foreach ($file_attachments as $file_attachment) {
+		                    			        $ending = $this->app->erp->GetDateiEndung($file_attachment);
+                                                if (in_array($ending,['pdf','xml'])) {
+                                                    $file_contents = $this->app->erp->GetDatei($file_attachment);
+                                                    $file_name = filter_var($beleg['belegnr'],FILTER_SANITIZE_EMAIL).$suffix.".".$ending;
+                                                    $zip->addFromString($typ['typ']."/".$file_name, $file_contents);
+                                                    $count++;
+                                                    $suffix = "_".$count;
+                                                }
+                                            }
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -361,10 +400,14 @@ class Exportbuchhaltung
                         readfile($dateinamezip);
                         unlink($dateinamezip);
                     } else {
-                        header("Content-Disposition: attachment; filename=" . $filename_csv);
+                        reset($export_files);
+                        $single_filename = key($export_files);
+                        $single_contents = current($export_files);
+
+                        header("Content-Disposition: attachment; filename=" . $single_filename);
                         header("Pragma: no-cache");
                         header("Expires: 0");
-                        echo($csv);
+                        echo($single_contents);
                     }
                     $this->app->ExitXentral();
                 }
@@ -404,6 +447,8 @@ class Exportbuchhaltung
         $this->app->Tpl->SET('BANKCHECKED',$bankchecked?'checked':'');
         $this->app->Tpl->SET('DIFFIGNORE',$diffignore?'checked':'');
         $this->app->Tpl->SET('PDFEXPORT',$pdfexport?'checked':'');
+        $this->app->Tpl->SET('BUCHUNGSSTAPELEXPORT',$buchungsstapel_export?'checked':'');
+        $this->app->Tpl->SET('STAMMDATENEXPORT',$stammdaten_export?'checked':'');
 
         $this->app->Tpl->SET('VON', $von_form);
         $this->app->Tpl->SET('BIS', $bis_form);
@@ -1024,18 +1069,218 @@ class Exportbuchhaltung
             $csv .= '"0";"S";"EUR";"0";"";"";"1234";"1370";"";"101";"";"";"";"Testbuchung";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"0";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""'; // Testbuchung
         }
 
-        switch ($format) {
-            case "UTF-8":
-            break;
-            case "UTF-8-BOM":
-                $csv = "\xef\xbb\xbf".$csv;
-            break;
-            default:
-                $csv = mb_convert_encoding($csv, "ISO-8859-1", "UTF-8");
-            break;
+        return $this->encodeCsvOutput($csv, $format);
+    }
+
+    function DATEV_DebitorenKreditorenStammdaten(string $berater, string $mandant, string $wirtschaftsjahr_beginn, int $sachkontenlaenge, int $projekt = 0, string $filename = 'EXTF_Stammdaten_DebitorenKreditoren_DATEV_export.csv', string $format = "ISO-8859-1") : string {
+        $datev_header_definition = array (
+            '1' => 'Kennzeichen',
+            '2' => 'Versionsnummer',
+            '3' => 'Formatkategorie',
+            '4' => 'Formatname',
+            '5' => 'Formatversion',
+            '6' => 'Erzeugt am',
+            '7' => 'Reserviert',
+            '8' => 'Reserviert',
+            '9' => 'Reserviert',
+            '10' => 'Reserviert',
+            '11' => 'Beraternummer',
+            '12' => 'Mandantennummer',
+            '13' => 'WJ-Beginn',
+            '14' => 'Sachkontenlänge',
+            '15' => 'Datum von',
+            '16' => 'Datum bis',
+            '17' => 'Bezeichnung',
+            '18' => 'Diktatkürzel',
+            '19' => 'Buchungstyp',
+            '20' => 'Rechnungs- legungszweck',
+            '21' => 'Festschreibung',
+            '22' => 'WKZ',
+            '23' => 'Reserviert',
+            '24' => 'Derivatskennzeichen',
+            '25' => 'Reserviert',
+            '26' => 'Reserviert',
+            '27' => 'Sachkonten- rahmen',
+            '28' => 'ID der Branchen- lösung',
+            '29' => 'Reserviert',
+            '30' => 'Reserviert',
+            '31' => 'Anwendungs- information'
+        );
+
+        $datev_stammdaten_definition = array(
+            '1' => 'Konto',
+            '2' => 'Name (Adressatentyp Unternehmen)',
+            '3' => 'Unternehmensgegenstand',
+            '4' => 'Name (Adressatentyp natürl. Person)',
+            '5' => 'Vorname (Adressatentyp natürl. Person)',
+            '6' => 'Name (Adressatentyp keine Angabe)',
+            '7' => 'Adressatentyp',
+            '8' => 'Kurzbezeichnung',
+            '9' => 'EU-Mitgliedsstaat',
+            '10' => 'EU-USt-IdNr.',
+            '11' => 'Anrede',
+            '12' => 'Titel/Akad. Grad',
+            '13' => 'Adelstitel',
+            '14' => 'Namensvorsatz',
+            '15' => 'Adressart',
+            '16' => 'Straße',
+            '17' => 'Postfach',
+            '18' => 'Postleitzahl',
+            '19' => 'Ort',
+            '20' => 'Land',
+            '21' => 'Versandzusatz',
+            '22' => 'Adresszusatz',
+            '23' => 'Abweichende Anrede',
+            '24' => 'Abw. Zustellbezeichnung 1',
+            '25' => 'Abw. Zustellbezeichnung 2',
+            '26' => 'Kennz. Korrespondenzadresse',
+            '27' => 'Adresse gültig von',
+            '28' => 'Adresse gültig bis',
+            '29' => 'Telefon',
+            '30' => 'Bemerkung (Telefon)',
+            '31' => 'Telefon Geschäftsleitung',
+            '32' => 'Bemerkung (Telefon GL)',
+            '33' => 'E-Mail',
+            '34' => 'Bemerkung (E-Mail)',
+            '35' => 'Internet',
+            '36' => 'Bemerkung (Internet)',
+            '37' => 'Fax'
+        );
+
+        $usernamearr = explode(' ',strtoupper($this->app->User->GetName()." X X"));
+        if (count($usernamearr) < 2) {
+            $kuerzel = $usernamearr[0][0].$usernamearr[0][1];
+        } else {
+            $kuerzel = $usernamearr[0][0].$usernamearr[1][0];
         }
 
-        return($csv);
+        $heute = date('Ymd');
+        $wj_beginn = date_create(date('Y').$wirtschaftsjahr_beginn);
+        if (!($wj_beginn instanceof DateTime)) {
+            $wj_beginn = date_create(date('Y').'0101');
+        }
+
+        $data = array();
+        $data['Kennzeichen'] = 'EXTF';
+        $data['Versionsnummer'] = '700';
+        $data['Formatkategorie'] = '16';
+        $data['Formatname'] = 'Debitoren/Kreditoren';
+        $data['Formatversion'] = '5';
+        $data['Erzeugt am'] = date('YmdHis').'000';
+        $data['Beraternummer'] = $berater;
+        $data['Mandantennummer'] = $mandant;
+        $data['WJ-Beginn'] = date_format($wj_beginn, "Ymd");
+        $data['Sachkontenlänge'] = $sachkontenlaenge;
+        $data['Datum von'] = $heute;
+        $data['Datum bis'] = $heute;
+        $data['Bezeichnung'] = mb_strimwidth($filename, 0, 30);
+        $data['Diktatkürzel'] = $kuerzel;
+
+        $csv = "";
+        $comma = "";
+        foreach ($datev_header_definition as $key => $value) {
+            if (!isset($data[$value])) {
+                $data[$value] = '';
+            }
+            $csv .= $comma.'"'.$data[$value].'"';
+            $comma = ";";
+        }
+        $csv .= "\r\n";
+
+        $comma = "";
+        foreach ($datev_stammdaten_definition as $key => $value) {
+            $csv .= $comma.'"'.$value.'"';
+            $comma = ";";
+        }
+        $csv .= "\r\n";
+
+        $sql = "SELECT
+            TRIM(COALESCE(NULLIF(a.kundennummer_buchhaltung, ''), NULLIF(a.kundennummer, ''))) AS debitorenkonto,
+            TRIM(COALESCE(NULLIF(a.lieferantennummer_buchhaltung, ''), NULLIF(a.lieferantennummer, ''))) AS kreditorenkonto,
+            a.name,
+            a.strasse,
+            a.plz,
+            a.ort,
+            a.land,
+            a.ustid,
+            a.adresszusatz,
+            a.telefon,
+            a.email,
+            a.telefax
+        FROM adresse a
+        WHERE
+            a.geloescht = 0
+            AND (a.projekt = ".$projekt." OR ".$projekt." = 0)
+            AND (
+                TRIM(COALESCE(NULLIF(a.kundennummer_buchhaltung, ''), NULLIF(a.kundennummer, ''))) <> ''
+                OR TRIM(COALESCE(NULLIF(a.lieferantennummer_buchhaltung, ''), NULLIF(a.lieferantennummer, ''))) <> ''
+            )
+        ORDER BY a.name";
+
+        $rows = $this->app->DB->SelectArr($sql);
+        $seen_accounts = array();
+
+        foreach ($rows as $row) {
+            $konten = array($row['debitorenkonto'], $row['kreditorenkonto']);
+            foreach ($konten as $konto_raw) {
+                $konto = $this->normalizeDatevAccountNumber($konto_raw);
+                if ($konto === '' || isset($seen_accounts[$konto])) {
+                    continue;
+                }
+                $seen_accounts[$konto] = true;
+
+                list($eu_mitgliedsstaat, $eu_ustidnr) = $this->splitDatevUstId($row['ustid']);
+
+                $data = array();
+                $data['Konto'] = $konto;
+                $data['Name (Adressatentyp Unternehmen)'] = mb_strimwidth((string)$row['name'], 0, 50);
+                $data['Adressatentyp'] = '0';
+                $data['Kurzbezeichnung'] = mb_strimwidth((string)$row['name'], 0, 15);
+                $data['EU-Mitgliedsstaat'] = $eu_mitgliedsstaat;
+                $data['EU-USt-IdNr.'] = $eu_ustidnr;
+                $data['Straße'] = mb_strimwidth((string)$row['strasse'], 0, 36);
+                $data['Postleitzahl'] = mb_strimwidth((string)$row['plz'], 0, 10);
+                $data['Ort'] = mb_strimwidth((string)$row['ort'], 0, 30);
+                $data['Land'] = mb_strimwidth(strtoupper((string)$row['land']), 0, 2);
+                $data['Adresszusatz'] = mb_strimwidth((string)$row['adresszusatz'], 0, 36);
+                $data['Telefon'] = mb_strimwidth((string)$row['telefon'], 0, 30);
+                $data['E-Mail'] = mb_strimwidth((string)$row['email'], 0, 72);
+                $data['Fax'] = mb_strimwidth((string)$row['telefax'], 0, 30);
+
+                $csv .= $this->create_line($datev_stammdaten_definition, $data);
+            }
+        }
+
+        return $this->encodeCsvOutput($csv, $format);
+    }
+
+    private function normalizeDatevAccountNumber($konto) : string
+    {
+        $konto = preg_replace('/[^0-9]/', '', (string)$konto);
+
+        return mb_substr($konto, 0, 9);
+    }
+
+    private function splitDatevUstId($ustid) : array
+    {
+        $ustid = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)$ustid));
+        if (mb_strlen($ustid) < 3) {
+            return array('', $ustid);
+        }
+
+        return array(mb_substr($ustid, 0, 2), mb_substr($ustid, 2));
+    }
+
+    private function encodeCsvOutput(string $csv, string $format = "ISO-8859-1") : string
+    {
+        switch ($format) {
+            case "UTF-8":
+                return $csv;
+            case "UTF-8-BOM":
+                return "\xef\xbb\xbf".$csv;
+            default:
+                return mb_convert_encoding($csv, "ISO-8859-1", "UTF-8");
+        }
     }
 
     function create_line($definition, $data) : string {

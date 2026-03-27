@@ -16,6 +16,14 @@
                             <table width="100%" border="0">
                             <legend>{|Buchungsstapel|}</legend>
                                 <tr>
+                                    <td>{|Buchungsstapel-Datei exportieren:|}</td>
+                                    <td><input type="checkbox" name="buchungsstapel_export" value="1" [BUCHUNGSSTAPELEXPORT] /></td>
+                                </tr>
+                                <tr>
+                                    <td>{|Debitoren-/Kreditoren-Stammdaten exportieren:|}</td>
+                                    <td><input type="checkbox" name="stammdaten_export" value="1" [STAMMDATENEXPORT] /></td>
+                                </tr>
+                                <tr>
                                     <td>{|Rechnungen:|}</td>
                                     <td><input type="checkbox" name="rechnung" value="1" [RGCHECKED] /></td>
                                 </tr>
