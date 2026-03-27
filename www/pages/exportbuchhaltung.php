@@ -11,40 +11,22 @@
 *
 **** END OF COPYRIGHT & LICENSE NOTICE *** DO NOT REMOVE ****
 */
-
 /*
 *   Copyright (c) 2023 OpenXE project
 */
-
 ?>
 <?php
-
-class ConsistencyException extends Exception {
-
-    /*
-        contains the result data as array(string 'belegnr', float 'betrag_gesamt', float 'betrag_summe'))
-    */
-
-    private $_data = array();
-
-    public function __construct($message, $data)
-    {
-        $this->_data = $data;
-        parent::__construct($message);
-    }
-
-    public function getData()
-    {
-        return $this->_data;
-    }
-}
-
+use Xentral\Modules\DatevExport\DatevExport;
+use Xentral\Modules\DatevExport\ConsistencyException;
 class Exportbuchhaltung
 {
     /** @var Application $app */
     var $app;
     var $belegnummer;
     var $headerwritten = false;
+    var SimpleXMLElement $document_xml;
+    var ZipArchive $zip;
+    var ZipArchive $zipbelege;
 
     function typen($rechnung, $gutschrift, $verbindlichkeit, $lieferantengutschrift) : array {
         return(
@@ -63,8 +45,11 @@ class Exportbuchhaltung
                     'field_kundennummer' => 'b.kundennummer',
                     'field_betrag_gesamt' => 'b.soll',
                     'field_betrag' => 'p.umsatz_brutto_gesamt',
+                    'field_land' => 'b.land',
+                    'field_gegenkonto' => null,
                     'condition_where' => ' AND b.status IN (\'freigegeben\',\'versendet\',\'storniert\')',
                     'Buchungstyp' => 'SR',
+                    'document_type' => 2,
                     'do' => $rechnung,
                     'pdf' => 'print'
                 ),
@@ -82,8 +67,11 @@ class Exportbuchhaltung
                     'field_kundennummer' => 'b.kundennummer',
                     'field_betrag_gesamt' => 'b.soll',
                     'field_betrag' => 'p.umsatz_brutto_gesamt',
+                    'field_land' => 'b.land',
+                    'field_gegenkonto' => null,
                     'condition_where' => ' AND b.status IN (\'freigegeben\',\'versendet\')',
                     'Buchungstyp' => '',
+                    'document_type' => 2,
                     'do' => $gutschrift,
                     'pdf' => 'print'
                 ),
@@ -101,9 +89,11 @@ class Exportbuchhaltung
                     'field_kundennummer' => 'a.lieferantennummer',
                     'field_betrag_gesamt' => 'b.betrag',
                     'field_betrag' => 'p.preis*p.menge*((100+p.steuersatz)/100)',
+                    'field_land' => 'a.land',
                     'field_gegenkonto' => '(SELECT sachkonto FROM kontorahmen k WHERE k.id = p.kontorahmen)',
                     'condition_where' => ' AND b.status IN (\'freigegeben\', \'abgeschlossen\')',
                     'Buchungstyp' => '',
+                    'document_type' => 1,
                     'do' => $verbindlichkeit,
                     'pdf' => 'load'
                 ),
@@ -121,16 +111,17 @@ class Exportbuchhaltung
                     'field_kundennummer' => 'a.lieferantennummer',
                     'field_betrag_gesamt' => 'b.betrag',
                     'field_betrag' => 'p.preis*p.menge*((100+p.steuersatz)/100)',
+                    'field_land' => 'a.land',
                     'field_gegenkonto' => '(SELECT sachkonto FROM kontorahmen k WHERE k.id = p.kontorahmen)',
                     'condition_where' => ' AND b.status IN (\'freigegeben\', \'abgeschlossen\')',
                     'Buchungstyp' => '',
+                    'document_type' => 1,
                     'do' => $lieferantengutschrift,
                     'pdf' => 'load'
                 )
             )
         );
     }
-
     /**
     * Exportbelegepositionen constructor.
     *
@@ -140,6 +131,19 @@ class Exportbuchhaltung
     public function __construct($app, $intern = false)
     {
         $this->app = $app;
+
+        $this->document_xml = new SimpleXMLElement('<archive xmlns="http://xml.datev.de/bedi/tps/document/v06.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://xml.datev.de/bedi/tps/document/v06.0 Document_v060.xsd" version="6.0" generatingSystem="OpenXE"></archive>');
+
+        $this->document_xml->addAttribute("version", "6.0");
+        $this->document_xml->addAttribute("generatingSystem", "OpenXE");
+        $this->document_xml->AddChild("header");
+        $this->document_xml->header->AddChild("date");
+        $this->document_xml->header->date = date_create('now')->format("Y-m-d\TH:i:s");;
+        $this->document_xml->AddChild("content");
+
+        $this->zip = new ZipArchive();
+        $this->zipbelege = new ZipArchive();
+
         if ($intern == true) {
             return;
         }
@@ -148,6 +152,17 @@ class Exportbuchhaltung
         $this->app->ActionHandler("export", "ExportBuchhaltungList");
         $this->app->ActionHandlerListen($app);
         $this->app->erp->Headlines('Buchhaltung Export DATEV');
+    }
+
+    function addfile($name, $contents, $guid, $document_type) {
+        $this->zipbelege->addFromString($name, $contents);
+        $document = $this->document_xml->content->AddChild("document");
+        $document->addAttribute("type", $document_type);
+        $document->addAttribute("processID", "1");
+        $document->addAttribute("guid", $guid);
+        $extension = $document->AddChild("extension");
+        $extension->addAttribute("xsi:type","File","http://www.w3.org/2001/XMLSchema-instance");
+        $extension->addAttribute("name",$name);
     }
 
     private function isGenericPaymentText(string $buchungstext): bool
@@ -181,26 +196,21 @@ class Exportbuchhaltung
         $bis = date_create($this->app->erp->ReplaceDatum(true, $bis_form, true));
         $projektkuerzel = $this->app->Secure->GetPOST("projekt");
         $projekt = $this->app->erp->ReplaceProjekt(true, $projektkuerzel, true);
-
         $rgchecked = (bool)$this->app->Secure->GetPOST("rechnung");
         $gschecked = (bool)$this->app->Secure->GetPOST("gutschrift");
         $vbchecked = (bool)$this->app->Secure->GetPOST("verbindlichkeit");
         $lgchecked = (bool)$this->app->Secure->GetPOST("lieferantengutschrift");
         $bankchecked = (bool)$this->app->Secure->GetPOST("bankbuchungen");
         $diffignore = (bool)$this->app->Secure->GetPOST("diffignore");
-    	$sachkonto = $this->app->Secure->GetPOST('sachkonto');
-        $format = $this->app->Secure->GetPOST('format');
+        $sachkonto = $this->app->Secure->GetPOST('sachkonto');
+        $sachkontofehlend = $this->app->Secure->GetPOST('sachkontofehlend');
         $pdfexport = (bool)$this->app->Secure->GetPOST("pdfexport");
+        $format = $this->app->Secure->GetPOST('format');
         $buchungsstapel_export = (bool)$this->app->Secure->GetPOST("buchungsstapel_export");
         $stammdaten_export = (bool)$this->app->Secure->GetPOST("stammdaten_export");
         $sachkonto_kennung = null;
-
-    	if (!empty($sachkonto)) {
-    	    $sachkonto_kennung = explode(' ',$sachkonto)[0];
-    	}
-
+        $sachkontofehlend_kennung = null;
         $msg = "";
-
         // Preload values
         if (empty($submit)) {
             $von = date_create('now')->modify('first day of last month');
@@ -214,6 +224,13 @@ class Exportbuchhaltung
             $bankchecked = true;
             $buchungsstapel_export = true;
             $stammdaten_export = true;
+            $sachkonto = $this->app->User->GetParameter('exportbuchhaltung_sachkonto');
+            $sachkontofehlend = $this->app->User->GetParameter('exportbuchhaltung_sachkontofehlend');
+            $pdfexport = (bool)$this->app->User->GetParameter('exportbuchhaltung_pdfexport');
+        } else {
+            $this->app->User->SetParameter('exportbuchhaltung_sachkonto', $sachkonto);
+            $this->app->User->SetParameter('exportbuchhaltung_sachkontofehlend', $sachkontofehlend);
+            $this->app->User->SetParameter('exportbuchhaltung_pdfexport', $pdfexport);
         }
 
         if ($buchungsstapel_export) {
@@ -224,13 +241,17 @@ class Exportbuchhaltung
             $bankchecked = true;
         }
 
+        if (!empty($sachkonto)) {
+            $sachkonto_kennung = explode(' ', $sachkonto)[0];
+        }
+        if (!empty($sachkontofehlend)) {
+            $sachkontofehlend_kennung = explode(' ', $sachkontofehlend)[0];
+        }
         $missing_obligatory = array();
-
         $buchhaltung_berater = $this->app->erp->Firmendaten('buchhaltung_berater');
         $buchhaltung_mandant = $this->app->erp->Firmendaten('buchhaltung_mandant');
         $buchhaltung_wj_beginn = $this->app->erp->Firmendaten('buchhaltung_wj_beginn');
         $buchhaltung_sachkontenlaenge = $this->app->erp->Firmendaten('buchhaltung_sachkontenlaenge');
-
         $buchhaltung_berater = $this->app->erp->Firmendaten('buchhaltung_berater');
         if (empty($buchhaltung_berater)) {
             $missing_obligatory[] = "Berater";
@@ -247,11 +268,9 @@ class Exportbuchhaltung
         if (empty($buchhaltung_sachkontenlaenge)) {
             $missing_obligatory[] = "Sachkontenl&auml;nge";
         }
-
         if (!empty($missing_obligatory)) {
             $msg = "<div class=warning>Angaben in den Grundeinstellungen fehlen: ".implode(", ",$missing_obligatory).".</div>";
         }
-
         //---------- DOWNLOAD HERE
         if ($submit == 'Download') {
             $dataok = true;
@@ -275,7 +294,6 @@ class Exportbuchhaltung
                 $msg = "<div class=error>Bitte mindestens eine Belegart oder Bank/Kasse ausw&auml;hlen.</div>";
                 $dataok = false;
             }
-
             $buchhaltung_wj_beginn_date = null;
             if ($export_buchungsstapel) {
                 if (!($von instanceof DateTime) || !($bis instanceof DateTime)) {
@@ -306,139 +324,302 @@ class Exportbuchhaltung
             }
 
             if ($dataok) {
+                $dateiname_zip_belege_temp = null;
+                $dateiname_zip_belege = null;
+
                 try {
                     $export_files = array();
+                    $belege = array();
+                    $zusaetzliche_buchungen = array();
+
                     if ($export_buchungsstapel) {
-                        $filename_csv = "EXTF_".date('Ymd') . "_Buchungsstapel_DATEV_export.csv";
-                        $export_files[$filename_csv] = $this->DATEV_Buchuchungsstapel($rgchecked, $gschecked, $vbchecked, $lgchecked, $bankchecked, $buchhaltung_berater, $buchhaltung_mandant, $buchhaltung_wj_beginn_date, (int)$buchhaltung_sachkontenlaenge, $von, $bis, $projekt, $filename_csv, $diffignore, $sachkonto_kennung, $format);
-                    }
+                        $typen = $this->typen($rgchecked, $gschecked, $vbchecked, $lgchecked);
+                        foreach ($typen as $typkey => $typvalue) {
+                            if (!$typvalue['do']) {
+                                continue;
+                            }
 
-                    if ($export_stammdaten) {
-                        $filename_stammdaten = "EXTF_".date('Ymd') . "_Stammdaten_DebitorenKreditoren_DATEV_export.csv";
-                        $export_files[$filename_stammdaten] = $this->DATEV_DebitorenKreditorenStammdaten($buchhaltung_berater, $buchhaltung_mandant, $buchhaltung_wj_beginn, (int)$buchhaltung_sachkontenlaenge, $projekt, $filename_stammdaten, $format);
-                    }
+                            $where = "b.".$typvalue['field_date']." BETWEEN '".date_format($von,"Y-m-d")."' AND '".date_format($bis,"Y-m-d")."' AND (b.projekt=$projekt OR $projekt=0)".$typvalue['condition_where'];
+                            $sql = "SELECT
+                                b.id,
+                                ".$typvalue['field_belegnr']." AS belegnr,
+                                ".$typvalue['field_auftrag']." AS auftrag,
+                                ".$typvalue['field_zahlweise']." AS zahlweise,
+                                IF(".$typvalue['field_kontonummer']." <> '',".$typvalue['field_kontonummer'].",".$typvalue['field_kundennummer'].") AS kundennummer,
+                                ".$typvalue['field_name']." AS name,
+                                b.ustid ustid,
+                                a.ustid ustid_adresse,
+                                b.".$typvalue['field_date']." AS datum,
+                                ".$typvalue['field_betrag_gesamt']." AS betrag_gesamt,
+                                b.waehrung,
+                                ".$typvalue['field_land']." AS land
+                            FROM
+                                ".$typvalue['typ']." b
+                                INNER JOIN adresse a ON a.id = b.adresse
+                            WHERE
+                                ".$where;
+                            $belegearr = $this->app->DB->SelectArr($sql);
 
-                    if ($pdfexport || count($export_files) > 1) {
-                        $dateinamezip = 'Export_Buchhaltung_'.date('Y-m-d').'.zip';
-                        $dateinamezip_temp = tempnam(sys_get_temp_dir(), 'exportbuchhaltung_');
-                        if ($dateinamezip_temp === false) {
-                            throw new \RuntimeException('ZIP-Datei konnte nicht erstellt werden.');
+                            $belege[$typkey] = array(
+                                'table' => $typvalue['typ'],
+                                'typ' => $typvalue['typ'],
+                                'kennzeichen' => $typvalue['kennzeichen'],
+                                'kennzeichen_negativ' => $typvalue['kennzeichen_negativ'],
+                                'field_gegenkonto' => $typvalue['field_gegenkonto'],
+                                'Buchungstyp' => $typvalue['Buchungstyp'],
+                                'pdf' => $typvalue['pdf'],
+                                'document_type' => $typvalue['document_type'],
+                                'belege' => array(),
+                            );
+
+                            foreach ($belegearr as $value) {
+                                if (empty($value['ustid'])) {
+                                    $value['ustid'] = $value['ustid_adresse'];
+                                }
+                                $belege[$typkey]['belege'][$value['id']] = $value;
+                                $belege[$typkey]['belege'][$value['id']]['typ'] = $typvalue['typ'];
+                            }
+
+                            $sql_gegenkonto = !empty($typvalue['field_gegenkonto']) ? $typvalue['field_gegenkonto'] : "NULL";
+                            $sql = "SELECT
+                                b.id AS beleg_id,
+                                p.id AS pos_id,
+                                ROUND(".$typvalue['field_betrag'].",2) AS betrag,
+                                ".$sql_gegenkonto." AS gegenkonto,
+                                p.steuersatz AS pos_steuersatz,
+                                b.waehrung AS pos_waehrung
+                            FROM
+                                ".$typvalue['typ']." b
+                                LEFT JOIN ".$typvalue['subtable']." p ON b.id = p.".$typvalue['typ']."
+                            WHERE
+                                ".$where;
+                            $posarr = $this->app->DB->SelectArr($sql);
+
+                            foreach ($posarr as $pos) {
+                                $tmpsteuersatz = null;
+                                $tmpsteuertext = '';
+                                $erloes = '';
+                                $this->app->erp->GetSteuerPosition($typvalue['typ'], $pos['pos_id'], $tmpsteuersatz, $tmpsteuertext, $erloes);
+                                if ($tmpsteuersatz === null && $pos['pos_steuersatz'] !== null && $pos['pos_steuersatz'] !== '') {
+                                    $tmpsteuersatz = (float)$pos['pos_steuersatz'];
+                                }
+                                if ($tmpsteuersatz === null) {
+                                    $tmpsteuersatz = 0;
+                                }
+                                $pos['steuersatz'] = $tmpsteuersatz;
+                                $pos['erloes'] = $erloes;
+
+                                if (!isset($belege[$typkey]['belege'][$pos['beleg_id']])) {
+                                    continue;
+                                }
+                                $belege[$typkey]['belege'][$pos['beleg_id']]['positionen'][] = $pos;
+                            }
                         }
 
-                        $zip = new ZipArchive;
-                        if ($zip->open($dateinamezip_temp, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-                            @unlink($dateinamezip_temp);
-                            throw new \RuntimeException('ZIP-Datei konnte nicht erstellt werden.');
-                        }
-
-                        foreach ($export_files as $filename => $contents) {
-                            $zip->addFromString($filename, $contents);
+                        if ($bankchecked) {
+                            $zusaetzliche_buchungen = $this->collectDatevZusatzbuchungen($von, $bis, $projekt);
                         }
 
                         if ($pdfexport) {
-                            $typen = $this->typen($rgchecked, $gschecked, $vbchecked, $lgchecked);
+                            $dateiname_zip_belege_temp = $this->app->erp->GetTMP().uniqid("Export_Buchhaltung_Belege_", true).".zip";
+                            $dateiname_zip_belege = 'Export_Buchhaltung_Belege_'.date('Y-m-d').'.zip';
+                            if ($this->zipbelege->open($dateiname_zip_belege_temp, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+                                throw new \RuntimeException('ZIP-Datei konnte nicht erstellt werden.');
+                            }
 
-                            foreach ($typen as $typ) {
-                                $sql = "
-                                    SELECT id, ".$typ['field_belegnr']." belegnr FROM ".$typ['typ']." b
-                                    WHERE
-                                    b.".$typ['field_date']." BETWEEN '".date_format($von,"Y-m-d")."' AND '".date_format($bis,"Y-m-d")."' AND (b.projekt=$projekt OR $projekt=0)".$typ['condition_where'];
-                                $belege = $this->app->DB->SelectArr($sql);
+                            foreach ($belege as $typ => $belege_zu_typ) {
+                                foreach ($belege_zu_typ['belege'] as $beleg_key => $beleg) {
+                                    $allowed_file_types = array('pdf', 'xml');
+                                    $allowed_link_file_types = array('pdf');
+                                    $action = $belege_zu_typ['pdf'];
 
-                                foreach ($belege as $beleg) {
-                                    if (!$typ['do']) {
-                                        continue;
+                                    if ($belege_zu_typ['typ'] === 'rechnung' && $this->app->DB->Select("SELECT xmlrechnung FROM rechnung WHERE id = ".$beleg['id'])) {
+                                        $action = 'load';
+                                        $allowed_link_file_types = array('xml');
                                     }
 
-                                    $action = $typ['pdf'];
-
-                                    if ($typ['typ'] == 'rechnung') {
-                                        if ($this->app->DB->Select("SELECT xmlrechnung FROM rechnung WHERE id = ".$beleg['id'])) {
-                                            $action = 'load';
-                                        }
-                                    }
                                     switch ($action) {
                                         case 'print':
-                                            switch ($typ['typ']) {
+                                            switch ($belege_zu_typ['typ']) {
                                                 case 'rechnung':
-                                                    if(class_exists('GutschriftPDFCustom')) {
-                                                        $Brief = new RechnungPDFCustom($this->app,$projekt);
-                                                    }
-                                                    else{
-                                                        $Brief = new RechnungPDF($this->app,$projekt);
+                                                    if (class_exists('GutschriftPDFCustom')) {
+                                                        $Brief = new RechnungPDFCustom($this->app, $projekt);
+                                                    } else {
+                                                        $Brief = new RechnungPDF($this->app, $projekt);
                                                     }
                                                     $Brief->GetRechnung($beleg['id']);
                                                 break;
                                                 case 'gutschrift':
-                                                    if(class_exists('RechnungPDFCustom')) {
-                                                        $Brief = new GutschriftPDFCustom($this->app,$projekt);
-                                                    }
-                                                    else{
-                                                        $Brief = new GutschriftPDF($this->app,$projekt);
+                                                    if (class_exists('RechnungPDFCustom')) {
+                                                        $Brief = new GutschriftPDFCustom($this->app, $projekt);
+                                                    } else {
+                                                        $Brief = new GutschriftPDF($this->app, $projekt);
                                                     }
                                                     $Brief->GetGutschrift($beleg['id']);
                                                 break;
                                                 default:
-                                                    exit();
+                                                    $this->app->Tpl->AddMessage('error', "Belegdatei nicht geladen, Druckvorgang fehlgeschlagen: ".$beleg['belegnr']);
+                                                    $dataok = false;
                                                 break;
                                             }
-                                            $tmpfile = $Brief->displayTMP();
-                                            $file_name = $beleg['belegnr'].".pdf";
-                                            $zip->addFromString($typ['typ']."/".$file_name, file_get_contents($tmpfile));
-                 			            break;
-                                        case 'load':
-                                            $file_attachments = $this->app->erp->GetDateiSubjektObjekt('%',$typ['typ'],$beleg['id']);
-                                            $suffix = "";
-                                            $count = 0;
-                                            foreach ($file_attachments as $file_attachment) {
-		                    			        $ending = $this->app->erp->GetDateiEndung($file_attachment);
-                                                if (in_array($ending,['pdf','xml'])) {
-                                                    $file_contents = $this->app->erp->GetDatei($file_attachment);
-                                                    $file_name = filter_var($beleg['belegnr'],FILTER_SANITIZE_EMAIL).$suffix.".".$ending;
-                                                    $zip->addFromString($typ['typ']."/".$file_name, $file_contents);
-                                                    $count++;
-                                                    $suffix = "_".$count;
+
+                                            if ($dataok) {
+                                                $tmpfile = $Brief->displayTMP();
+                                                $file_name = $beleg['belegnr'].".pdf";
+                                                $guid = $this->app->DB->Select("SELECT UUID() uuid FROM DUAL");
+                                                $this->addfile(ucfirst($belege_zu_typ['typ'])."_".$file_name, file_get_contents($tmpfile), $guid, $belege_zu_typ['document_type']);
+                                                if (empty($belege[$typ]['belege'][$beleg_key]['guid'])) {
+                                                    $belege[$typ]['belege'][$beleg_key]['guid'] = $guid;
                                                 }
                                             }
                                         break;
+                                        case 'load':
+                                            $file_ids = $this->app->erp->GetDateiSubjektObjekt('%', $belege_zu_typ['typ'], $beleg['id']);
+                                            $suffix = "";
+                                            $count = 0;
+                                            foreach ($file_ids as $file_id) {
+                                                $ending = strtolower($this->app->erp->GetDateiEndung($file_id));
+                                                if (!in_array($ending, $allowed_file_types, true)) {
+                                                    continue;
+                                                }
+
+                                                $file_contents = $this->app->erp->GetDatei($file_id);
+                                                $file_name = filter_var($beleg['belegnr'], FILTER_SANITIZE_EMAIL).$suffix.".".$ending;
+                                                $guid = $this->app->DB->Select("SELECT UUID() uuid FROM DUAL");
+                                                $this->addfile(ucfirst($belege_zu_typ['typ'])."_".$file_name, $file_contents, $guid, $belege_zu_typ['document_type']);
+                                                $count++;
+                                                $suffix = "_".$count;
+
+                                                if (empty($belege[$typ]['belege'][$beleg_key]['guid']) && in_array($ending, $allowed_link_file_types, true)) {
+                                                    $belege[$typ]['belege'][$beleg_key]['guid'] = $guid;
+                                                }
+                                            }
+                                        break;
+                                        default:
+                                            $this->app->Tpl->AddMessage('error', "Belegdatei nicht geladen: ".$beleg['belegnr']);
+                                            $dataok = false;
+                                        break;
+                                    }
+
+                                    if (empty($belege[$typ]['belege'][$beleg_key]['guid'])) {
+                                        $this->app->Tpl->AddMessage('error', "Belegdatei fehlt: ".$beleg['belegnr']);
+                                        $dataok = false;
                                     }
                                 }
                             }
+
+                            $dom = new \DOMDocument('1.0');
+                            $dom->loadXML($this->document_xml->asXML());
+                            $dom->encoding = 'UTF-8';
+                            $dom->preserveWhiteSpace = true;
+                            $dom->formatOutput = true;
+                            $xml_pretty = $dom->saveXML();
+                            $this->zipbelege->addFromString("document.xml", $xml_pretty);
+
+                            if (!$this->zipbelege->close()) {
+                                throw new \RuntimeException('ZIP-Datei konnte nicht erstellt werden.');
+                            }
+                            clearstatcache(true, $dateiname_zip_belege_temp);
                         }
-                        if (!$zip->close()) {
-                            @unlink($dateinamezip_temp);
-                            throw new \RuntimeException('ZIP-Datei konnte nicht erstellt werden.');
-                        }
-
-                        // Nach dem Schreiben kann unter Windows noch eine veraltete Dateigroesse gecacht sein.
-                        clearstatcache(true, $dateinamezip_temp);
-                        // download
-                        header('Content-Type: application/zip');
-                        header("Content-Disposition: attachment; filename=$dateinamezip");
-                        header('Content-Length: ' . filesize($dateinamezip_temp));
-
-                        readfile($dateinamezip_temp);
-                        unlink($dateinamezip_temp);
-                    } else {
-                        reset($export_files);
-                        $single_filename = key($export_files);
-                        $single_contents = current($export_files);
-
-                        header("Content-Disposition: attachment; filename=" . $single_filename);
-                        header("Pragma: no-cache");
-                        header("Expires: 0");
-                        echo($single_contents);
                     }
-                    $this->app->ExitXentral();
-                }
-                catch (ConsistencyException $e) {
-                    $msg = "<div class=error>Inkonsistente Daten (".$e->getMessage()."): <br>";
+
+                    if ($dataok && $export_buchungsstapel) {
+                        $filename_csv = "EXTF_".date('Ymd')."_Buchungsstapel_DATEV_export.csv";
+                        $export_files[$filename_csv] = DatevExport::createBuchungsstapelCSV(
+                            beleg_data: $belege,
+                            berater: $buchhaltung_berater,
+                            mandant: $buchhaltung_mandant,
+                            bearbeiter: $this->getDatevUserKuerzel(),
+                            wj_beginn: $buchhaltung_wj_beginn_date,
+                            sachkontenlaenge: (int)$buchhaltung_sachkontenlaenge,
+                            von: $von,
+                            bis: $bis,
+                            filename: $filename_csv,
+                            diffignore: $diffignore,
+                            sachkonto_differences: $sachkonto_kennung,
+                            sachkonto_missing: $sachkontofehlend_kennung,
+                            format: $format,
+                            zusaetzliche_buchungen: $zusaetzliche_buchungen,
+                            include_testbuchung: ((int)$this->app->erp->Firmendaten('neuesdatevformattestbuchung') === 1)
+                        );
+                    }
+
+                    if ($dataok && $export_stammdaten) {
+                        $filename_stammdaten = "EXTF_".date('Ymd')."_Stammdaten_DebitorenKreditoren_DATEV_export.csv";
+                        $export_files[$filename_stammdaten] = DatevExport::createDebitorenKreditorenStammdatenCSV(
+                            adress_rows: $this->collectDatevStammdatenRows($projekt),
+                            berater: $buchhaltung_berater,
+                            mandant: $buchhaltung_mandant,
+                            wirtschaftsjahr_beginn: $buchhaltung_wj_beginn,
+                            sachkontenlaenge: (int)$buchhaltung_sachkontenlaenge,
+                            bearbeiter: $this->getDatevUserKuerzel(),
+                            filename: $filename_stammdaten,
+                            format: $format
+                        );
+                    }
+
+                    if ($dataok && !empty($export_files)) {
+                        if ($pdfexport || count($export_files) > 1) {
+                            $dateinamezip = 'Export_Buchhaltung_'.date('Y-m-d').'.zip';
+                            $dateinamezip_temp = $this->app->erp->GetTMP().uniqid("Export_Buchhaltung_", true).".zip";
+                            $zip = new ZipArchive;
+                            if ($zip->open($dateinamezip_temp, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+                                throw new \RuntimeException('ZIP-Datei konnte nicht erstellt werden.');
+                            }
+
+                            foreach ($export_files as $filename => $contents) {
+                                $zip->addFromString($filename, $contents);
+                            }
+
+                            if ($pdfexport && $dateiname_zip_belege_temp !== null && file_exists($dateiname_zip_belege_temp)) {
+                                if (!$zip->addFile($dateiname_zip_belege_temp, $dateiname_zip_belege)) {
+                                    @unlink($dateinamezip_temp);
+                                    throw new \RuntimeException('ZIP-Datei konnte nicht erstellt werden.');
+                                }
+                            }
+
+                            if (!$zip->close()) {
+                                @unlink($dateinamezip_temp);
+                                throw new \RuntimeException('ZIP-Datei konnte nicht erstellt werden.');
+                            }
+
+                            clearstatcache(true, $dateinamezip_temp);
+                            header('Content-Type: application/zip');
+                            header("Content-Disposition: attachment; filename=$dateinamezip");
+                            header('Content-Length: ' . filesize($dateinamezip_temp));
+                            readfile($dateinamezip_temp);
+                            unlink($dateinamezip_temp);
+                            if ($dateiname_zip_belege_temp !== null && file_exists($dateiname_zip_belege_temp)) {
+                                unlink($dateiname_zip_belege_temp);
+                            }
+                        } else {
+                            reset($export_files);
+                            $single_filename = key($export_files);
+                            $single_contents = current($export_files);
+
+                            header("Content-Disposition: attachment; filename=" . $single_filename);
+                            header("Pragma: no-cache");
+                            header("Expires: 0");
+                            echo $single_contents;
+                        }
+
+                        $this->app->ExitXentral();
+                    }
+                } catch (ConsistencyException $e) {
+                    if ($dateiname_zip_belege_temp !== null && file_exists($dateiname_zip_belege_temp)) {
+                        unlink($dateiname_zip_belege_temp);
+                    }
+
+                    $msg = "<div class=error>Inkonsistente Daten";
+                    if ($e->getMessage() !== '') {
+                        $msg .= " (".$e->getMessage().")";
+                    }
+                    $msg .= ": <br>";
 
                     $data = $e->getData();
-
                     $count = 0;
-                    foreach($data as $item) {
-                        $msg .= $item['typ']." ".$item['belegnr']." (Kopf ".$this->app->erp->ReplaceMengeBetrag(false,$item['betrag_gesamt'],false)." Positionen ".$this->app->erp->ReplaceMengeBetrag(false,$item['betrag_summe'],false).")<br>";
+                    foreach ($data as $item) {
+                        $msg .= ucfirst($item['typ'])." ".$item['belegnr']." (Kopf ".$this->app->erp->ReplaceMengeBetrag(false, $item['betrag_gesamt'], false)." Positionen ".$this->app->erp->ReplaceMengeBetrag(false, $item['betrag_summe'], false).")<br>";
                         $count++;
                         if ($count == 10) {
                             $msg .= "...";
@@ -446,23 +627,23 @@ class Exportbuchhaltung
                         }
                     }
                     $msg .= "</div>";
-                }
-                catch (\RuntimeException $e) {
+                } catch (\RuntimeException $e) {
+                    if ($dateiname_zip_belege_temp !== null && file_exists($dateiname_zip_belege_temp)) {
+                        unlink($dateiname_zip_belege_temp);
+                    }
                     $msg = "<div class=error>".$e->getMessage()."</div>";
                 }
             }
         }
         //---------- DOWNLOAD HERE
-
         $this->app->erp->MenuEintrag("index.php?module=exportbuchhaltung&action=export", "&Uuml;bersicht");
         $this->app->erp->MenuEintrag("index.php?module=importvorlage&action=uebersicht", "Zur&uuml;ck");
         $this->app->YUI->AutoComplete("projekt", "projektname", 1);
         $this->app->YUI->DatePicker("von");
         $this->app->YUI->DatePicker("bis");
         $this->app->YUI->AutoComplete('sachkonto', 'sachkonto');
-
-        $this->app->Tpl->SET('MESSAGE', $msg);
-
+        $this->app->YUI->AutoComplete('sachkontofehlend', 'sachkonto');
+        $this->app->Tpl->ADD('MESSAGE', $msg);
         $this->app->Tpl->SET('RGCHECKED',$rgchecked?'checked':'');
         $this->app->Tpl->SET('GSCHECKED',$gschecked?'checked':'');
         $this->app->Tpl->SET('VBCHECKED',$vbchecked?'checked':'');
@@ -472,409 +653,62 @@ class Exportbuchhaltung
         $this->app->Tpl->SET('PDFEXPORT',$pdfexport?'checked':'');
         $this->app->Tpl->SET('BUCHUNGSSTAPELEXPORT',$buchungsstapel_export?'checked':'');
         $this->app->Tpl->SET('STAMMDATENEXPORT',$stammdaten_export?'checked':'');
-
         $this->app->Tpl->SET('VON', $von_form);
         $this->app->Tpl->SET('BIS', $bis_form);
         $this->app->Tpl->SET('PROJEKT', $projektkuerzel);
         $this->app->Tpl->SET('SACHKONTO', $sachkonto);
-
+        $this->app->Tpl->SET('SACHKONTOFEHLEND', $sachkontofehlend);
         $this->app->Tpl->Parse('PAGE', "exportbuchhaltung_export.tpl");
     }
-
-    /*
-    * Create DATEV Buchhungsstapel
-    * format: "ISO-8859-1", "UTF-8", "UTF-8-BOM"
-    * @throws ConsistencyException with string (list of items) if consistency check fails and no sachkonto for differences is given
-    */
-    function DATEV_Buchuchungsstapel(bool $rechnung, bool $gutschrift, bool $verbindlichkeit, bool $lieferantengutschrift, bool $bankbuchungen, string $berater, string $mandant, datetime $wj_beginn, int $sachkontenlaenge, datetime $von, datetime $bis, int $projekt = 0, string $filename = 'EXTF_Buchungsstapel_DATEV_export.csv', $diffignore = false, $sachkonto_differences, string $format = "ISO-8859-1") : string {
-        // Per Schalter wieder aktivierbar: true = Zahlweise exportieren, false = Feld leer lassen
-        $exportZahlweise = false;
-
-        $datev_header_definition = array (
-            '1' => 'Kennzeichen',
-            '2' => 'Versionsnummer',
-            '3' => 'Formatkategorie',
-            '4' => 'Formatname',
-            '5' => 'Formatversion',
-            '6' => 'Erzeugt am',
-            '7' => 'Reserviert',
-            '8' => 'Reserviert',
-            '9' => 'Reserviert',
-            '10' => 'Reserviert',
-            '11' => 'Beraternummer',
-            '12' => 'Mandantennummer',
-            '13' => 'WJ-Beginn',
-            '14' => 'Sachkontenlänge',
-            '15' => 'Datum von',
-            '16' => 'Datum bis',
-            '17' => 'Bezeichnung',
-            '18' => 'Diktatkürzel',
-            '19' => 'Buchungstyp',
-            '20' => 'Rechnungs- legungszweck',
-            '21' => 'Festschreibung',
-            '22' => 'WKZ',
-            '23' => 'Reserviert',
-            '24' => 'Derivatskennzeichen',
-            '25' => 'Reserviert',
-            '26' => 'Reserviert',
-            '27' => 'Sachkonten- rahmen',
-            '28' => 'ID der Branchen- lösung',
-            '29' => 'Reserviert',
-            '30' => 'Reserviert',
-            '31' => 'Anwendungs- information'
-        );
-
-        $datev_buchungsstapel_definition = array (
-            '1' => 'Umsatz',
-            '2' => 'Soll-/Haben-Kennzeichen',
-            '3' => 'WKZ Umsatz',
-            '4' => 'Kurs',
-            '5' => 'Basisumsatz',
-            '6' => 'WKZ Basisumsatz',
-            '7' => 'Konto',
-            '8' => 'Gegenkonto (ohne BU-Schlüssel)',
-            '9' => 'BU-Schlüssel',
-            '10' => 'Belegdatum',
-            '11' => 'Belegfeld 1',
-            '12' => 'Belegfeld 2',
-            '13' => 'Skonto',
-            '14' => 'Buchungstext',
-            '15' => 'Postensperre',
-            '16' => 'Diverse Adressnummer',
-            '17' => 'Geschäftspartnerbank',
-            '18' => 'Sachverhalt',
-            '19' => 'Zinssperre',
-            '20' => 'Beleglink',
-            '21' => 'Beleginfo -Art 1',
-            '22' => 'Beleginfo -Inhalt 1',
-            '23' => 'Beleginfo -Art 2',
-            '24' => 'Beleginfo -Inhalt 2',
-            '25' => 'Beleginfo -Art 3',
-            '26' => 'Beleginfo -Inhalt 3',
-            '27' => 'Beleginfo -Art 4',
-            '28' => 'Beleginfo -Inhalt 4',
-            '29' => 'Beleginfo -Art 5',
-            '30' => 'Beleginfo -Inhalt 5',
-            '31' => 'Beleginfo -Art 6',
-            '32' => 'Beleginfo -Inhalt 6',
-            '33' => 'Beleginfo -Art 7',
-            '34' => 'Beleginfo -Inhalt 7',
-            '35' => 'Beleginfo -Art 8',
-            '36' => 'Beleginfo -Inhalt 8',
-            '37' => 'KOST1 -Kostenstelle',
-            '38' => 'KOST2 -Kostenstelle',
-            '39' => 'KOST-Menge',
-            '40' => 'EU-Mitgliedstaat u. UStID (Bestimmung)',
-            '41' => 'EU-Steuersatz (Bestimmung)',
-            '42' => 'Abw. Versteuerungsart',
-            '43' => 'Sachverhalt L+L',
-            '44' => 'Funktionsergänzung L+L',
-            '45' => 'BU 49 Hauptfunktiontyp',
-            '46' => 'BU 49 Hauptfunktionsnummer',
-            '47' => 'BU 49 Funktionsergänzung',
-            '48' => 'Zusatzinformation – Art 1',
-            '49' => 'Zusatzinformation – Inhalt 1',
-            '50' => 'Zusatzinformation – Art 2',
-            '51' => 'Zusatzinformation – Inhalt 2',
-            '52' => 'Zusatzinformation – Art 3',
-            '53' => 'Zusatzinformation – Inhalt 3',
-            '54' => 'Zusatzinformation – Art 4',
-            '55' => 'Zusatzinformation – Inhalt 4',
-            '56' => 'Zusatzinformation – Art 5',
-            '57' => 'Zusatzinformation – Inhalt 5',
-            '58' => 'Zusatzinformation – Art 6',
-            '59' => 'Zusatzinformation – Inhalt 6',
-            '60' => 'Zusatzinformation – Art 7',
-            '61' => 'Zusatzinformation – Inhalt 7',
-            '62' => 'Zusatzinformation – Art 8',
-            '63' => 'Zusatzinformation – Inhalt 8',
-            '64' => 'Zusatzinformation – Art 9',
-            '65' => 'Zusatzinformation – Inhalt 9',
-            '66' => 'Zusatzinformation – Art 10',
-            '67' => 'Zusatzinformation – Inhalt 10',
-            '68' => 'Zusatzinformation – Art 11',
-            '69' => 'Zusatzinformation – Inhalt 11',
-            '70' => 'Zusatzinformation – Art 12',
-            '71' => 'Zusatzinformation – Inhalt 12',
-            '72' => 'Zusatzinformation – Art 13',
-            '73' => 'Zusatzinformation – Inhalt 13',
-            '74' => 'Zusatzinformation – Art 14',
-            '75' => 'Zusatzinformation – Inhalt 14',
-            '76' => 'Zusatzinformation – Art 15',
-            '77' => 'Zusatzinformation – Inhalt 15',
-            '78' => 'Zusatzinformation – Art 16',
-            '79' => 'Zusatzinformation – Inhalt 16',
-            '80' => 'Zusatzinformation – Art 17',
-            '81' => 'Zusatzinformation – Inhalt 17',
-            '82' => 'Zusatzinformation – Art 18',
-            '83' => 'Zusatzinformation – Inhalt 18',
-            '84' => 'Zusatzinformation – Art 19',
-            '85' => 'Zusatzinformation – Inhalt 19',
-            '86' => 'Zusatzinformation – Art 20',
-            '87' => 'Zusatzinformation – Inhalt 20',
-            '88' => 'Stück',
-            '89' => 'Gewicht',
-            '90' => 'Zahlweise',
-            '91' => 'Forderungsart',
-            '92' => 'Veranlagungsjahr',
-            '93' => 'Zugeordnete Fälligkeit',
-            '94' => 'Skontotyp',
-            '95' => 'Auftragsnummer',
-            '96' => 'Buchungstyp',
-            '97' => 'USt-Schlüssel (Anzahlungen)',
-            '98' => 'EU-Mitgliedstaat (Anzahlungen)',
-            '99' => 'Sachverhalt L+L (Anzahlungen)',
-            '100' => 'EU-Steuersatz (Anzahlungen)',
-            '101' => 'Erlöskonto (Anzahlungen)',
-            '102' => 'Herkunft-Kz',
-            '103' => 'Leerfeld',
-            '104' => 'KOST-Datum',
-            '105' => 'SEPA-Mandatsreferenz',
-            '106' => 'Skontosperre',
-            '107' => 'Gesellschaftername',
-            '108' => 'Beteiligtennummer',
-            '109' => 'Identifikationsnummer',
-            '110' => 'Zeichnernummer',
-            '111' => 'Postensperre bis',
-            '112' => 'Bezeichnung SoBil-Sachverhalt',
-            '113' => 'Kennzeichen SoBil-Buchung',
-            '114' => 'Festschreibung',
-            '115' => 'Leistungsdatum',
-            '116' => 'Datum Zuord. Steuerperiode',
-            '117' => 'Fälligkeit',
-            '118' => 'Generalumkehr',
-            '119' => 'Steuersatz',
-            '120' => 'Land',
-            '121' => 'Abrechnungsreferenz',
-            '122' => 'BVV-Position (Betriebsvermögensvergleich)',
-            '123' => 'EU-Mitgliedstaat u. UStID (Ursprung)',
-            '124' => 'EU-Steuersatz (Ursprung)');
-
-        $usernamearr = explode(' ',strtoupper($this->app->User->GetName()." X X"));
-
+    private function getDatevUserKuerzel(): string
+    {
+        $usernamearr = explode(' ', strtoupper($this->app->User->GetName()." X X"));
         if (count($usernamearr) < 2) {
-            $kuerzel = $usernamearr[0][0].$usernamearr[0][1];
-        }
-        else {
-            $kuerzel = $usernamearr[0][0].$usernamearr[1][0];
+            return $usernamearr[0][0].$usernamearr[0][1];
         }
 
-        $data['Kennzeichen'] = 'EXTF';
-        $data['Versionsnummer'] = '700';
-        $data['Formatkategorie'] = '21';
-        $data['Formatname'] = 'Buchungsstapel';
-        $data['Formatversion'] = '12';
-        $data['Erzeugt am'] = date('YmdHis').'000';
-        $data['Reserviert'] = '';
-        $data['Reserviert'] = '';
-        $data['Reserviert'] = '';
-        $data['Reserviert'] = '';
-        $data['Beraternummer'] = $berater;
-        $data['Mandantennummer'] = $mandant;
-        $data['WJ-Beginn'] = date_format($wj_beginn,"Ymd");
-        $data['Sachkontenlänge'] = $sachkontenlaenge;
-        $data['Datum von'] = date_format($von,"Ymd");
-        $data['Datum bis'] = date_format($bis,"Ymd");
-        $data['Bezeichnung'] = mb_strimwidth($filename,0,30);
-        $data['Diktatkürzel'] = $kuerzel;
-        $data['Buchungstyp'] = 1;
-        $data['Rechnungs- legungszweck'] = 0;
-        $data['Festschreibung'] = 1;
-        $data['WKZ'] = 'EUR';
-        $data['Reserviert'] = '';
-        $data['Derivatskennzeichen'] = '';
-        $data['Reserviert'] = '';
-        $data['Reserviert'] = '';
-        $data['Sachkonten- rahmen'] = '';
-        $data['ID der Branchen- lösung'] = '';
-        $data['Reserviert'] = '';
-        $data['Reserviert'] = '';
-        $data['Anwendungs- information'] = '';
+        return $usernamearr[0][0].$usernamearr[1][0];
+    }
 
-        // Start
-        $csv = "";
+    private function collectDatevStammdatenRows(int $projekt = 0): array
+    {
+        $sql = "SELECT
+            TRIM(COALESCE(NULLIF(a.kundennummer_buchhaltung, ''), NULLIF(a.kundennummer, ''))) AS debitorenkonto,
+            TRIM(COALESCE(NULLIF(a.lieferantennummer_buchhaltung, ''), NULLIF(a.lieferantennummer, ''))) AS kreditorenkonto,
+            a.name,
+            a.strasse,
+            a.plz,
+            a.ort,
+            a.land,
+            a.ustid,
+            a.adresszusatz,
+            a.telefon,
+            a.email,
+            a.telefax
+        FROM adresse a
+        WHERE
+            a.geloescht = 0
+            AND (a.projekt = ".$projekt." OR ".$projekt." = 0)
+            AND (
+                TRIM(COALESCE(NULLIF(a.kundennummer_buchhaltung, ''), NULLIF(a.kundennummer, ''))) <> ''
+                OR TRIM(COALESCE(NULLIF(a.lieferantennummer_buchhaltung, ''), NULLIF(a.lieferantennummer, ''))) <> ''
+            )
+        ORDER BY a.name";
 
-        // Output data header row
-        $comma = "";
-        foreach ($datev_header_definition as $key => $value) {
-            if (!isset($data[$value])) {
-                $data[$value] = '';
-            }
-            $csv .= $comma.'"'.$data[$value].'"';
-            $comma = ";";
-        }
-        $csv .= "\r\n";
+        return $this->app->DB->SelectArr($sql);
+    }
 
-        // Output column captions
-        $comma = "";
-        foreach ($datev_buchungsstapel_definition as $key => $value) {
-            $csv .= $comma.'"'.$value.'"';
-            $comma = ";";
-        }
-        $csv .= "\r\n";
+    private function collectDatevZusatzbuchungen(DateTime $von, DateTime $bis, int $projekt = 0): array
+    {
+        return array_merge(
+            $this->collectDatevZahlungsverkehrBuchungen($von, $bis, $projekt),
+            $this->collectDatevDialogbuchungen($von, $bis, $projekt)
+        );
+    }
 
-        // Collate data and transform in RAM
-        $typen = $this->typen($rechnung, $gutschrift, $verbindlichkeit, $lieferantengutschrift);
-        foreach ($typen as $typ) {
-
-            if (!$typ['do']) {
-                continue;
-            }
-
-            if (!empty($typ['field_gegenkonto'])) {
-                $sql_gegenkonto = $typ['field_gegenkonto'];
-            } else
-            {
-                $sql_gegenkonto = "NULL";
-            }
-
-            $sql = "SELECT
-                ".$typ['typ']." id,
-                ".$typ['field_belegnr']." as belegnr,
-                ".$typ['field_auftrag']." as auftrag,
-                ".$typ['field_zahlweise']." as zahlweise,
-                if(".$typ['field_kontonummer']." <> '',".$typ['field_kontonummer'].",".$typ['field_kundennummer'].") as kundennummer,
-                ".$typ['field_name']." as name,
-                a.ustid,
-                b.".$typ['field_date']." as datum,
-                p.id as pos_id,
-                ".$typ['field_betrag_gesamt']." as betrag_gesamt,
-                b.waehrung,
-                ROUND(".$typ['field_betrag'].",2) as betrag,
-                p.steuersatz as pos_steuersatz,
-                ".$sql_gegenkonto." as gegenkonto,
-                b.waehrung as pos_waehrung
-            FROM
-                ".$typ['typ']." b
-                    LEFT JOIN
-                ".$typ['subtable']." p
-                    ON
-                b.id = p.".$typ['typ']."
-                    INNER JOIN
-                adresse a ON a.id = b.adresse
-                    WHERE
-                b.".$typ['field_date']." BETWEEN '".date_format($von,"Y-m-d")."' AND '".date_format($bis,"Y-m-d")."' AND (b.projekt=$projekt OR $projekt=0)".$typ['condition_where'];
-
-            // Check consistency of positions
-            if (!$diffignore) {
-                $sql_check = "SELECT *
-                FROM
-                    (
-                    SELECT
-                        id,
-                        belegnr,
-                        datum,
-                        betrag_gesamt,
-                        ROUND(SUM(betrag),2) AS betrag_summe,
-                        waehrung,
-                        kundennummer,
-                        ustid,
-                        auftrag
-                    FROM
-                (".$sql.") posten
-                GROUP BY
-                    id
-                ) summen
-                WHERE betrag_gesamt <> betrag_summe OR betrag_summe IS NULL";
-
-                $result = $this->app->DB->SelectArr($sql_check);
-                if (!empty($result)) {
-
-                    if (!$sachkonto_differences) {
-                        $e = new ConsistencyException(ucfirst($typ['typ']),$result);
-                        throw $e;
-        		    } else {
-                        // Create differences entries
-                        foreach ($result as $row) {
-
-                            $posid = $row['pos_id'];
-                            $tmpsteuersatz = null;
-                            $tmpsteuertext = '';
-                            $erloes = '';
-                            $result = array();
-                            $this->app->erp->GetSteuerPosition($typ['typ'], $posid, $tmpsteuersatz, $tmpsteuertext, $erloes);
-                            if ($tmpsteuersatz === null && $row['pos_steuersatz'] !== null && $row['pos_steuersatz'] !== '') {
-                                $tmpsteuersatz = (float)$row['pos_steuersatz'];
-                            }
-
-                            $data = array();
-
-                            $difference = $row['betrag_gesamt']-$row['betrag_summe'];
-
-                            $data['Umsatz'] = number_format(abs($difference), 2, ',', ''); // obligatory
-                            $data['EU-Steuersatz (Bestimmung)'] = 0;
-                            $data['WKZ Umsatz'] = $row['waehrung'];
-                            $data['Belegfeld 1'] = mb_strimwidth($row['belegnr'],0,36);
-                            $data['Konto'] = $row['kundennummer'];
-                            $data['Soll-/Haben-Kennzeichen'] = ($difference < 0)?'S':'H'; // obligatory
-
-                            $data['Gegenkonto (ohne BU-Schlüssel)'] = $sachkonto_differences; // obligatory
-
-                            $data['Belegdatum'] = date_format(date_create($row['datum']),"dm"); // obligatory
-                            $data['Buchungstext'] = "Differenz";
-                            $data['EU-Mitgliedstaat u. UStID (Bestimmung)'] = $row['ustid'];
-                            $data['Auftragsnummer'] = $row['auftrag'];
-                            if ($exportZahlweise) {
-                                $data['Zahlweise'] = $row['zahlweise'];
-                            }
-                		    $csv .= $this->create_line($datev_buchungsstapel_definition,$data);
-                        }
-        		    }
-                }
-            }      // diffignore
-
-            // Query position data
-            $arr = $this->app->DB->Query($sql);
-            while ($row = $this->app->DB->Fetch_Assoc($arr)) {
-                $posid = $row['pos_id'];
-                $tmpsteuersatz = null;
-                $tmpsteuertext = '';
-                $erloes = '';
-                $result = array();
-                $this->app->erp->GetSteuerPosition($typ['typ'], $posid, $tmpsteuersatz, $tmpsteuertext, $erloes);
-                if ($tmpsteuersatz === null && $row['pos_steuersatz'] !== null && $row['pos_steuersatz'] !== '') {
-                    $tmpsteuersatz = (float)$row['pos_steuersatz'];
-                }
-
-                $data = array();
-
-                if ($row['betrag'] > 0) {
-                    $data['Umsatz'] = number_format($row['betrag'], 2, ',', ''); // obligatory
-                    $data['Soll-/Haben-Kennzeichen'] = $typ['kennzeichen']; // obligatory
-                } else if ($row['betrag'] < 0) {
-                    $data['Umsatz'] = number_format(-$row['betrag'], 2, ',', ''); // obligatory
-                    $data['Soll-/Haben-Kennzeichen'] = $typ['kennzeichen_negativ']; // obligatory
-                } else {
-                    continue;
-                }
-
-                $data['EU-Steuersatz (Bestimmung)'] = number_format($tmpsteuersatz, 2, ',', '');
-                $data['WKZ Umsatz'] = $row['pos_waehrung'];
-                $data['Belegfeld 1'] = mb_strimwidth($row['belegnr'],0,36);
-                $data['Konto'] = $row['kundennummer']; // obligatory
-
-                if (!empty($typ['field_gegenkonto'])) {
-                    $data['Gegenkonto (ohne BU-Schlüssel)'] = $row['gegenkonto']; // obligatory
-                } else {
-                    $data['Gegenkonto (ohne BU-Schlüssel)'] = $erloes; // obligatory
-                }
-
-                $data['Belegdatum'] = date_format(date_create($row['datum']),"dm"); // obligatory
-                $data['Buchungstext'] = mb_strimwidth($row['name'],0,60);
-                $data['EU-Mitgliedstaat u. UStID (Bestimmung)'] = $row['ustid'];
-
-                $data['Auftragsnummer'] = ($row['auftrag']!=0)?$row['auftrag']:'';
-                if ($exportZahlweise) {
-                    $data['Zahlweise'] = $row['zahlweise'];
-                }
-
-                $csv .= $this->create_line($datev_buchungsstapel_definition,$data);
-            }
-        }
-
-        if ($bankbuchungen) {
-            // Zahlungsverkehr (Bank/Kasse) aus fibu_buchungen/kontoauszuege
-            $sql_zahlung = "SELECT
+    private function collectDatevZahlungsverkehrBuchungen(DateTime $von, DateTime $bis, int $projekt = 0): array
+    {
+        $sql = "SELECT
             fb.id,
             fb.datum,
             fb.betrag,
@@ -946,543 +780,139 @@ class Exportbuchhaltung
                 OR kr.projekt = $projekt
             )";
 
-            $zahlungen = $this->app->DB->SelectArr($sql_zahlung);
-            if (!empty($zahlungen)) {
-                foreach ($zahlungen as $row) {
-                    $geldkonto = !empty($row['bank_datev']) ? $row['bank_datev'] : $row['kasse_datev'];
-                    if (empty($geldkonto)) {
-                        continue;
-                    }
-
-                    $debitor = !empty($row['debitor']) ? $row['debitor'] : $row['debitor_fallback'];
-                    $kreditor = !empty($row['kreditor']) ? $row['kreditor'] : $row['kreditor_fallback'];
-                    if (!empty($debitor)) {
-                        $gegenkonto = $debitor;
-                    } else if (!empty($kreditor)) {
-                        $gegenkonto = $kreditor;
-                    } else {
-                        $gegenkonto = !empty($row['sachkonto']) ? $row['sachkonto'] : '9999';
-                    }
-
-                    $money_in = in_array($row['nach_typ'], array('kontoauszuege','kasse'), true);
-                    $soll = $money_in ? 'S' : 'H';
-                    if ((float)$row['betrag'] < 0) {
-                        $soll = ($soll === 'S') ? 'H' : 'S';
-                    }
-
-                    $betrag = abs((float)$row['betrag']);
-                    if ($betrag == 0.0) {
-                        continue;
-                    }
-
-                    $belegfeld1 = !empty($row['belegnr']) ? $row['belegnr'] : ('FB'.$row['id']);
-                    $internerZahlungstext = trim((string)$row['intern']);
-                    $kontoauszugZahlungstext = $this->normalizePaymentText((string)$row['kontoauszug_buchungstext']);
-                    if (empty($debitor) && empty($kreditor) && empty($row['sachkonto'])) {
-                        $buchungstext = 'Vorkasse/ohne Beleg';
-                    } else if (!empty($row['belegnr'])) {
-                        $buchungstext = 'Zahlung '.$row['belegnr'];
-                    } else if (!$this->isGenericPaymentText($internerZahlungstext)) {
-                        $buchungstext = $internerZahlungstext;
-                    } else if ($kontoauszugZahlungstext !== '') {
-                        $buchungstext = $kontoauszugZahlungstext;
-                    } else if ($internerZahlungstext !== '') {
-                        $buchungstext = $internerZahlungstext;
-                    } else {
-                        $buchungstext = 'Zahlung';
-                    }
-
-                    $data = array();
-                    $data['Umsatz'] = number_format($betrag, 2, ',', '');
-                    $data['Soll-/Haben-Kennzeichen'] = $soll;
-                    $data['WKZ Umsatz'] = $row['waehrung'];
-                    $data['Konto'] = $geldkonto;
-                    $data['Gegenkonto (ohne BU-Schlüssel)'] = $gegenkonto;
-                    $data['BU-Schlüssel'] = $row['buchungsschluessel'];
-                    $data['Belegdatum'] = date_format(date_create($row['datum']), "dm");
-                    $data['Belegfeld 1'] = mb_strimwidth($belegfeld1,0,36);
-                    $data['Belegfeld 2'] = 'FB'.$row['id'];
-                    $data['Buchungstext'] = mb_strimwidth($buchungstext,0,60);
-
-                    $csv .= $this->create_line($datev_buchungsstapel_definition,$data);
-                }
+        $buchungen = array();
+        $zahlungen = $this->app->DB->SelectArr($sql);
+        foreach ($zahlungen as $row) {
+            $geldkonto = !empty($row['bank_datev']) ? $row['bank_datev'] : $row['kasse_datev'];
+            if (empty($geldkonto)) {
+                continue;
             }
-        }
 
-        if ($bankbuchungen) {
-            // Manuelle Dialogbuchungen (Sollkonto an Habenkonto) aus fibu_buchungen exportieren
-            // Voraussetzung: von_typ = kontorahmen, nach_typ = kontorahmen
-            $sql_dialogbuchungen = "SELECT
-                fb.id,
-                fb.datum,
-                fb.betrag,
-                fb.waehrung,
-                fb.internebemerkung AS intern,
-                fb.buchungsschluessel AS buchungsschluessel,
-                kr_soll.sachkonto AS sollkonto,
-                kr_haben.sachkonto AS habenkonto,
-                kr_soll.projekt AS sollkonto_projekt,
-                kr_haben.projekt AS habenkonto_projekt
-            FROM
-                fibu_buchungen fb
-                INNER JOIN kontorahmen kr_soll
-                    ON fb.von_typ = 'kontorahmen'
-                    AND fb.von_id = kr_soll.id
-                INNER JOIN kontorahmen kr_haben
-                    ON fb.nach_typ = 'kontorahmen'
-                    AND fb.nach_id = kr_haben.id
-            WHERE
-                fb.datum BETWEEN '".date_format($von,"Y-m-d")."' AND '".date_format($bis,"Y-m-d")."'
-                AND fb.von_typ = 'kontorahmen'
-                AND fb.nach_typ = 'kontorahmen'
-                AND (
-                    $projekt = 0
-                    OR kr_soll.projekt = $projekt
-                    OR kr_haben.projekt = $projekt
-                )";
-
-            $dialogbuchungen = $this->app->DB->SelectArr($sql_dialogbuchungen);
-
-            if (!empty($dialogbuchungen)) {
-                foreach ($dialogbuchungen as $row) {
-                    $betragRaw = (float)$row['betrag'];
-                    $betrag = abs($betragRaw);
-                    if ($betrag == 0.0) {
-                        continue;
-                    }
-
-                    // Standard: Konto = Sollkonto, Gegenkonto = Habenkonto, Kennzeichen = S
-                    $konto = $row['sollkonto'];
-                    $gegenkonto = $row['habenkonto'];
-                    $kennzeichen = 'S';
-
-                    // Defensive Behandlung historischer negativer Werte
-                    if ($betragRaw < 0) {
-                        $konto = $row['habenkonto'];
-                        $gegenkonto = $row['sollkonto'];
-                        $kennzeichen = 'S';
-                    }
-
-                    if (empty($konto) || empty($gegenkonto)) {
-                        continue;
-                    }
-
-                    $buchungstext = !empty($row['intern']) ? $row['intern'] : 'Manuelle Buchung';
-                    $belegfeld1 = 'FB'.$row['id'];
-
-                    $data = array();
-                    $data['Umsatz'] = number_format($betrag, 2, ',', '');
-                    $data['Soll-/Haben-Kennzeichen'] = $kennzeichen;
-                    $data['WKZ Umsatz'] = $row['waehrung'];
-                    $data['Konto'] = $konto;
-                    $data['Gegenkonto (ohne BU-Schlüssel)'] = $gegenkonto;
-                    $data['BU-Schlüssel'] = $row['buchungsschluessel'];
-                    $data['Belegdatum'] = date_format(date_create($row['datum']), "dm");
-                    $data['Belegfeld 1'] = mb_strimwidth($belegfeld1, 0, 36);
-                    $data['Belegfeld 2'] = 'FB'.$row['id'];
-                    $data['Buchungstext'] = mb_strimwidth($buchungstext, 0, 60);
-
-                    $csv .= $this->create_line($datev_buchungsstapel_definition, $data);
-                }
+            $debitor = !empty($row['debitor']) ? $row['debitor'] : $row['debitor_fallback'];
+            $kreditor = !empty($row['kreditor']) ? $row['kreditor'] : $row['kreditor_fallback'];
+            if (!empty($debitor)) {
+                $gegenkonto = $debitor;
+            } elseif (!empty($kreditor)) {
+                $gegenkonto = $kreditor;
+            } else {
+                $gegenkonto = !empty($row['sachkonto']) ? $row['sachkonto'] : '9999';
             }
+
+            $money_in = in_array($row['nach_typ'], array('kontoauszuege', 'kasse'), true);
+            $kennzeichen = $money_in ? 'S' : 'H';
+            if ((float)$row['betrag'] < 0) {
+                $kennzeichen = ($kennzeichen === 'S') ? 'H' : 'S';
+            }
+
+            $betrag = abs((float)$row['betrag']);
+            if ($betrag == 0.0) {
+                continue;
+            }
+
+            $belegfeld1 = !empty($row['belegnr']) ? $row['belegnr'] : ('FB'.$row['id']);
+            $internerZahlungstext = trim((string)$row['intern']);
+            $kontoauszugZahlungstext = $this->normalizePaymentText((string)$row['kontoauszug_buchungstext']);
+            if (empty($debitor) && empty($kreditor) && empty($row['sachkonto'])) {
+                $buchungstext = 'Vorkasse/ohne Beleg';
+            } elseif (!empty($row['belegnr'])) {
+                $buchungstext = 'Zahlung '.$row['belegnr'];
+            } elseif (!$this->isGenericPaymentText($internerZahlungstext)) {
+                $buchungstext = $internerZahlungstext;
+            } elseif ($kontoauszugZahlungstext !== '') {
+                $buchungstext = $kontoauszugZahlungstext;
+            } elseif ($internerZahlungstext !== '') {
+                $buchungstext = $internerZahlungstext;
+            } else {
+                $buchungstext = 'Zahlung';
+            }
+
+            $buchungen[] = array(
+                'Umsatz' => number_format($betrag, 2, ',', ''),
+                'Soll-/Haben-Kennzeichen' => $kennzeichen,
+                'WKZ Umsatz' => $row['waehrung'],
+                'Konto' => $geldkonto,
+                'Gegenkonto (ohne BU-Schlüssel)' => $gegenkonto,
+                'BU-Schlüssel' => $row['buchungsschluessel'],
+                'Belegdatum' => date_format(date_create($row['datum']), "dm"),
+                'Belegfeld 1' => mb_strimwidth($belegfeld1, 0, 36),
+                'Belegfeld 2' => 'FB'.$row['id'],
+                'Buchungstext' => mb_strimwidth($buchungstext, 0, 60),
+            );
         }
 
-        $includeTestbuchung = (int)$this->app->erp->Firmendaten('neuesdatevformattestbuchung') === 1;
-        if ($includeTestbuchung) {
-            $csv .= '"0";"S";"EUR";"0";"";"";"1234";"1370";"";"101";"";"";"";"Testbuchung";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"0";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""'; // Testbuchung
-        }
-
-        return $this->encodeCsvOutput($csv, $format);
+        return $buchungen;
     }
 
-    function DATEV_DebitorenKreditorenStammdaten(string $berater, string $mandant, string $wirtschaftsjahr_beginn, int $sachkontenlaenge, int $projekt = 0, string $filename = 'EXTF_Stammdaten_DebitorenKreditoren_DATEV_export.csv', string $format = "ISO-8859-1") : string {
-        $datev_header_definition = array (
-            '1' => 'Kennzeichen',
-            '2' => 'Versionsnummer',
-            '3' => 'Formatkategorie',
-            '4' => 'Formatname',
-            '5' => 'Formatversion',
-            '6' => 'Erzeugt am',
-            '7' => 'Reserviert',
-            '8' => 'Reserviert',
-            '9' => 'Reserviert',
-            '10' => 'Reserviert',
-            '11' => 'Beraternummer',
-            '12' => 'Mandantennummer',
-            '13' => 'WJ-Beginn',
-            '14' => 'Sachkontenlänge',
-            '15' => 'Datum von',
-            '16' => 'Datum bis',
-            '17' => 'Bezeichnung',
-            '18' => 'Diktatkürzel',
-            '19' => 'Buchungstyp',
-            '20' => 'Rechnungs- legungszweck',
-            '21' => 'Festschreibung',
-            '22' => 'WKZ',
-            '23' => 'Reserviert',
-            '24' => 'Derivatskennzeichen',
-            '25' => 'Reserviert',
-            '26' => 'Reserviert',
-            '27' => 'Sachkonten- rahmen',
-            '28' => 'ID der Branchen- lösung',
-            '29' => 'Reserviert',
-            '30' => 'Reserviert',
-            '31' => 'Anwendungs- information'
-        );
-
-        $datev_stammdaten_definition = array(
-            '1' => 'Konto',
-            '2' => 'Name (Adressatentyp Unternehmen)',
-            '3' => 'Unternehmensgegenstand',
-            '4' => 'Name (Adressatentyp natürl. Person)',
-            '5' => 'Vorname (Adressatentyp natürl. Person)',
-            '6' => 'Name (Adressatentyp keine Angabe)',
-            '7' => 'Adressatentyp',
-            '8' => 'Kurzbezeichnung',
-            '9' => 'EU-Mitgliedsstaat',
-            '10' => 'EU-USt-IdNr.',
-            '11' => 'Anrede',
-            '12' => 'Titel/Akad. Grad',
-            '13' => 'Adelstitel',
-            '14' => 'Namensvorsatz',
-            '15' => 'Adressart',
-            '16' => 'Straße',
-            '17' => 'Postfach',
-            '18' => 'Postleitzahl',
-            '19' => 'Ort',
-            '20' => 'Land',
-            '21' => 'Versandzusatz',
-            '22' => 'Adresszusatz',
-            '23' => 'Abweichende Anrede',
-            '24' => 'Abw. Zustellbezeichnung 1',
-            '25' => 'Abw. Zustellbezeichnung 2',
-            '26' => 'Kennz. Korrespondenzadresse',
-            '27' => 'Adresse gültig von',
-            '28' => 'Adresse gültig bis',
-            '29' => 'Telefon',
-            '30' => 'Bemerkung (Telefon)',
-            '31' => 'Telefon Geschäftsleitung',
-            '32' => 'Bemerkung (Telefon GL)',
-            '33' => 'E-Mail',
-            '34' => 'Bemerkung (E-Mail)',
-            '35' => 'Internet',
-            '36' => 'Bemerkung (Internet)',
-            '37' => 'Fax'
-        );
-
-        $usernamearr = explode(' ',strtoupper($this->app->User->GetName()." X X"));
-        if (count($usernamearr) < 2) {
-            $kuerzel = $usernamearr[0][0].$usernamearr[0][1];
-        } else {
-            $kuerzel = $usernamearr[0][0].$usernamearr[1][0];
-        }
-
-        $heute = date('Ymd');
-        $wj_beginn = date_create(date('Y').$wirtschaftsjahr_beginn);
-        if (!($wj_beginn instanceof DateTime)) {
-            $wj_beginn = date_create(date('Y').'0101');
-        }
-
-        $data = array();
-        $data['Kennzeichen'] = 'EXTF';
-        $data['Versionsnummer'] = '700';
-        $data['Formatkategorie'] = '16';
-        $data['Formatname'] = 'Debitoren/Kreditoren';
-        $data['Formatversion'] = '5';
-        $data['Erzeugt am'] = date('YmdHis').'000';
-        $data['Beraternummer'] = $berater;
-        $data['Mandantennummer'] = $mandant;
-        $data['WJ-Beginn'] = date_format($wj_beginn, "Ymd");
-        $data['Sachkontenlänge'] = $sachkontenlaenge;
-        $data['Datum von'] = $heute;
-        $data['Datum bis'] = $heute;
-        $data['Bezeichnung'] = mb_strimwidth($filename, 0, 30);
-        $data['Diktatkürzel'] = $kuerzel;
-
-        $csv = "";
-        $comma = "";
-        foreach ($datev_header_definition as $key => $value) {
-            if (!isset($data[$value])) {
-                $data[$value] = '';
-            }
-            $csv .= $comma.'"'.$data[$value].'"';
-            $comma = ";";
-        }
-        $csv .= "\r\n";
-
-        $comma = "";
-        foreach ($datev_stammdaten_definition as $key => $value) {
-            $csv .= $comma.'"'.$value.'"';
-            $comma = ";";
-        }
-        $csv .= "\r\n";
-
+    private function collectDatevDialogbuchungen(DateTime $von, DateTime $bis, int $projekt = 0): array
+    {
         $sql = "SELECT
-            TRIM(COALESCE(NULLIF(a.kundennummer_buchhaltung, ''), NULLIF(a.kundennummer, ''))) AS debitorenkonto,
-            TRIM(COALESCE(NULLIF(a.lieferantennummer_buchhaltung, ''), NULLIF(a.lieferantennummer, ''))) AS kreditorenkonto,
-            a.name,
-            a.strasse,
-            a.plz,
-            a.ort,
-            a.land,
-            a.ustid,
-            a.adresszusatz,
-            a.telefon,
-            a.email,
-            a.telefax
-        FROM adresse a
+            fb.id,
+            fb.datum,
+            fb.betrag,
+            fb.waehrung,
+            fb.internebemerkung AS intern,
+            fb.buchungsschluessel AS buchungsschluessel,
+            kr_soll.sachkonto AS sollkonto,
+            kr_haben.sachkonto AS habenkonto,
+            kr_soll.projekt AS sollkonto_projekt,
+            kr_haben.projekt AS habenkonto_projekt
+        FROM
+            fibu_buchungen fb
+            INNER JOIN kontorahmen kr_soll
+                ON fb.von_typ = 'kontorahmen'
+                AND fb.von_id = kr_soll.id
+            INNER JOIN kontorahmen kr_haben
+                ON fb.nach_typ = 'kontorahmen'
+                AND fb.nach_id = kr_haben.id
         WHERE
-            a.geloescht = 0
-            AND (a.projekt = ".$projekt." OR ".$projekt." = 0)
+            fb.datum BETWEEN '".date_format($von,"Y-m-d")."' AND '".date_format($bis,"Y-m-d")."'
+            AND fb.von_typ = 'kontorahmen'
+            AND fb.nach_typ = 'kontorahmen'
             AND (
-                TRIM(COALESCE(NULLIF(a.kundennummer_buchhaltung, ''), NULLIF(a.kundennummer, ''))) <> ''
-                OR TRIM(COALESCE(NULLIF(a.lieferantennummer_buchhaltung, ''), NULLIF(a.lieferantennummer, ''))) <> ''
-            )
-        ORDER BY a.name";
+                $projekt = 0
+                OR kr_soll.projekt = $projekt
+                OR kr_haben.projekt = $projekt
+            )";
 
-        $rows = $this->app->DB->SelectArr($sql);
-        $seen_accounts = array();
-
-        foreach ($rows as $row) {
-            $konten = array($row['debitorenkonto'], $row['kreditorenkonto']);
-            foreach ($konten as $konto_raw) {
-                $konto = $this->normalizeDatevAccountNumber($konto_raw);
-                if ($konto === '' || isset($seen_accounts[$konto])) {
-                    continue;
-                }
-                $seen_accounts[$konto] = true;
-
-                list($eu_mitgliedsstaat, $eu_ustidnr) = $this->splitDatevUstId($row['ustid']);
-
-                $data = array();
-                $data['Konto'] = $konto;
-                $data['Name (Adressatentyp Unternehmen)'] = mb_strimwidth((string)$row['name'], 0, 50);
-                $data['Adressatentyp'] = '0';
-                $data['Kurzbezeichnung'] = mb_strimwidth((string)$row['name'], 0, 15);
-                $data['EU-Mitgliedsstaat'] = $eu_mitgliedsstaat;
-                $data['EU-USt-IdNr.'] = $eu_ustidnr;
-                $data['Straße'] = mb_strimwidth((string)$row['strasse'], 0, 36);
-                $data['Postleitzahl'] = mb_strimwidth((string)$row['plz'], 0, 10);
-                $data['Ort'] = mb_strimwidth((string)$row['ort'], 0, 30);
-                $data['Land'] = mb_strimwidth(strtoupper((string)$row['land']), 0, 2);
-                $data['Adresszusatz'] = mb_strimwidth((string)$row['adresszusatz'], 0, 36);
-                $data['Telefon'] = mb_strimwidth((string)$row['telefon'], 0, 30);
-                $data['E-Mail'] = mb_strimwidth((string)$row['email'], 0, 72);
-                $data['Fax'] = mb_strimwidth((string)$row['telefax'], 0, 30);
-
-                $csv .= $this->create_line($datev_stammdaten_definition, $data);
+        $buchungen = array();
+        $dialogbuchungen = $this->app->DB->SelectArr($sql);
+        foreach ($dialogbuchungen as $row) {
+            $betragRaw = (float)$row['betrag'];
+            $betrag = abs($betragRaw);
+            if ($betrag == 0.0) {
+                continue;
             }
-        }
 
-        return $this->encodeCsvOutput($csv, $format);
-    }
+            $konto = $row['sollkonto'];
+            $gegenkonto = $row['habenkonto'];
+            $kennzeichen = 'S';
 
-    private function normalizeDatevAccountNumber($konto) : string
-    {
-        $konto = preg_replace('/[^0-9]/', '', (string)$konto);
-
-        return mb_substr($konto, 0, 9);
-    }
-
-    private function splitDatevUstId($ustid) : array
-    {
-        $ustid = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)$ustid));
-        if (mb_strlen($ustid) < 3) {
-            return array('', $ustid);
-        }
-
-        return array(mb_substr($ustid, 0, 2), mb_substr($ustid, 2));
-    }
-
-    private function encodeCsvOutput(string $csv, string $format = "ISO-8859-1") : string
-    {
-        switch ($format) {
-            case "UTF-8":
-                return $csv;
-            case "UTF-8-BOM":
-                return "\xef\xbb\xbf".$csv;
-            default:
-                return mb_convert_encoding($csv, "ISO-8859-1", "UTF-8");
-        }
-    }
-
-    function create_line($definition, $data) : string {
-        $csv = "";
-        $comma = "";
-        foreach ($definition as $key => $value) {
-            if (!isset($data[$value])) {
-                $data[$value] = '';
+            if ($betragRaw < 0) {
+                $konto = $row['habenkonto'];
+                $gegenkonto = $row['sollkonto'];
             }
-            $csv .= $comma.'"'.$data[$value].'"';
-            $comma = ";";
-        }
-        $csv .= "\r\n";
-        return($csv);
-    }
 
+            if (empty($konto) || empty($gegenkonto)) {
+                continue;
+            }
+
+            $buchungstext = !empty($row['intern']) ? $row['intern'] : 'Manuelle Buchung';
+            $belegfeld1 = 'FB'.$row['id'];
+
+            $buchungen[] = array(
+                'Umsatz' => number_format($betrag, 2, ',', ''),
+                'Soll-/Haben-Kennzeichen' => $kennzeichen,
+                'WKZ Umsatz' => $row['waehrung'],
+                'Konto' => $konto,
+                'Gegenkonto (ohne BU-Schlüssel)' => $gegenkonto,
+                'BU-Schlüssel' => $row['buchungsschluessel'],
+                'Belegdatum' => date_format(date_create($row['datum']), "dm"),
+                'Belegfeld 1' => mb_strimwidth($belegfeld1, 0, 36),
+                'Belegfeld 2' => 'FB'.$row['id'],
+                'Buchungstext' => mb_strimwidth($buchungstext, 0, 60),
+            );
+        }
+
+        return $buchungen;
+    }
 }
-
-/*
-Documentation DATEV formats
-HEADER
-﻿| #  | Überschrift             | Ausdruck                                                                                                                            | Beschreibung                                                                                                                                          |
-|----|-------------------------|-------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1  | Kennzeichen             | ^["](EXTF|DTVF)["]$                                                                                                                 | EXTF = Export aus 3rd-Party App DTVF = Export aus DATEV App                                                                                           |
-| 2  | Versionsnummer          | ^(700)$                                                                                                                             | Versionsnummer des Headers. Anhand der Versionsnummer können ältere Versionen abwärtskompatibel verarbeitet werden.                                   |
-| 3  | Formatkategorie         | ^(16|20|21|46|48|65)$                                                                                                               | 16 = Debitoren-/Kreditoren 20 = Kontenbeschriftungen 21 = Buchungsstapel 46 = Zahlungsbedingungen 48 = Diverse Adressen 65 = Wiederkehrende Buchungen |
-| 4  | Formatname              | ^["](Buchungsstapel|Wiederkehrende Buchungen|Debitoren/Kreditoren| Kontenbeschriftungen| Zahlungsbedingungen| Diverse Adressen)["]$ | Formatname                                                                                                                                            |
-| 5  | Formatversion           | ^(2|4|5|12)$                                                                                                                        | Debitoren-/Kreditoren = 5 Kontenbeschriftungen = 3 Buchungsstapel = 12 Zahlungsbedingungen = 2 Wiederkehrende Buchungen = 4 Diverse Adressen = 2      |
-| 6  | Erzeugt am              | ^([2])([0])([0-9]{2})(0[1-9]|1[0-2])(0[1-9]|[1-2][0-9]|3[0-1])(2[0-3]|[01][0-9])([0-5][0-9])([0-5][0-9][0-9][0-9][0-9])$            | Zeitstempel: YYYYMMDDHHMMSSFFF                                                                                                                        |
-| 7  | Reserviert              | ^[]$                                                                                                                                | Leerfeld                                                                                                                                              |
-| 8  | Reserviert              | ^["]\w{0,2}["]$                                                                                                                     | Leerfeld                                                                                                                                              |
-| 9  | Reserviert              | ^["]\w{0,25}["]$                                                                                                                    | Leerfeld                                                                                                                                              |
-| 10 | Reserviert              | ^["]\w{0,25}["]$                                                                                                                    | Leerfeld                                                                                                                                              |
-| 11 | Beraternummer           | ^(\d{4,6}|\d{7})$                                                                                                                   | Bereich 1001-9999999                                                                                                                                  |
-| 12 | Mandantennummer         | ^\d{1,5}$                                                                                                                           | Bereich 1-99999                                                                                                                                       |
-| 13 | WJ-Beginn               | ^([2])([0])([0-9]{2})(0[1-9]|1[0-2])(0[1-9]|[1-2][0-9]|3[0-1])$                                                                     | Wirtschaftsjahresbeginn Format: YYYYMMDD                                                                                                              |
-| 14 | Sachkontenlänge         | ^[4-8]$                                                                                                                             | Nummernlänge der Sachkonten. Wert muss beim Import mit Konfiguration des Mandats in der DATEV App übereinstimmen.                                     |
-| 15 | Datum von               | ^([2])([0])([0-9]{2})(0[1-9]|1[0-2])(0[1-9]|[1-2][0-9]|3[0-1])$                                                                     | Beginn der Periode des Stapels Format: YYYYMMDD Siehe Anhang 2.                                                                                       |
-| 16 | Datum bis               | ^([2])([0])([0-9]{2})(0[1-9]|1[0-2])(0[1-9]|[1-2][0-9]|3[0-1])$                                                                     | Ende der Periode des Stapels Format: YYYYMMDD Siehe Anhang 2.                                                                                         |
-| 17 | Bezeichnung             | ^["][\w.-/ ]{0,30}["]$                                                                                                              | Bezeichnung des Stapels z.B. „Rechnungsausgang 09/2019“                                                                                               |
-| 18 | Diktatkürzel            | ^["]([A-Z]{2}){0,2}["]$                                                                                                             | Kürzel in Großbuchstaben des Bearbeiters z.B. "MM" für Max Mustermann                                                                                 |
-| 19 | Buchungstyp             | ^[1-2]$                                                                                                                             | 1 = Finanzbuchführung        (default) 2 = Jahresabschluss                                                                                            |
-| 20 | Rechnungs- legungszweck | ^(0|30|40|50|64)$                                                                                                                   | 0 = unabhängig        (default) 30 = Steuerrecht 40 = Kalkulatorik 50 = Handelsrecht 64 = IFRS                                                        |
-| 21 | Festschreibung          | ^(0|1)$                                                                                                                             | 0 = keine Festschreibung 1 = Festschreibung        (default)                                                                                          |
-| 22 | WKZ                     | ^["]([A-Z]{3})["]$                                                                                                                  | ISO-Code der Währung "EUR" = default Liste der ISO-Codes                                                                                              |
-| 23 | Reserviert              | ^[]$                                                                                                                                | Leerfeld                                                                                                                                              |
-| 24 | Derivatskennzeichen     | ^["]["]$                                                                                                                            | Leerfeld                                                                                                                                              |
-| 25 | Reserviert              | ^[]$                                                                                                                                | Leerfeld                                                                                                                                              |
-| 26 | Reserviert              | ^[]$                                                                                                                                | Leerfeld                                                                                                                                              |
-| 27 | Sachkonten- rahmen      | ^["](\d{2}){0,2}["]$                                                                                                                | Sachkontenrahmen der für die Bewegungsdaten verwendet wurde                                                                                           |
-| 28 | ID der Branchen- lösung | ^\d{0,4}$                                                                                                                           | Falls eine spezielle DATEV Branchenlösung genutzt wird.                                                                                               |
-| 29 | Reserviert              | ^[]$                                                                                                                                | Leerfeld                                                                                                                                              |
-| 30 | Reserviert              | ^["]["]$                                                                                                                            | Leerfeld                                                                                                                                              |
-| 31 | Anwendungs- information | ^["].{0,16}["]$                                                                                                                     | Verarbeitungskennzeichen der abgebenden Anwendung z.B. „09/2019“                                                                                      |
-
-| #   | Überschrift                               | Ausdruck                                                                                                         | Beschreibung                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-|-----|-------------------------------------------|------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1   | Umsatz                                    | ^\d{1,10}[,]\d{2}$                                                                                               | Umsatz/Betrag für den Datensatz z.B.: 1234567890,12 Betrag muss positiv sein.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| 2   | Soll-/Haben-Kennzeichen                   | ^["](S|H)["]$                                                                                                    | Soll-/Haben-Kennzeichnung bezieht sich auf das Feld #7 Konto S = SOLL (default) H = HABEN                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 3   | WKZ Umsatz                                | ^["]([A-Z]{3})["]$                                                                                               | ISO-Code der Währung #22 aus Header = default Liste der ISO-Codes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 4   | Kurs                                      | ^([1-9]\d{0,3}[,]\d{2,6})$                                                                                       | Wenn Umsatz in Fremdwährung bei #1 angegeben wird #004, 005 und 006 sind zu übergeben z.B.: 1234,123456                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 5   | Basisumsatz                               | ^(\d{1,10}[,]\d{2})$                                                                                             | Siehe #004. z.B.: 1234567890,12                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 6   | WKZ Basisumsatz                           |                                                                                                                  | Siehe #004. Liste der ISO-Codes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 7   | Konto                                     | ^(\d{1,9})$                                                                                                      | Sach- oder Personenkonto z.B. 8400                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| 8   | Gegenkonto (ohne BU-Schlüssel)            | ^(\d{1,9})$                                                                                                      | Sach- oder Personenkonto z.B. 70000                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 9   | BU-Schlüssel                              | ^(["]\d{4}["])$                                                                                                  | Steuerungskennzeichen zur Abbildung verschiedener Funktionen/Sachverhalte Weitere Details                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 10  | Belegdatum                                | ^(\d{4})$                                                                                                        | Format: TTMM, z.B. 0105 Das Jahr wird immer aus dem Feld 13 des Headers ermittelt                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 11  | Belegfeld 1                               | ^(["][\w$%\-\/]{0,36}["])$                                                                                       | Rechnungs-/Belegnummer Wird als "Schlüssel" für den Ausgleich offener Rechnungen genutzt z.B. "Rg32029/2019" Sonderzeichen: $ & % * + - / Andere Zeichen sind unzulässig (insbesondere Leerzeichen, Umlaute, Punkt, Komma, Semikolon und Doppelpunkt).                                                                                                                                                                                                                                                                                                                                                                                                           |
-| 12  | Belegfeld 2                               | ^(["][\w$%\-\/]{0,12}["])$                                                                                       | Mehrere Funktionen Details siehe hier                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| 13  | Skonto                                    | ^([1-9]\d{0,7}[,]\d{2})$                                                                                         | Skontobetrag z.B. 3,71 nur bei Zahlungsbuchungen zulässig                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 14  | Buchungstext                              | ^(["].{0,60}["])$                                                                                                | 0-60 Zeichen                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| 15  | Postensperre                              | ^(0|1)$                                                                                                          | Mahn- oder Zahlsperre 0 = keine Sperre (default) 1 = Sperre Die Rechnung kann aus dem Mahnwesen / Zahlungsvorschlag ausgeschlossen werden.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 16  | Diverse Adressnummer                      | ^(["]\w{0,9}["])$                                                                                                | Adressnummer einer diversen Adresse. #OPOS                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 17  | Geschäftspartnerbank                      | ^(\d{3})$                                                                                                        | Referenz um für Lastschrift oder Zahlung eine bestimmte Geschäftspartnerbank genutzt werden soll. #OPOS Beim Import der Geschäftspartnerbank muss auch das Feld SEPA-Mandatsreferenz (Feld-Nr. 105) gefüllt sein.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 18  | Sachverhalt                               | ^(\d{2})$                                                                                                        | Kennzeichen für einen Mahnzins/Mahngebühr-Datensatz 31 = Mahnzins 40 = Mahngebühr #OPOS                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 19  | Zinssperre                                | ^(0|1)$                                                                                                          | Sperre für Mahnzinsen 0 = keine Sperre (default) 1 = Sperre #OPOS                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 20  | Beleglink                                 | Generell:^(["].{0,210}["])$ Konkret für Link in eine DATEV App:^ ["](BEDI|DDMS|DORG)[ ]["] ["][<GUID>]["]["]["]$ | Link zu einem digitalen Beleg in einer DATEV App. BEDI = Unternehmen online Der Beleglink besteht aus einem Programmkürzel und der GUID. Da das Feld Beleglink ein Textfeld ist, müssen in der Schnittstellendatei die Anführungszeichen verdoppelt werden. z.B. "BEDI ""f9a0475d-d0df…"""                                                                                                                                                                                                                                                                                                                                                                       |
-| 21  | Beleginfo -Art 1                          | ^(["].{0,20}["])$                                                                                                | Bei einem DATEV-Format, das aus einem DATEV-Rechnungswesen-Programm erstellt wurde, können diese Felder Informationen aus einem Beleg (z. B. einem elektronischen Kontoumsatz) enthalten. Wird die Feldlänge eines Beleginfo-Inhalts-Feldes überschrit- ten, wird die Information im nächsten Beleginfo-Feld weitergeführt. Wichtiger Hinweis Eine Beleginfo besteht immer aus den Bestandteilen Beleginfo-Art und Beleginfo-Inhalt. Wenn Sie die Beleginfo nutzen möchten, füllen Sie bitte immer beide Felder. Beispiel: Beleginfo-Art: Kontoumsätze der jeweiligen Bank Beleginfo-Inhalt: Buchungsspezifische Inhalte zu den oben genannten Informationsarten |
-| 22  | Beleginfo -Inhalt 1                       | ^(["].{0,210}["])$                                                                                               | siehe #21                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 23  | Beleginfo -Art 2                          | ^(["].{0,20}["])$                                                                                                | siehe #21                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 24  | Beleginfo -Inhalt 2                       | ^(["].{0,210}["])$                                                                                               | siehe #21                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 25  | Beleginfo -Art 3                          | ^(["].{0,20}["])$                                                                                                | siehe #21                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 26  | Beleginfo -Inhalt 3                       | ^(["].{0,210}["])$                                                                                               | siehe #21                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 27  | Beleginfo -Art 4                          | ^(["].{0,20}["])$                                                                                                | siehe #21                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 28  | Beleginfo -Inhalt 4                       | ^(["].{0,210}["])$                                                                                               | siehe #21                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 29  | Beleginfo -Art 5                          | ^(["].{0,20}["])$                                                                                                | siehe #21                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 30  | Beleginfo -Inhalt 5                       | ^(["].{0,210}["])$                                                                                               | siehe #21                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 31  | Beleginfo -Art 6                          | ^(["].{0,20}["])$                                                                                                | siehe #21                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 32  | Beleginfo -Inhalt 6                       | ^(["].{0,210}["])$                                                                                               | siehe #21                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 33  | Beleginfo -Art 7                          | ^(["].{0,20}["])$                                                                                                | siehe #21                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 34  | Beleginfo -Inhalt 7                       | ^(["].{0,210}["])$                                                                                               | siehe #21                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 35  | Beleginfo -Art 8                          | ^(["].{0,20}["])$                                                                                                | siehe #21                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 36  | Beleginfo -Inhalt 8                       | ^(["].{0,210}["])$                                                                                               | siehe #21                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 37  | KOST1 -Kostenstelle                       | ^(["][\w ]{0,36}["])$                                                                                            | Über KOST1 erfolgt die Zuordnung des Geschäftsvorfalls für die anschließende Kostenrechnung. Die benutzte Länge muss vorher in den Stammdaten vom KOST-Programm eingestellt werden.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 38  | KOST2 -Kostenstelle                       | ^(["][\w ]{0,36}["])$                                                                                            | Über KOST2 erfolgt die Zuordnung des Geschäftsvorfalls für die anschließende Kostenrechnung. Die benutzte Länge muss vorher in den Stammdaten vom KOST-Programm eingestellt werden.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 39  | KOST-Menge                                | ^\d{12}[,]\d{4}$                                                                                                 | Im KOST-Mengenfeld wird die Wertgabe zu einer bestimmten Bezugsgröße für eine Kostenstelle erfasst. Diese Bezugsgröße kann z. B. kg, g, cm, m, % sein. Die Bezugsgröße ist definiert in den Kostenrechnungs-Stammdaten. Beispiel:123123123,1234                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 40  | EU-Mitgliedstaat u. UStID (Bestimmung)    | ^(["].{0,15}["])$                                                                                                | Die USt-IdNr. besteht aus  - 2-stelligen Länderkürzel (siehe Dok.-Nr. 1080169; Ausnahme Griechenland und Nordirland: Das Länderkürzel lautet EL für Griechenland und XI für Nordirland)  - 13-stelliger USt-IdNr.  - Beispiel: DE133546770. Die USt-IdNr kann auch Buchstaben haben, z.B.: bei Österreich Detaillierte Informationen zur Erfassung von EU-Informationen im Buchungssatz: Dok.-Nr: 9211462.                                                                                                                                                                                                                                                       |
-| 41  | EU-Steuersatz (Bestimmung)                | ^\d{2}[,]\d{2}$                                                                                                  | Nur für entsprechende EU-Buchungen: Der im EU-Bestimmungsland gültige Steuersatz. Beispiel: 12,12                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 42  | Abw. Versteuerungsart                     | ^(["](I|K|P|S)["])$                                                                                              | Für Buchungen, die in einer von der Mandantenstammdaten- Schlüsselung abweichenden Umsatzsteuerart verarbeitet werden sollen, kann die abweichende Versteuerungsart im Buchungssatz übergeben werden: I = Ist-Versteuerung K = keine Umsatzsteuerrechnung P = Pauschalierung (z. B. für Land- und Forstwirtschaft) S = Soll-Versteuerung                                                                                                                                                                                                                                                                                                                         |
-| 43  | Sachverhalt L+L                           | ^(\d{1,3})$                                                                                                      | Sachverhalte gem. § 13b Abs. 1 Satz 1 Nrn. 1.-5. UStG Achtung: Der Wert 0 ist unzulässig. Sachverhalts-Nummer siehe Info-Doku 1034915                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| 44  | Funktionsergänzung L+L                    | ^\d{0,3}$                                                                                                        | Steuersatz / Funktion zum L+L-Sachverhalt Achtung: Der Wert 0 ist unzulässig. Beispiel: Wert 190 für 19%                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 45  | BU 49 Hauptfunktiontyp                    | ^\d$                                                                                                             | Bei Verwendung des BU-Schlüssels 49 für „andere Steuer- sätze“ muss der steuerliche Sachverhalt mitgegeben werden                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 46  | BU 49 Hauptfunktionsnummer                | ^\d{0,2}$                                                                                                        | siehe #45                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 47  | BU 49 Funktionsergänzung                  | ^\d{0,3}$                                                                                                        | siehe #45                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 48  | Zusatzinformation – Art 1                 | ^(["].{0,20}["])$                                                                                                | Zusatzinformationen, die zu Buchungssätzen erfasst werden können. Diese Zusatzinformationen besitzen den Charakter eines Notizzettels und können frei erfasst werden. Wichtiger Hinweis Eine Zusatzinformation besteht immer aus den Bestandtei- len Informationsart und Informationsinhalt. Wenn Sie die Zusatzinformation nutzen möchten, füllen Sie bitte immer beide Felder. Beispiel: Informationsart, z. B. Filiale oder Mengengrößen (qm) Informationsinhalt: buchungsspezifische Inhalte zu den oben genannten Informationsarten.                                                                                                                        |
-| 49  | Zusatzinformation – Inhalt 1              | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 50  | Zusatzinformation – Art 2                 | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 51  | Zusatzinformation – Inhalt 2              | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 52  | Zusatzinformation – Art 3                 | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 53  | Zusatzinformation – Inhalt 3              | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 54  | Zusatzinformation – Art 4                 | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 55  | Zusatzinformation – Inhalt 4              | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 56  | Zusatzinformation – Art 5                 | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 57  | Zusatzinformation – Inhalt 5              | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 58  | Zusatzinformation – Art 6                 | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 59  | Zusatzinformation – Inhalt 6              | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 60  | Zusatzinformation – Art 7                 | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 61  | Zusatzinformation – Inhalt 7              | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 62  | Zusatzinformation – Art 8                 | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 63  | Zusatzinformation – Inhalt 8              | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 64  | Zusatzinformation – Art 9                 | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 65  | Zusatzinformation – Inhalt 9              | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 66  | Zusatzinformation – Art 10                | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 67  | Zusatzinformation – Inhalt 10             | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 68  | Zusatzinformation – Art 11                | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 69  | Zusatzinformation – Inhalt 11             | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 70  | Zusatzinformation – Art 12                | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 71  | Zusatzinformation – Inhalt 12             | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 72  | Zusatzinformation – Art 13                | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 73  | Zusatzinformation – Inhalt 13             | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 74  | Zusatzinformation – Art 14                | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 75  | Zusatzinformation – Inhalt 14             | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 76  | Zusatzinformation – Art 15                | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 77  | Zusatzinformation – Inhalt 15             | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 78  | Zusatzinformation – Art 16                | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 79  | Zusatzinformation – Inhalt 16             | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 80  | Zusatzinformation – Art 17                | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 81  | Zusatzinformation – Inhalt 17             | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 82  | Zusatzinformation – Art 18                | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 83  | Zusatzinformation – Inhalt 18             | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 84  | Zusatzinformation – Art 19                | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 85  | Zusatzinformation – Inhalt 19             | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 86  | Zusatzinformation – Art 20                | ^(["].{0,20}["])$                                                                                                | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 87  | Zusatzinformation – Inhalt 20             | ^(["].{0,210}["])$                                                                                               | siehe #48                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 88  | Stück                                     | ^\d{0,8}$                                                                                                        | Wirkt sich nur bei Sachverhalt mit SKR 14 Land- und Forst- wirtschaft aus, für andere SKR werden die Felder beim Import / Export überlesen bzw. leer exportiert.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| 89  | Gewicht                                   | ^(\d{1,8}[,]\d{2})$                                                                                              | siehe #88                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 90  | Zahlweise                                 | ^\d{0,2}$                                                                                                        | OPOS-Informationen 1 = Lastschrift 2 = Mahnung 3 = Zahlung                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 91  | Forderungsart                             | ^(["]\w{0,10}["])$                                                                                               | OPOS-Informationen                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| 92  | Veranlagungsjahr                          | ^(([2])([0])([0-9]{2}))$                                                                                         | OPOS-Informationen Format: JJJJ                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 93  | Zugeordnete Fälligkeit                    | ^((0[1-9]|[1-2][0-9]|3[0-1])(0[1-9]|1[0-2])([2])([0])([0-9]{2}))$                                                | OPOS-Informationen Format: TTMMJJJJ                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 94  | Skontotyp                                 | ^\d$                                                                                                             | 1 = Einkauf von Waren 2 = Erwerb von Roh-Hilfs- und Betriebsstoffen                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 95  | Auftragsnummer                            | ^(["].{0,30}["])$                                                                                                | Allgemeine Bezeichnung, des Auftrags / Projekts. Mit der Auftragsnummer muss auch der Buchungstyp (Feld 96) angegeben werden.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| 96  | Buchungstyp                               | ^(["][A-Z]{2}["])$                                                                                               | AA = Angeforderte Anzahlung / Abschlagsrechnung AG = Erhaltene Anzahlung (Geldeingang) AV = Erhaltene Anzahlung (Verbindlichkeit) SR = Schlussrechnung SU = Schlussrechnung (Umbuchung) SG = Schlussrechnung (Geldeingang) SO = Sonstige                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 97  | USt-Schlüssel (Anzahlungen)               | ^\d{0,2}$                                                                                                        | USt-Schlüssel der späteren Schlussrechnung                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 98  | EU-Mitgliedstaat (Anzahlungen)            | ^(["][A-Z]{2}["])$                                                                                               | EU-Mitgliedstaat der späteren Schlussrechnung siehe Info-Doku 1080169                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| 99  | Sachverhalt L+L (Anzahlungen)             | ^\d{0,3}$                                                                                                        | L+L-Sachverhalt der späteren Schlussrechnung Sachverhalte gem. § 13b UStG Achtung: Der Wert 0 ist unzulässig. Sachverhalts-Nummer siehe Info-Doku 1034915                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 100 | EU-Steuersatz (Anzahlungen)               | ^(\d{1,2}[,]\d{2})$                                                                                              | EU-Steuersatz der späteren Schlussrechnung Nur für entsprechende EU-Buchungen: Der im EU-Bestimmungsland gültige Steuersatz. Beispiel: 12,12                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| 101 | Erlöskonto (Anzahlungen)                  | ^(\d{4,8})$                                                                                                      | Erlöskonto der späteren Schlussrechnung                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 102 | Herkunft-Kz                               | ^(["][A-Z]{2}["])$                                                                                               | Wird beim Import durch SV (Stapelverarbeitung) ersetzt.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 103 | Leerfeld                                  | ^(["].{0,36}["])$                                                                                                | Wird von DATEV verwendet                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 104 | KOST-Datum                                | ^((0[1-9]|[1-2]\d|3[0-1])(0[1-9]|1[0-2])([2])([0])(\d{2}))$                                                      | Format TTMMJJJJ                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 105 | SEPA-Mandatsreferenz                      | ^(["].{0,35}["])$                                                                                                | Vom Zahlungsempfänger individuell vergebenes Kennzeichen eines Mandats (z.B. Rechnungs- oder Kundennummer). Beim Import der SEPA-Mandatsreferenz muss auch das Feld Geschäftspartnerbank (Feld-Nr. 17) gefüllt sein.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| 106 | Skontosperre                              | ^[0|1]$                                                                                                          | Gültige Werte: 0, 1. 1 = Skontosperre 0 = Keine Skontosperre                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| 107 | Gesellschaftername                        | ^(["].{0,76}["])$                                                                                                |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 108 | Beteiligtennummer                         | ^(\d{4})$                                                                                                        | Die Beteiligtennummer muss der amtlichen Nummer aus der Feststellungserklärung entsprechen, diese darf nicht beliebig vergeben werden. Die Pflege der Gesellschafterdaten und das Anlegen von Sonderbilanzsachverhalte ist nur in Absprache mit der Steuerkanzlei möglich. Betrifft Feld 107-110.                                                                                                                                                                                                                                                                                                                                                                |
-| 109 | Identifikationsnummer                     | ^(["].{0,11}["])$                                                                                                |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 110 | Zeichnernummer                            | ^(["].{0,20}["])$                                                                                                |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 111 | Postensperre bis                          | ^((0[1-9]|[1-2]\d|3[0-1])(0[1-9]|1[0-2])([2])([0])(\d{2}))$                                                      | Format TTMMJJJJ                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 112 | Bezeichnung SoBil-Sachverhalt             | ^(["].{0,30}["])$                                                                                                |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 113 | Kennzeichen SoBil-Buchung                 | ^(\d{1,2})$                                                                                                      | Sobil-Buchung erzeugt = 1 Sobil-Buchung nicht erzeugt = (Default) bzw. 0                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 114 | Festschreibung                            | ^(0|1)$                                                                                                          | leer = nicht definiert; wird automatisch festgeschrieben 0 = keine Festschreibung 1 = Festschreibung Hat ein Buchungssatz in diesem Feld den Inhalt 1, so wird der gesamte Stapel nach dem Import festgeschrieben.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| 115 | Leistungsdatum                            | ^((0[1-9]|[1-2]\d|3[0-1])(0[1-9]|1[0-2])([2])([0])(\d{2}))$                                                      | Format TTMMJJJJ siehe Info-Doku 9211426 Beim Import des Leistungsdatums muss das Feld „116 Datum Zuord. Steuer-periode“ gefüllt sein. Der Einsatz des Leistungsdatums muss in Absprache mit dem Steuerberater erfolgen.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 116 | Datum Zuord. Steuerperiode                | ^((0[1-9]|[1-2]\d|3[0-1])(0[1-9]|1[0-2])([2])([0])(\d{2}))$                                                      | Format TTMMJJJJ                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 117 | Fälligkeit                                | ^((0[1-9]|[1-2]\d|3[0-1])(0[1-9]|1[0-2])([2])([0])(\d{2}))$                                                      | OPOS Informationen, Format: TTMMJJJJ OPOS-Verarbeitungsinformationen über Belegfeld 2 (Feldnummer 12) sind in diesem Fall nicht nutzbar                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 118 | Generalumkehr                             | ^(["](0|1)["])$                                                                                                  | G oder 1 = Generalumkehr 0 = keine Generalumkehr                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| 119 | Steuersatz                                | ^(\d{1,2}[,]\d{2})$                                                                                              | Wird bei Verwendung von BU-Schlüssel ohne festen Steuersatz benötigt (z. B. BU-Schlüssel 100). Weitere Informationen unter Dok.Nr. 9231347 Kapitel „Erfassung eines Steuersatzes bei Steuerschlüsseln“                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| 120 | Land                                      | ^(["][A-Z]{2}["])$                                                                                               | Beispiel: DE für Deutschland                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| 121 | Abrechnungsreferenz                       | ^(["].{0,50}["])$                                                                                                | Die Abrechnungsreferenz stellt eine Klammer über alle Transaktionen des Zahlungsdienstleisters und die dazu gehörige Auszahlung dar. Sie wird über den Zahlungsdatenservice bereitgestellt und bei der Erzeugung von Buchungsvorschläge berücksichtigt.                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 122 | BVV-Position (Betriebsvermögensvergleich) | ^([1|2|3|4|5])$                                                                                                  | Details zum Feld siehe hier 1 Kapitalanpassung 2 Entnahme / Ausschüttung lfd. WJ 3 Einlage / Kapitalzuführung lfd. WJ 4 Übertragung § 6b Rücklage 5 Umbuchung (keine Zuordnung)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 123 | EU-Mitgliedstaat u. UStID (Ursprung)      | ^(["].{0,15}["])$                                                                                                | Die USt-IdNr. besteht aus  - 2-stelligen Länderkürzel (siehe Dok.-Nr. 1080169) Ausnahme Griechenland: Das Länderkürzel lautet EL)  - 13-stelliger USt-IdNr.  - Beispiel: DE133546770. Die USt-IdNr kann auch Buchstaben haben, z.B.: bei Österreich Detaillierte Informationen zur Erfassung von EU-Informationen im Buchungssatz: Dok.-Nr: 9211462.                                                                                                                                                                                                                                                                                                             |
-| 124 | EU-Steuersatz (Ursprung)                  | ^\d{2}[,]\d{2}$                                                                                                  | Nur für entsprechende EU-Buchungen: Der im EU-Ursprungsland gültige Steuersatz. Beispiel: 12,12                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-*/
