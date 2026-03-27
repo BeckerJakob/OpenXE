@@ -233,7 +233,7 @@ class Exportbuchhaltung
             $this->app->User->SetParameter('exportbuchhaltung_pdfexport', $pdfexport);
         }
 
-        if ($buchungsstapel_export) {
+        if ($buchungsstapel_export || $stammdaten_export) {
             $rgchecked = true;
             $gschecked = true;
             $vbchecked = true;
@@ -332,7 +332,7 @@ class Exportbuchhaltung
                     $belege = array();
                     $zusaetzliche_buchungen = array();
 
-                    if ($export_buchungsstapel) {
+                    if ($export_buchungsstapel || $export_stammdaten) {
                         $typen = $this->typen($rgchecked, $gschecked, $vbchecked, $lgchecked);
                         foreach ($typen as $typkey => $typvalue) {
                             if (!$typvalue['do']) {
@@ -547,7 +547,10 @@ class Exportbuchhaltung
                     if ($dataok && $export_stammdaten) {
                         $filename_stammdaten = "EXTF_".date('Ymd')."_Stammdaten_DebitorenKreditoren_DATEV_export.csv";
                         $export_files[$filename_stammdaten] = DatevExport::createDebitorenKreditorenStammdatenCSV(
-                            adress_rows: $this->collectDatevStammdatenRows($projekt),
+                            adress_rows: $this->collectDatevStammdatenRows(
+                                $this->collectReferencedDatevPersonAccounts($belege, $zusaetzliche_buchungen),
+                                $projekt
+                            ),
                             berater: $buchhaltung_berater,
                             mandant: $buchhaltung_mandant,
                             wirtschaftsjahr_beginn: $buchhaltung_wj_beginn,
@@ -670,8 +673,12 @@ class Exportbuchhaltung
         return $usernamearr[0][0].$usernamearr[1][0];
     }
 
-    private function collectDatevStammdatenRows(int $projekt = 0): array
+    private function collectDatevStammdatenRows(array $referencedAccounts, int $projekt = 0): array
     {
+        if (empty($referencedAccounts)) {
+            return array();
+        }
+
         $sql = "SELECT
             TRIM(COALESCE(NULLIF(a.kundennummer_buchhaltung, ''), NULLIF(a.kundennummer, ''))) AS debitorenkonto,
             TRIM(COALESCE(NULLIF(a.lieferantennummer_buchhaltung, ''), NULLIF(a.lieferantennummer, ''))) AS kreditorenkonto,
@@ -688,14 +695,67 @@ class Exportbuchhaltung
         FROM adresse a
         WHERE
             a.geloescht = 0
-            AND (a.projekt = ".$projekt." OR ".$projekt." = 0)
             AND (
                 TRIM(COALESCE(NULLIF(a.kundennummer_buchhaltung, ''), NULLIF(a.kundennummer, ''))) <> ''
                 OR TRIM(COALESCE(NULLIF(a.lieferantennummer_buchhaltung, ''), NULLIF(a.lieferantennummer, ''))) <> ''
             )
         ORDER BY a.name";
 
-        return $this->app->DB->SelectArr($sql);
+        $rows = array();
+        foreach ($this->app->DB->SelectArr($sql) as $row) {
+            $debitorenkonto = $this->normalizeDatevReferencedAccount($row['debitorenkonto']);
+            $kreditorenkonto = $this->normalizeDatevReferencedAccount($row['kreditorenkonto']);
+
+            $row['debitorenkonto'] = isset($referencedAccounts[$debitorenkonto]) ? $debitorenkonto : '';
+            $row['kreditorenkonto'] = isset($referencedAccounts[$kreditorenkonto]) ? $kreditorenkonto : '';
+
+            if ($row['debitorenkonto'] === '' && $row['kreditorenkonto'] === '') {
+                continue;
+            }
+
+            $rows[] = $row;
+        }
+
+        return $rows;
+    }
+
+    private function collectReferencedDatevPersonAccounts(array $belege, array $zusaetzliche_buchungen): array
+    {
+        $accounts = array();
+
+        foreach ($belege as $belege_zu_typ) {
+            if (empty($belege_zu_typ['belege']) || !is_array($belege_zu_typ['belege'])) {
+                continue;
+            }
+
+            foreach ($belege_zu_typ['belege'] as $beleg) {
+                $konto = $this->normalizeDatevReferencedAccount($beleg['kundennummer'] ?? '');
+                if ($konto !== '') {
+                    $accounts[$konto] = true;
+                }
+            }
+        }
+
+        foreach ($zusaetzliche_buchungen as $buchung) {
+            foreach (array('_debitor', '_kreditor') as $kontoKey) {
+                $konto = $this->normalizeDatevReferencedAccount($buchung[$kontoKey] ?? '');
+                if ($konto !== '') {
+                    $accounts[$konto] = true;
+                }
+            }
+        }
+
+        return $accounts;
+    }
+
+    private function normalizeDatevReferencedAccount($konto): string
+    {
+        $konto = preg_replace('/[^0-9]/', '', (string)$konto);
+        if ($konto === null) {
+            return '';
+        }
+
+        return mb_substr($konto, 0, 9);
     }
 
     private function collectDatevZusatzbuchungen(DateTime $von, DateTime $bis, int $projekt = 0): array
@@ -832,6 +892,8 @@ class Exportbuchhaltung
                 'WKZ Umsatz' => $row['waehrung'],
                 'Konto' => $geldkonto,
                 'Gegenkonto (ohne BU-Schlüssel)' => $gegenkonto,
+                '_debitor' => $debitor,
+                '_kreditor' => $kreditor,
                 'BU-Schlüssel' => $row['buchungsschluessel'],
                 'Belegdatum' => date_format(date_create($row['datum']), "dm"),
                 'Belegfeld 1' => mb_strimwidth($belegfeld1, 0, 36),
