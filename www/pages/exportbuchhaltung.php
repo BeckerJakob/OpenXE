@@ -188,6 +188,37 @@ class Exportbuchhaltung
         return 'Zahlung '.$buchungstext;
     }
 
+    private function getSollHabenForExportedAccount(bool $kontoIstNach, float $betrag): string
+    {
+        $kennzeichen = $kontoIstNach ? 'S' : 'H';
+
+        if ($betrag < 0) {
+            $kennzeichen = ($kennzeichen === 'S') ? 'H' : 'S';
+        }
+
+        return $kennzeichen;
+    }
+
+    private function getFibuKontorahmenBuchungstext(string $internerText, string $belegnr, string $fallbackName = ''): string
+    {
+        $internerText = trim($internerText);
+        if ($internerText !== '') {
+            return $internerText;
+        }
+
+        $belegnr = trim($belegnr);
+        if ($belegnr !== '') {
+            return 'Umbuchung '.$belegnr;
+        }
+
+        $fallbackName = trim($fallbackName);
+        if ($fallbackName !== '') {
+            return $fallbackName;
+        }
+
+        return 'Umbuchung';
+    }
+
     function ExportBuchhaltungList() {
         $submit = $this->app->Secure->GetPOST('submit');
         $von_form = $this->app->Secure->GetPOST("von");
@@ -762,6 +793,7 @@ class Exportbuchhaltung
     {
         return array_merge(
             $this->collectDatevZahlungsverkehrBuchungen($von, $bis, $projekt),
+            $this->collectDatevBelegSachkontoBuchungen($von, $bis, $projekt),
             $this->collectDatevDialogbuchungen($von, $bis, $projekt)
         );
     }
@@ -897,6 +929,133 @@ class Exportbuchhaltung
                 'BU-Schlüssel' => $row['buchungsschluessel'],
                 'Belegdatum' => date_format(date_create($row['datum']), "dm"),
                 'Belegfeld 1' => mb_strimwidth($belegfeld1, 0, 36),
+                'Belegfeld 2' => 'FB'.$row['id'],
+                'Buchungstext' => mb_strimwidth($buchungstext, 0, 60),
+            );
+        }
+
+        return $buchungen;
+    }
+
+    private function collectDatevBelegSachkontoBuchungen(DateTime $von, DateTime $bis, int $projekt = 0): array
+    {
+        $sql = "SELECT
+            fb.id,
+            fb.datum,
+            fb.betrag,
+            fb.waehrung,
+            fb.von_typ,
+            fb.nach_typ,
+            fb.internebemerkung AS intern,
+            fb.buchungsschluessel AS buchungsschluessel,
+            kr.sachkonto AS sachkonto,
+            IF(fb.nach_typ = 'kontorahmen', 1, 0) AS konto_ist_nach,
+            COALESCE(
+                NULLIF(r.belegnr, ''),
+                NULLIF(g.belegnr, ''),
+                NULLIF(v.buha_belegfeld1, ''),
+                NULLIF(v.rechnung, ''),
+                NULLIF(v.belegnr, ''),
+                NULLIF(lg.rechnung, ''),
+                NULLIF(lg.belegnr, '')
+            ) AS belegnr,
+            COALESCE(
+                NULLIF(r.name, ''),
+                NULLIF(g.name, ''),
+                NULLIF(av.name, ''),
+                NULLIF(alg.name, '')
+            ) AS beleg_name,
+            COALESCE(NULLIF(ar.kundennummer_buchhaltung, ''), NULLIF(ag.kundennummer_buchhaltung, '')) AS debitor,
+            COALESCE(NULLIF(ar.kundennummer, ''), NULLIF(ag.kundennummer, '')) AS debitor_fallback,
+            COALESCE(NULLIF(av.lieferantennummer_buchhaltung, ''), NULLIF(alg.lieferantennummer_buchhaltung, '')) AS kreditor,
+            COALESCE(NULLIF(av.lieferantennummer, ''), NULLIF(alg.lieferantennummer, '')) AS kreditor_fallback,
+            r.projekt AS rechnung_projekt,
+            g.projekt AS gutschrift_projekt,
+            v.projekt AS verbindlichkeit_projekt,
+            lg.projekt AS lieferantengutschrift_projekt,
+            kr.projekt AS kontorahmen_projekt
+        FROM
+            fibu_buchungen fb
+            INNER JOIN kontorahmen kr
+                ON (fb.von_typ = 'kontorahmen' AND fb.von_id = kr.id)
+                OR (fb.nach_typ = 'kontorahmen' AND fb.nach_id = kr.id)
+            LEFT JOIN rechnung r
+                ON (fb.von_typ = 'rechnung' AND fb.von_id = r.id)
+                OR (fb.nach_typ = 'rechnung' AND fb.nach_id = r.id)
+            LEFT JOIN adresse ar ON ar.id = r.adresse
+            LEFT JOIN gutschrift g
+                ON (fb.von_typ = 'gutschrift' AND fb.von_id = g.id)
+                OR (fb.nach_typ = 'gutschrift' AND fb.nach_id = g.id)
+            LEFT JOIN adresse ag ON ag.id = g.adresse
+            LEFT JOIN verbindlichkeit v
+                ON (fb.von_typ = 'verbindlichkeit' AND fb.von_id = v.id)
+                OR (fb.nach_typ = 'verbindlichkeit' AND fb.nach_id = v.id)
+            LEFT JOIN adresse av ON av.id = v.adresse
+            LEFT JOIN lieferantengutschrift lg
+                ON (fb.von_typ = 'lieferantengutschrift' AND fb.von_id = lg.id)
+                OR (fb.nach_typ = 'lieferantengutschrift' AND fb.nach_id = lg.id)
+            LEFT JOIN adresse alg ON alg.id = lg.adresse
+        WHERE
+            fb.datum BETWEEN '".date_format($von,"Y-m-d")."' AND '".date_format($bis,"Y-m-d")."'
+            AND (
+                (fb.von_typ = 'kontorahmen' AND fb.nach_typ IN ('rechnung', 'gutschrift', 'verbindlichkeit', 'lieferantengutschrift'))
+                OR
+                (fb.nach_typ = 'kontorahmen' AND fb.von_typ IN ('rechnung', 'gutschrift', 'verbindlichkeit', 'lieferantengutschrift'))
+            )
+            AND (
+                $projekt = 0
+                OR r.projekt = $projekt
+                OR g.projekt = $projekt
+                OR v.projekt = $projekt
+                OR lg.projekt = $projekt
+                OR kr.projekt = $projekt
+            )";
+
+        $buchungen = array();
+        $belegSachkonten = $this->app->DB->SelectArr($sql);
+        foreach ($belegSachkonten as $row) {
+            $konto = trim((string)$row['sachkonto']);
+            if ($konto === '') {
+                continue;
+            }
+
+            $betragRaw = (float)$row['betrag'];
+            $betrag = abs($betragRaw);
+            if ($betrag == 0.0) {
+                continue;
+            }
+
+            $debitor = !empty($row['debitor']) ? $row['debitor'] : $row['debitor_fallback'];
+            $kreditor = !empty($row['kreditor']) ? $row['kreditor'] : $row['kreditor_fallback'];
+            if (!empty($debitor)) {
+                $gegenkonto = $debitor;
+            } elseif (!empty($kreditor)) {
+                $gegenkonto = $kreditor;
+            } else {
+                $gegenkonto = '9999';
+            }
+
+            $belegnr = trim((string)$row['belegnr']);
+            $buchungstext = $this->getFibuKontorahmenBuchungstext(
+                (string)$row['intern'],
+                $belegnr,
+                (string)$row['beleg_name']
+            );
+
+            $buchungen[] = array(
+                'Umsatz' => number_format($betrag, 2, ',', ''),
+                'Soll-/Haben-Kennzeichen' => $this->getSollHabenForExportedAccount(
+                    (int)$row['konto_ist_nach'] === 1,
+                    $betragRaw
+                ),
+                'WKZ Umsatz' => $row['waehrung'],
+                'Konto' => $konto,
+                'Gegenkonto (ohne BU-Schlüssel)' => $gegenkonto,
+                '_debitor' => $debitor,
+                '_kreditor' => $kreditor,
+                'BU-Schlüssel' => $row['buchungsschluessel'],
+                'Belegdatum' => date_format(date_create($row['datum']), "dm"),
+                'Belegfeld 1' => mb_strimwidth($belegnr !== '' ? $belegnr : ('FB'.$row['id']), 0, 36),
                 'Belegfeld 2' => 'FB'.$row['id'],
                 'Buchungstext' => mb_strimwidth($buchungstext, 0, 60),
             );
