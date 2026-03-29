@@ -230,7 +230,7 @@ final class DatevExport
         $data['Diktatkürzel'] = substr($bearbeiter,0,2);
         $data['Buchungstyp'] = 1;
         $data['Rechnungs- legungszweck'] = 0;
-        $data['Festschreibung'] = 1;
+        $data['Festschreibung'] = 0;
         $data['WKZ'] = 'EUR';
         $data['Reserviert'] = '';
         $data['Derivatskennzeichen'] = '';
