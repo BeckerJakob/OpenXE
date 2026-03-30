@@ -1,0 +1,19 @@
+Options -Indexes
+DirectoryIndex index.php
+Order deny,allow
+Allow from all
+SetEnvIfNoCase Authorization "^(.*)$" HTTP_AUTHORIZATION=$1
+
+<FilesMatch ".">
+    Order Allow,Deny
+    Allow from all
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    RewriteRule ^$ index.php [QSA,L]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.+)$ index.php?path=/$1 [QSA,L]
+</IfModule>

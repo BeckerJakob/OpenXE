@@ -16,4 +16,9 @@ Order deny,allow
     Order Allow,Deny
     Allow from all
 </Files>
+<Files "favicon.ico">
+    Order Allow,Deny
+    Allow from all
+    ForceType image/svg+xml
+</Files>
 # end

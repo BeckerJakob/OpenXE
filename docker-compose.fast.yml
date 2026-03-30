@@ -1,19 +1,8 @@
 services:
-  vite:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-      target: frontend
-    image: openxe_frontend
-    entrypoint: npm run dev
-    volumes:
-      - .:/app:delegated
-    ports:
-      - "5173:5173"
   app_init:
     image: openxe:test
     volumes:
-      - .:/var/www/html:delegated
+      - confdata:/var/www/html/conf
     working_dir: /var/www/html/upgrade
     entrypoint:
       - /bin/sh
@@ -27,15 +16,19 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+
   app:
     build:
       context: .
       dockerfile: docker/Dockerfile
     image: openxe:test
     volumes:
-      - .:/var/www/html:delegated
-    cpus: 2.0
-    mem_limit: 1536m
+      - confdata:/var/www/html/conf
+    tmpfs:
+      - /tmp:size=256m
+      - /var/tmp:size=256m
+    cpus: ${OPENXE_APP_CPUS:-6.0}
+    mem_limit: ${OPENXE_APP_MEM_LIMIT:-4g}
     ports:
       - "8081:80"
     depends_on:
@@ -43,17 +36,25 @@ services:
         condition: service_completed_successfully
       mysql:
         condition: service_healthy
+
   mysql:
     image: mariadb:10.6
     command:
       - --innodb-page-size=32k
-      - --innodb-buffer-pool-size=1024M
+      - --innodb-buffer-pool-size=${OPENXE_DB_BUFFER_POOL_SIZE:-4096M}
+      - --innodb-buffer-pool-instances=${OPENXE_DB_BUFFER_POOL_INSTANCES:-4}
       - --innodb-log-file-size=256M
+      - --innodb-log-buffer-size=64M
       - --innodb-flush-log-at-trx-commit=2
       - --sync-binlog=0
       - --skip-name-resolve
-    cpus: 2.0
-    mem_limit: 2048m
+      - --tmp-table-size=128M
+      - --max-heap-table-size=128M
+      - --thread-cache-size=64
+      - --table-open-cache=4096
+      - --performance-schema=OFF
+    cpus: ${OPENXE_DB_CPUS:-6.0}
+    mem_limit: ${OPENXE_DB_MEM_LIMIT:-8g}
     environment:
       MYSQL_ROOT_PASSWORD: "rootpw"
       MYSQL_USER: "openxe"
@@ -78,3 +79,4 @@ services:
 
 volumes:
   mysqldata: {}
+  confdata: {}
