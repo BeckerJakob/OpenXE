@@ -1,8 +1,8 @@
 ARG PHP_EXT="gd ldap imap mysqli soap zip"
 ARG DEB_PKG="libc-client2007e libaom3 libavif15 libdav1d6 libfreetype6 libjpeg62-turbo libldap-common libpng16-16 libwebp7 libxpm4 libzip4"
-ARG DEB_PKG_TMP="cmake gnutls-dev libaom-dev libavif-dev libbz2-dev libc-client-dev libdav1d-dev libfreetype6-dev libjpeg62-turbo-dev libkrb5-dev libldap2-dev libpng-dev libssl-dev libwebp-dev libxml2-dev libxpm-dev libzip-dev zlib1g-dev"
+ARG DEB_PKG_TMP="cmake gnutls-dev libaom-dev libavif-dev libbz2-dev libc-client2007e-dev libdav1d-dev libfreetype6-dev libjpeg62-turbo-dev libkrb5-dev libldap2-dev libpng-dev libssl-dev libwebp-dev libxml2-dev libxpm-dev libzip-dev zlib1g-dev"
 
-FROM node:20 as frontend
+FROM node:20-bookworm AS frontend
 WORKDIR /app
 COPY package.json package-lock.json vite.config.js /app/
 RUN npm install
@@ -12,7 +12,7 @@ COPY www /app/www
 RUN npm run build
 
 #FROM php:8.1-fpm as fpm_server
-FROM php:8.1-apache as web_server
+FROM php:8.1-apache-bookworm AS web_server
 ARG PHP_EXT
 ARG DEB_PKG
 ARG DEB_PKG_TMP
