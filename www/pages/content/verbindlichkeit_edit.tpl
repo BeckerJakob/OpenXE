@@ -82,6 +82,22 @@
                                                             <select name="waehrung" [SAVEDISABLED]>[WAEHRUNGSELECT]</select>
                                                         </td>
                                                     </tr>
+                                                    <tr [KOPFFELDERHIDDEN]>
+                                                        <td>
+                                                            {|Steuersatz %|}:
+                                                        </td>
+                                                        <td>
+                                                            <input type="number" step="0.01" min="0" name="ustnormal" id="ustnormal" value="[USTNORMAL]" placeholder="[STANDARDSTEUERSATZ]" size="20" [KOPFFELDERDISABLED]>
+                                                        </td>
+                                                    </tr>
+                                                    <tr [KOPFFELDERHIDDEN]>
+                                                        <td>
+                                                            {|Sachkonto|}:
+                                                        </td>
+                                                        <td>
+                                                            <input type="text" name="sachkonto" id="sachkonto" value="[SACHKONTO]" size="20" [KOPFFELDERDISABLED]>
+                                                        </td>
+                                                    </tr>
                                                     <tr>
                                                         <td>
                                                             {|Betrag Positionen brutto|}:
@@ -130,33 +146,12 @@
                                                             <input type="text" name="skontobis" id="skontobis" value="[SKONTOBIS]" size="20" [SAVEDISABLED]>&nbsp;<input type="number" name="skontobis_tage" id="skontobis_tage" size="4" [SAVEDISABLED]>&nbsp;Tage
                                                         </td>
                                                     </tr>                                                                                                                                                                                                                                            
-                                                    <tr>
+                                                    <tr hidden>
                                                         <td>
                                                             {|Bestellung|}:
                                                         </td>
                                                         <td>
                                                             <input type="text" name="bestellung" id="bestellung" value="[BESTELLUNG]" size="20" [SAVEDISABLED]>
-                                                        </td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td>
-                                                            {|Waren-/Leistungsprüfung (Einkauf)|}:
-                                                        </td>
-                                                        <td>
-                                                            <input type="checkbox" id="wareneingang" value="1" [WARENEINGANGCHECKED] size="20" disabled>
-                                                            <a href="index.php?module=verbindlichkeit&action=freigabeeinkauf&id=[ID]" title="freigeben" [FREIGABEEINKAUFHIDDEN]><img src="themes/new/images/forward.svg" border="0" class="textfeld_icon"></a>                                                                                                                
-                                                            <a href="index.php?module=verbindlichkeit&action=ruecksetzeneinkauf&id=[ID]" title="r&uuml;cksetzen" [RUECKSETZENEINKAUFHIDDEN]><img src="themes/new/images/delete.svg" border="0" class="textfeld_icon"></a>
-                                                            <i [EINKAUFINFOHIDDEN]>Wird automatisch gesetzt wenn Positionen vollst&auml;ndig</a>
-                                                        </td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td>
-                                                            {|Rechnungseingangsprüfung (Buchhaltung)|}:
-                                                        </td>
-                                                        <td>
-                                                            <input type="checkbox" id="rechnungsfreigabe" [RECHNUNGSFREIGABECHECKED] size="20" disabled>
-                                                            <a href="index.php?module=verbindlichkeit&action=freigabebuchhaltung&id=[ID]" title="freigeben" [FREIGABEBUCHHALTUNGHIDDEN]><img src="themes/new/images/forward.svg" border="0" class="textfeld_icon"></a>                                                                                                                
-                                                            <a href="index.php?module=verbindlichkeit&action=ruecksetzenbuchhaltung&id=[ID]" title="r&uuml;cksetzen"  [RUECKSETZENBUCHHALTUNGHIDDEN]><img src="themes/new/images/delete.svg" border="0" class="textfeld_icon"></a>                                                                                                                
                                                         </td>
                                                     </tr>
                                                     <tr>

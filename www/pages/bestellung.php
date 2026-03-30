@@ -2296,7 +2296,7 @@ GROUP BY
     return $id;
   }
 
-  public function AddBestellungPosition($bestellung, $einkauf,$menge,$datum, $beschreibung = '',$artikel='',$einheit='', $waehrung = '')
+  public function AddBestellungPosition($bestellung, $einkauf,$menge,$datum, $beschreibung = '',$artikel='',$einheit='', $waehrung = '', $auftrag_position_id = 0)
   {
     $beschreibung = $this->app->DB->real_escape_string($beschreibung);
 
@@ -2360,8 +2360,8 @@ GROUP BY
     }
     $sort = $this->app->DB->Select("SELECT MAX(sort) FROM bestellung_position WHERE bestellung='$bestellung' LIMIT 1");
     $sort++;
-    $this->app->DB->Insert("INSERT INTO bestellung_position (bestellung,artikel,bezeichnunglieferant,bestellnummer,menge,preis, waehrung, sort,lieferdatum, umsatzsteuer, status,projekt,vpe, beschreibung,einheit)
-            VALUES ('$bestellung','$artikel','$bezeichnunglieferant','$bestellnummer','$menge','$preis','$waehrung','$sort','$datum','$umsatzsteuer','angelegt','$projekt','$vpe','$beschreibung','$einheit')");
+    $this->app->DB->Insert("INSERT INTO bestellung_position (bestellung,artikel,bezeichnunglieferant,bestellnummer,menge,preis, waehrung, sort,lieferdatum, umsatzsteuer, status,projekt,vpe, beschreibung,einheit, auftrag_position_id)
+            VALUES ('$bestellung','$artikel','$bezeichnunglieferant','$bestellnummer','$menge','$preis','$waehrung','$sort','$datum','$umsatzsteuer','angelegt','$projekt','$vpe','$beschreibung','$einheit', '$auftrag_position_id')");
     return $this->app->DB->GetInsertID();
   }
 

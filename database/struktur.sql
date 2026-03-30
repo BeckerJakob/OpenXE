@@ -2783,6 +2783,9 @@ CREATE TABLE `auftrag` (
   `abgeschlossen` int(1) NOT NULL,
   `nachlieferung` int(1) NOT NULL,
   `lager_ok` int(1) NOT NULL,
+  `bestellung_ok` int(1) NOT NULL,
+  `bezahlung_ok` int(1) NOT NULL,
+  `lieferschein_ok` int(1) NOT NULL,
   `porto_ok` int(1) NOT NULL,
   `ust_ok` int(1) NOT NULL,
   `check_ok` int(1) NOT NULL,
@@ -2916,6 +2919,7 @@ CREATE TABLE `auftrag` (
   `storage_country` varchar(3) NOT NULL,
   `shop_status_update_attempt` int(3) NOT NULL DEFAULT 0,
   `shop_status_update_last_attempt_at` datetime DEFAULT NULL,
+  `sortierdatum` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   KEY `projekt` (`projekt`),
   KEY `adresse` (`adresse`),
@@ -5495,6 +5499,7 @@ CREATE TABLE `fibu_buchungen` (
   `nach_id` int(11) NOT NULL,
   `betrag` decimal(10,2) NOT NULL,
   `waehrung` varchar(10) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci NOT NULL DEFAULT 'EUR',
+  `buchungsschluessel` varchar(32) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci NOT NULL DEFAULT '',
   `benutzer` int(11) NOT NULL,
   `zeit` datetime NOT NULL,
   `internebemerkung` varchar(128) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci NOT NULL,
@@ -10326,6 +10331,9 @@ CREATE TABLE `produktion` (
   `abgeschlossen` int(1) NOT NULL,
   `nachlieferung` int(1) NOT NULL,
   `lager_ok` int(1) NOT NULL,
+  `bestellung_ok` int(1) NOT NULL,
+  `bezahlung_ok` int(1) NOT NULL,
+  `lieferschein_ok` int(1) NOT NULL,
   `porto_ok` int(1) NOT NULL,
   `ust_ok` int(1) NOT NULL,
   `check_ok` int(1) NOT NULL,
@@ -17408,7 +17416,7 @@ CREATE TABLE `zwischenlager` (
 /*!50001 SET collation_connection      = utf8mb4_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50013 DEFINER=`openxe`@`localhost` SQL SECURITY DEFINER */
-/*!50001 VIEW `fibu_buchungen_alle_view` AS select `fb`.`buchungsart` AS `buchungsart`,`fb`.`typ` AS `typ`,`fb`.`id` AS `id`,if(`fibu_objekte_view`.`datum` <> '',`fibu_objekte_view`.`datum`,`fb`.`datum`) AS `datum`,`fb`.`gegen_typ` AS `doc_typ`,`fb`.`gegen_id` AS `doc_id`,`fibu_objekte_view`.`info` AS `doc_info`,cast(`fb`.`soll` as decimal(10,2)) AS `betrag`,`fb`.`waehrung` AS `waehrung`,`fb`.`edit_module` AS `edit_module`,`fb`.`edit_id` AS `edit_id` from ((select 'umsatz' AS `buchungsart`,'rechnung' AS `typ`,`rechnung`.`id` AS `id`,-`rechnung`.`soll` AS `soll`,`rechnung`.`waehrung` AS `waehrung`,'rechnung' AS `gegen_typ`,`rechnung`.`id` AS `gegen_id`,`rechnung`.`datum` AS `datum`,'rechnung' AS `edit_module`,`rechnung`.`id` AS `edit_id` from `rechnung` where `rechnung`.`belegnr` <> '' union select 'umsatz' AS `umsatz`,'gutschrift' AS `gutschrift`,`gutschrift`.`id` AS `id`,`gutschrift`.`soll` AS `soll`,`gutschrift`.`waehrung` AS `waehrung`,'gutschrift' AS `gutschrift`,`gutschrift`.`id` AS `id`,`gutschrift`.`datum` AS `datum`,'gutschrift' AS `edit_module`,`gutschrift`.`id` AS `id` from `gutschrift` where `gutschrift`.`belegnr` <> '' union select 'aufwand' AS `aufwand`,'verbindlichkeit' AS `verbindlichkeit`,`verbindlichkeit`.`id` AS `id`,`verbindlichkeit`.`betrag` AS `betrag`,`verbindlichkeit`.`waehrung` AS `waehrung`,'verbindlichkeit' AS `verbindlichkeit`,`verbindlichkeit`.`id` AS `id`,`verbindlichkeit`.`rechnungsdatum` AS `rechnungsdatum`,'verbindlichkeit' AS `verbindlichkeit`,`verbindlichkeit`.`id` AS `id` from `verbindlichkeit` where `verbindlichkeit`.`belegnr` <> '' union select 'zahlung' AS `zahlung`,'kontoauszuege' AS `kontoauszuege`,`kontoauszuege`.`id` AS `id`,`kontoauszuege`.`soll` AS `soll`,`kontoauszuege`.`waehrung` AS `waehrung`,'kontoauszuege' AS `kontoauszuege`,`kontoauszuege`.`id` AS `id`,`kontoauszuege`.`buchung` AS `buchung`,'kontoauszuege' AS `kontoauszuege`,`kontoauszuege`.`id` AS `id` from `kontoauszuege` where `kontoauszuege`.`importfehler` is null union select 'abbuchung' AS `abbuchung`,`fibu_buchungen`.`von_typ` AS `von_typ`,`fibu_buchungen`.`von_id` AS `von_id`,`fibu_buchungen`.`betrag` AS `betrag`,`fibu_buchungen`.`waehrung` AS `waehrung`,`fibu_buchungen`.`nach_typ` AS `nach_typ`,`fibu_buchungen`.`nach_id` AS `nach_id`,`fibu_buchungen`.`datum` AS `datum`,'fibu_buchungen' AS `fibu_buchungen`,`fibu_buchungen`.`id` AS `id` from `fibu_buchungen` union select 'zubuchung' AS `zubuchung`,`fibu_buchungen`.`nach_typ` AS `nach_typ`,`fibu_buchungen`.`nach_id` AS `nach_id`,-`fibu_buchungen`.`betrag` AS `-``openxe``.``fibu_buchungen``.``betrag```,`fibu_buchungen`.`waehrung` AS `waehrung`,`fibu_buchungen`.`von_typ` AS `von_typ`,`fibu_buchungen`.`von_id` AS `von_id`,`fibu_buchungen`.`datum` AS `datum`,'fibu_buchungen' AS `fibu_buchungen`,`fibu_buchungen`.`id` AS `id` from `fibu_buchungen`) `fb` left join `fibu_objekte_view` on(`fb`.`gegen_typ` = `fibu_objekte_view`.`typ` and `fb`.`gegen_id` = `fibu_objekte_view`.`id`)) where `fb`.`datum` >= (select `firmendaten_werte`.`wert` from `firmendaten_werte` where `firmendaten_werte`.`name` = 'fibu_buchungen_startdatum') and `fibu_objekte_view`.`datum` >= (select `firmendaten_werte`.`wert` from `firmendaten_werte` where `firmendaten_werte`.`name` = 'fibu_buchungen_startdatum') or `fibu_objekte_view`.`datum` = '' */;
+/*!50001 VIEW `fibu_buchungen_alle_view` AS select `fb`.`buchungsart` AS `buchungsart`,`fb`.`typ` AS `typ`,`fb`.`id` AS `id`,if(`fibu_objekte_view`.`datum` <> '',`fibu_objekte_view`.`datum`,`fb`.`datum`) AS `datum`,`fb`.`gegen_typ` AS `doc_typ`,`fb`.`gegen_id` AS `doc_id`,`fibu_objekte_view`.`info` AS `doc_info`,cast(`fb`.`soll` as decimal(10,2)) AS `betrag`,`fb`.`waehrung` AS `waehrung`,`fb`.`edit_module` AS `edit_module`,`fb`.`edit_id` AS `edit_id` from ((select 'umsatz' AS `buchungsart`,'rechnung' AS `typ`,`rechnung`.`id` AS `id`,-`rechnung`.`soll` AS `soll`,`rechnung`.`waehrung` AS `waehrung`,'rechnung' AS `gegen_typ`,`rechnung`.`id` AS `gegen_id`,`rechnung`.`datum` AS `datum`,'rechnung' AS `edit_module`,`rechnung`.`id` AS `edit_id` from `rechnung` where `rechnung`.`belegnr` <> '' union select 'umsatz' AS `umsatz`,'gutschrift' AS `gutschrift`,`gutschrift`.`id` AS `id`,`gutschrift`.`soll` AS `soll`,`gutschrift`.`waehrung` AS `waehrung`,'gutschrift' AS `gutschrift`,`gutschrift`.`id` AS `id`,`gutschrift`.`datum` AS `datum`,'gutschrift' AS `edit_module`,`gutschrift`.`id` AS `id` from `gutschrift` where `gutschrift`.`belegnr` <> '' union select 'aufwand' AS `aufwand`,'verbindlichkeit' AS `verbindlichkeit`,`verbindlichkeit`.`id` AS `id`,`verbindlichkeit`.`betrag` AS `betrag`,`verbindlichkeit`.`waehrung` AS `waehrung`,'verbindlichkeit' AS `verbindlichkeit`,`verbindlichkeit`.`id` AS `id`,`verbindlichkeit`.`rechnungsdatum` AS `rechnungsdatum`,'verbindlichkeit' AS `verbindlichkeit`,`verbindlichkeit`.`id` AS `id` from `verbindlichkeit` where `verbindlichkeit`.`belegnr` <> '' union select 'zahlung' AS `zahlung`,'kontoauszuege' AS `kontoauszuege`,`kontoauszuege`.`id` AS `id`,`kontoauszuege`.`soll` AS `soll`,`kontoauszuege`.`waehrung` AS `waehrung`,'kontoauszuege' AS `kontoauszuege`,`kontoauszuege`.`id` AS `id`,`kontoauszuege`.`buchung` AS `buchung`,'kontoauszuege' AS `kontoauszuege`,`kontoauszuege`.`id` AS `id` from `kontoauszuege` where `kontoauszuege`.`importfehler` is null union select 'abbuchung' AS `abbuchung`,`fibu_buchungen`.`von_typ` AS `von_typ`,`fibu_buchungen`.`von_id` AS `von_id`,`fibu_buchungen`.`betrag` AS `betrag`,`fibu_buchungen`.`waehrung` AS `waehrung`,`fibu_buchungen`.`nach_typ` AS `nach_typ`,`fibu_buchungen`.`nach_id` AS `nach_id`,`fibu_buchungen`.`datum` AS `datum`,'fibu_buchungen' AS `fibu_buchungen`,`fibu_buchungen`.`id` AS `id` from `fibu_buchungen` union select 'zubuchung' AS `zubuchung`,`fibu_buchungen`.`nach_typ` AS `nach_typ`,`fibu_buchungen`.`nach_id` AS `nach_id`,-`fibu_buchungen`.`betrag` AS `-``openxe``.``fibu_buchungen``.``betrag```,`fibu_buchungen`.`waehrung` AS `waehrung`,`fibu_buchungen`.`von_typ` AS `von_typ`,`fibu_buchungen`.`von_id` AS `von_id`,`fibu_buchungen`.`datum` AS `datum`,'fibu_buchungen' AS `fibu_buchungen`,`fibu_buchungen`.`id` AS `id` from `fibu_buchungen`) `fb` left join `fibu_objekte_view` on(`fb`.`gegen_typ` = `fibu_objekte_view`.`typ` and `fb`.`gegen_id` = `fibu_objekte_view`.`id`)) where `fb`.`datum` >= (select `firmendaten_werte`.`wert` from `firmendaten_werte` where `firmendaten_werte`.`name` = 'fibu_buchungen_startdatum') and (`fibu_objekte_view`.`datum` >= (select `firmendaten_werte`.`wert` from `firmendaten_werte` where `firmendaten_werte`.`name` = 'fibu_buchungen_startdatum') or `fibu_objekte_view`.`datum` = '') */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;

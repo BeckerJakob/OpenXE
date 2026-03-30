@@ -15,7 +15,8 @@ class Fibu_buchungen {
 
         $this->app->ActionHandlerInit($this);
         $this->app->ActionHandler("list", "fibu_buchungen_list");        
-        $this->app->ActionHandler("create", "fibu_buchungen_edit"); // This automatically adds a "New" button
+        $this->app->ActionHandler("create", "fibu_buchungen_create");
+        $this->app->ActionHandler("save_new", "fibu_buchungen_save_new");
         $this->app->ActionHandler("edit", "fibu_buchungen_edit");
         $this->app->ActionHandler("delete", "fibu_buchungen_delete");
         $this->app->ActionHandler("assoc", "fibu_buchungen_assoc");
@@ -197,6 +198,7 @@ class Fibu_buchungen {
                 $linkend = '"><img src="./themes/'.$app->Conf->WFconf['defaulttheme'].'/images/forward.svg" border=0></a></td></tr></table>';
              
                 $typ = $this->app->User->GetParameter('fibu_buchungen_doc_typ');
+                $excludeAuftragFromVorschlag = " AND fo.typ <> 'auftrag'";
           
                 $objektlink = array (
                     '<a href=\"index.php?action=edit&module=',
@@ -341,7 +343,7 @@ class Fibu_buchungen {
                                 fibu_buchungen_alle fob
                             ON
                                 fo.typ = fob.typ AND fo.id = fob.id                          
-                            WHERE fo.is_beleg = 1
+                            WHERE fo.is_beleg = 1".$excludeAuftragFromVorschlag."
                             GROUP BY
                                 fo.typ,
                                 fo.id,
@@ -555,7 +557,7 @@ class Fibu_buchungen {
     
     function fibu_buchungen_list() {
         $this->app->erp->MenuEintrag("index.php?module=fibu_buchungen&action=list", "&Uuml;bersicht");
-//        $this->app->erp->MenuEintrag("index.php?module=fibu_buchungen&action=create", "Neu anlegen");
+        $this->app->erp->MenuEintrag("index.php?module=fibu_buchungen&action=create", "Neu anlegen");
 
         $startdatum = $this->app->erp->Firmendaten('fibu_buchungen_startdatum');
 
@@ -594,6 +596,187 @@ class Fibu_buchungen {
 
         $this->fibu_buchungen_list();
     } 
+
+    public function fibu_buchungen_create() {
+        $this->fibu_buchungen_render_create();
+    }
+
+    private function fibu_buchungen_render_create(array $input = array(), string $message = ''): void {
+        $defaults = array(
+            'datum' => date('d.m.Y'),
+            'belegnummer' => '',
+            'buchungstext' => '',
+            'betrag' => '',
+            'waehrung' => 'EUR',
+            'buchungsschluessel' => '',
+            'sollkonto' => '',
+            'habenkonto' => '1890',
+        );
+
+        $input = array_merge($defaults, $input);
+
+        if ($message !== '') {
+            $this->app->Tpl->Set('MESSAGE', $message);
+        }
+
+        $this->app->erp->MenuEintrag("index.php?module=fibu_buchungen&action=list", "&Uuml;bersicht");
+        $this->app->erp->MenuEintrag("index.php?module=fibu_buchungen&action=create", "Neu anlegen");
+
+        $this->app->Tpl->Set('DATUM', $input['datum']);
+        $this->app->Tpl->Set('BELEGNUMMER', htmlentities((string)$input['belegnummer']));
+        $this->app->Tpl->Set('BUCHUNGSTEXT', htmlentities((string)$input['buchungstext']));
+        $this->app->Tpl->Set('BETRAG', htmlentities((string)$input['betrag']));
+        $this->app->Tpl->Set('SOLLKONTO', htmlentities((string)$input['sollkonto']));
+        $this->app->Tpl->Set('HABENKONTO', htmlentities((string)$input['habenkonto']));
+        $this->app->Tpl->Set('WAEHRUNG', $this->app->erp->getSelectAsso($this->app->erp->GetWaehrung(), $input['waehrung']));
+        $this->app->Tpl->Set(
+            'BUCHUNGSSCHLUESSEL_OPTIONS',
+            $this->app->erp->getSelectAsso(
+                $this->getBuchungsschluesselOptions($input['buchungsschluessel']),
+                $input['buchungsschluessel']
+            )
+        );
+
+        $this->app->YUI->DatePicker('datum');
+        $this->app->YUI->AutoComplete('sollkonto', 'sachkonto');
+        $this->app->YUI->AutoComplete('habenkonto', 'sachkonto');
+
+        $this->app->Tpl->Parse('PAGE', "fibu_buchungen_create.tpl");
+    }
+
+    private function getBuchungsschluesselOptions(string $selected = ''): array {
+        $options = array(
+            ''  => 'ohne Buchungsschluessel',
+            '9' => '9 - 19% Vorsteuer',
+            '8' => '8 - 7% Vorsteuer',
+        );
+
+        // Legacy values are still accepted and shown only when already selected.
+        if ($selected === '80') {
+            $options['80'] = '80 - Alt (abwaertskompatibel)';
+        }
+        if ($selected === '90') {
+            $options['90'] = '90 - Alt (abwaertskompatibel)';
+        }
+
+        return $options;
+    }
+
+    private function fibu_get_kontorahmen_id(string $kontoInput): int {
+        $sachkonto = trim((string)explode(' ', trim($kontoInput))[0]);
+        if ($sachkonto === '') {
+            return 0;
+        }
+
+        $sachkontoEsc = $this->app->DB->real_escape_string($sachkonto);
+        $rows = $this->app->DB->SelectArr("SELECT id FROM kontorahmen WHERE sachkonto = '".$sachkontoEsc."' LIMIT 1");
+
+        return empty($rows) ? 0 : (int)$rows[0]['id'];
+    }
+
+    public function fibu_buchungen_save_new(): void {
+        $input = array(
+            'datum' => trim((string)$this->app->Secure->GetPOST('datum')),
+            'belegnummer' => trim((string)$this->app->Secure->GetPOST('belegnummer')),
+            'buchungstext' => trim((string)$this->app->Secure->GetPOST('buchungstext')),
+            'betrag' => trim((string)$this->app->Secure->GetPOST('betrag')),
+            'waehrung' => trim((string)$this->app->Secure->GetPOST('waehrung')),
+            'buchungsschluessel' => trim((string)$this->app->Secure->GetPOST('buchungsschluessel')),
+            'sollkonto' => trim((string)$this->app->Secure->GetPOST('sollkonto')),
+            'habenkonto' => trim((string)$this->app->Secure->GetPOST('habenkonto')),
+        );
+
+        $input['waehrung'] = strtoupper($input['waehrung']);
+        if ($input['waehrung'] === '' || !preg_match('/^[A-Z0-9_-]{1,10}$/', $input['waehrung'])) {
+            $input['waehrung'] = 'EUR';
+        }
+        if (!in_array($input['buchungsschluessel'], array('', '8', '9', '80', '90'), true)) {
+            $input['buchungsschluessel'] = '';
+        }
+
+        $errors = array();
+
+        if ($input['datum'] === '') {
+            $errors[] = 'Bitte ein Datum eingeben.';
+        }
+        if ($input['betrag'] === '') {
+            $errors[] = 'Bitte einen Betrag eingeben.';
+        }
+        if ($input['sollkonto'] === '') {
+            $errors[] = 'Bitte ein Sollkonto eingeben.';
+        }
+        if ($input['habenkonto'] === '') {
+            $errors[] = 'Bitte ein Habenkonto eingeben.';
+        }
+        if ($input['buchungstext'] === '' && $input['belegnummer'] === '') {
+            $errors[] = 'Bitte Buchungstext oder Belegnummer eingeben.';
+        }
+
+        $betragNormalized = $this->app->erp->ReplaceBetrag(true, $input['betrag']);
+        if (!is_numeric($betragNormalized)) {
+            $errors[] = 'Der Betrag ist ungültig.';
+        }
+        $betrag = (float)$betragNormalized;
+        if ($betrag <= 0) {
+            $errors[] = 'Der Betrag muss größer 0 sein.';
+        }
+
+        $datumSql = $this->app->erp->ReplaceDatum(true, $input['datum'], true);
+        if (empty($datumSql) || $datumSql === '0000-00-00') {
+            $errors[] = 'Das Datum ist ungültig.';
+        }
+
+        $sollId = $this->fibu_get_kontorahmen_id($input['sollkonto']);
+        $habenId = $this->fibu_get_kontorahmen_id($input['habenkonto']);
+
+        if ($sollId <= 0) {
+            $errors[] = 'Sollkonto wurde nicht gefunden.';
+        }
+        if ($habenId <= 0) {
+            $errors[] = 'Habenkonto wurde nicht gefunden.';
+        }
+        if ($sollId > 0 && $habenId > 0 && $sollId === $habenId) {
+            $errors[] = 'Soll- und Habenkonto dürfen nicht identisch sein.';
+        }
+
+        if (!empty($errors)) {
+            $message = '<div class="error">'.implode('<br>', $errors).'</div>';
+            $this->fibu_buchungen_render_create($input, $message);
+            return;
+        }
+
+        // Ohne Schemaaenderung werden Buchungstext und Belegnummer in internebemerkung zusammengefuehrt.
+        $internebemerkung = trim(
+            ($input['belegnummer'] !== '' ? 'Beleg '.$input['belegnummer'].' | ' : '')
+            .$input['buchungstext']
+        );
+
+        if ($internebemerkung === '') {
+            $internebemerkung = 'Manuelle Buchung';
+        }
+
+        $internebemerkung = substr($internebemerkung, 0, 128);
+        $internebemerkung = $this->app->DB->real_escape_string($internebemerkung);
+
+        // Soll an Haben: von = Sollkonto, nach = Habenkonto.
+        $this->fibu_buchungen_buchen(
+            'kontorahmen',
+            $sollId,
+            'kontorahmen',
+            $habenId,
+            $betrag,
+            $input['waehrung'],
+            $datumSql,
+            $internebemerkung,
+            $input['buchungsschluessel']
+        );
+
+        $this->fibu_rebuild_tables();
+
+        $msg = $this->app->erp->base64_url_encode('<div class="success">Manuelle Buchung wurde erfolgreich angelegt.</div>');
+        header('Location: index.php?module=fibu_buchungen&action=list&msg='.$msg);
+        exit;
+    }
 
     /*
      * Edit fibu_buchungen item
@@ -795,14 +978,67 @@ class Fibu_buchungen {
     }
 
 
-    function fibu_buchungen_buchen(string $von_typ, int $von_id, string $nach_typ, int $nach_id, $betrag, string $waehrung, $datum, string $internebemerkung) {
-        $sql = "INSERT INTO `fibu_buchungen` (`von_typ`, `von_id`, `nach_typ`, `nach_id`, `datum`, `betrag`, `waehrung`, `benutzer`, `zeit`, `internebemerkung`) VALUES ('".$von_typ."','".$von_id."','".$nach_typ."', '".$nach_id."', '".$datum."', '".$betrag."', '".$waehrung."', '".$this->app->User->GetID()."','".date("Y-m-d H:i")."', '".$internebemerkung."')";
+    private function fibu_buchungen_get_kontoauszug_buchungstext(string $von_typ, int $von_id, string $nach_typ, int $nach_id): string {
+        $kontoauszugIds = array();
+
+        if ($von_typ === 'kontoauszuege') {
+            $kontoauszugIds[] = (int)$von_id;
+        }
+
+        if ($nach_typ === 'kontoauszuege' && $nach_id !== $von_id) {
+            $kontoauszugIds[] = (int)$nach_id;
+        }
+
+        foreach ($kontoauszugIds as $kontoauszugId) {
+            $buchungstext = trim((string)$this->app->DB->Select(
+                "SELECT buchungstext FROM kontoauszuege WHERE id = ".$kontoauszugId." LIMIT 1"
+            ));
+
+            if ($buchungstext !== '') {
+                return $buchungstext;
+            }
+        }
+
+        return '';
+    }
+
+    private function fibu_buchungen_automatische_internebemerkung(string $von_typ, int $von_id, string $nach_typ, int $nach_id): string {
+        $buchungstext = $this->fibu_buchungen_get_kontoauszug_buchungstext($von_typ, $von_id, $nach_typ, $nach_id);
+
+        if ($buchungstext === '') {
+            return '';
+        }
+
+        if (stripos($buchungstext, 'Zahlung ') === 0) {
+            return substr($buchungstext, 0, 128);
+        }
+
+        return substr('Zahlung '.$buchungstext, 0, 128);
+    }
+
+    function fibu_buchungen_buchen(string $von_typ, int $von_id, string $nach_typ, int $nach_id, $betrag, string $waehrung, $datum, string $internebemerkung, string $buchungsschluessel = '') {
+        $validBuchungsschluessel = in_array($buchungsschluessel, array('8', '9', '80', '90'), true) ? $buchungsschluessel : '';
+        $internebemerkung = trim($internebemerkung);
+
+        if ($internebemerkung === '') {
+            $internebemerkung = $this->fibu_buchungen_automatische_internebemerkung($von_typ, $von_id, $nach_typ, $nach_id);
+            if ($internebemerkung !== '') {
+                $internebemerkung = $this->app->DB->real_escape_string($internebemerkung);
+            }
+        }
+
+        $sql = "INSERT INTO `fibu_buchungen` (`von_typ`, `von_id`, `nach_typ`, `nach_id`, `datum`, `betrag`, `waehrung`, `buchungsschluessel`, `benutzer`, `zeit`, `internebemerkung`) VALUES ('".$von_typ."','".$von_id."','".$nach_typ."', '".$nach_id."', '".$datum."', '".$betrag."', '".$waehrung."', '".$validBuchungsschluessel."', '".$this->app->User->GetID()."','".date("Y-m-d H:i")."', '".$internebemerkung."')";
         $this->app->DB->Insert($sql);      
     }    
 
     function fibu_buchungen_zuordnen() {
 
         $submit = $this->app->Secure->GetPOST('submit');
+        $buchungsschluessel = trim((string)$this->app->Secure->GetPOST('buchungsschluessel'));
+        if (!in_array($buchungsschluessel, array('', '8', '9', '80', '90'), true)) {
+            $buchungsschluessel = '';
+        }
+
         if ($submit == 'neuberechnen') {
             $this->fibu_rebuild_tables();
 
@@ -865,7 +1101,7 @@ class Fibu_buchungen {
 //                                $sql = "INSERT INTO `fibu_buchungen` (`von_typ`, `von_id`, `nach_typ`, `nach_id`, `datum`, `betrag`, `waehrung`, `benutzer`, `zeit`, `internebemerkung`) VALUES ('".$von_typ."','".$von_id."','kontorahmen', '".$account_id."', '".$datum."', '".-$betrag."', '".$waehrung."', '".$this->app->User->GetID()."','".date("Y-m-d H:i")."', '')";
 //                                    echo($sql."\n");
 //                                $this->app->DB->Insert($sql);  
-                                    $this->fibu_buchungen_buchen($von_typ, $von_id, 'kontorahmen', $account_id, -$betrag, $waehrung, $datum, '');
+                                    $this->fibu_buchungen_buchen($von_typ, $von_id, 'kontorahmen', $account_id, -$betrag, $waehrung, $datum, '', $buchungsschluessel);
                             break;
                             case 'vorschlag_diff_sachkonto':
                                 if ($doc_id) {              
@@ -900,6 +1136,14 @@ class Fibu_buchungen {
         // For transfer to tablesearch    
         $doc_typ = $this->app->Secure->GetGET('typ');
         $this->app->User->SetParameter('fibu_buchungen_doc_typ', $doc_typ);
+        $this->app->Tpl->Set('IS_KONTOAUSZUEGE', $doc_typ === 'kontoauszuege' ? '1' : '0');
+        $this->app->Tpl->Set(
+            'BUCHUNGSSCHLUESSEL_OPTIONS',
+            $this->app->erp->getSelectAsso(
+                $this->getBuchungsschluesselOptions($buchungsschluessel),
+                $buchungsschluessel
+            )
+        );
 
         $this->app->erp->Headlines('Buchhaltung','zuordnen '.strtoupper($doc_typ));
 

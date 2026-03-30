@@ -21,6 +21,14 @@
                                 <table width="100%" border="0" class="mkTableFormular">                                    
                                     <tr>
                                         <td>
+                                            {|Bezeichnung|}:
+                                        </td>
+                                        <td>
+                                            <input type="text" name="bezeichnung" id="bezeichnung" value="[BEZEICHNUNG]" size="40" [SAVEDISABLED]>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>
                                             {|Menge|}:
                                         </td>
                                         <td>

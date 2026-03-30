@@ -1,0 +1,82 @@
+services:
+  app_init:
+    image: openxe:test
+    volumes:
+      - confdata:/var/www/html/conf
+    working_dir: /var/www/html/upgrade
+    entrypoint:
+      - /bin/sh
+      - -lc
+      - |
+        if [ -f /var/www/html/conf/user.inc.php ]; then
+          php data/upgrade.php -db -do
+        else
+          echo "Skipping app_init: conf/user.inc.php not found. Run setup at http://localhost:8081 first."
+        fi
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: openxe:test
+    volumes:
+      - confdata:/var/www/html/conf
+    tmpfs:
+      - /tmp:size=256m
+      - /var/tmp:size=256m
+    cpus: ${OPENXE_APP_CPUS:-6.0}
+    mem_limit: ${OPENXE_APP_MEM_LIMIT:-4g}
+    ports:
+      - "8081:80"
+    depends_on:
+      app_init:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+
+  mysql:
+    image: mariadb:10.6
+    command:
+      - --innodb-page-size=32k
+      - --innodb-buffer-pool-size=${OPENXE_DB_BUFFER_POOL_SIZE:-4096M}
+      - --innodb-buffer-pool-instances=${OPENXE_DB_BUFFER_POOL_INSTANCES:-4}
+      - --innodb-log-file-size=256M
+      - --innodb-log-buffer-size=64M
+      - --innodb-flush-log-at-trx-commit=2
+      - --sync-binlog=0
+      - --skip-name-resolve
+      - --tmp-table-size=128M
+      - --max-heap-table-size=128M
+      - --thread-cache-size=64
+      - --table-open-cache=4096
+      - --performance-schema=OFF
+    cpus: ${OPENXE_DB_CPUS:-6.0}
+    mem_limit: ${OPENXE_DB_MEM_LIMIT:-8g}
+    environment:
+      MYSQL_ROOT_PASSWORD: "rootpw"
+      MYSQL_USER: "openxe"
+      MYSQL_PASSWORD: "openxe"
+      MYSQL_DATABASE: "openxe"
+      MARIADB_AUTO_UPGRADE: "1"
+    volumes:
+      - mysqldata:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      interval: 5s
+      retries: 3
+      test:
+        [
+          "CMD",
+          "healthcheck.sh",
+          "--connect",
+          "--innodb_initialized"
+        ]
+      timeout: 30s
+
+volumes:
+  mysqldata: {}
+  confdata: {}

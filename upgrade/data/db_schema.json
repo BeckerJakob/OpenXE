@@ -21527,6 +21527,39 @@
                     "Comment": ""
                 },
                 {
+                    "Field": "bestellung_ok",
+                    "Type": "int(1)",
+                    "Collation": null,
+                    "Null": "NO",
+                    "Key": "",
+                    "Default": null,
+                    "Extra": "",
+                    "Privileges": "select,insert,update,references",
+                    "Comment": ""
+                },
+                {
+                    "Field": "bezahlung_ok",
+                    "Type": "int(1)",
+                    "Collation": null,
+                    "Null": "NO",
+                    "Key": "",
+                    "Default": null,
+                    "Extra": "",
+                    "Privileges": "select,insert,update,references",
+                    "Comment": ""
+                },
+                {
+                    "Field": "lieferschein_ok",
+                    "Type": "int(1)",
+                    "Collation": null,
+                    "Null": "NO",
+                    "Key": "",
+                    "Default": null,
+                    "Extra": "",
+                    "Privileges": "select,insert,update,references",
+                    "Comment": ""
+                },
+                {
                     "Field": "porto_ok",
                     "Type": "int(1)",
                     "Collation": null,
@@ -22996,6 +23029,17 @@
                     "Null": "YES",
                     "Key": "",
                     "Default": null,
+                    "Extra": "",
+                    "Privileges": "select,insert,update,references",
+                    "Comment": ""
+                },
+                {
+                    "Field": "sortierdatum",
+                    "Type": "timestamp",
+                    "Collation": null,
+                    "Null": "NO",
+                    "Key": "",
+                    "Default": "current_timestamp()",
                     "Extra": "",
                     "Privileges": "select,insert,update,references",
                     "Comment": ""
@@ -39458,6 +39502,17 @@
                     "Null": "NO",
                     "Key": "",
                     "Default": "'EUR'",
+                    "Extra": "",
+                    "Privileges": "select,insert,update,references",
+                    "Comment": ""
+                },
+                {
+                    "Field": "buchungsschluessel",
+                    "Type": "varchar(32)",
+                    "Collation": "utf8mb3_general_ci",
+                    "Null": "NO",
+                    "Key": "",
+                    "Default": "''",
                     "Extra": "",
                     "Privileges": "select,insert,update,references",
                     "Comment": ""
@@ -70169,6 +70224,39 @@
                 },
                 {
                     "Field": "lager_ok",
+                    "Type": "int(1)",
+                    "Collation": null,
+                    "Null": "NO",
+                    "Key": "",
+                    "Default": null,
+                    "Extra": "",
+                    "Privileges": "select,insert,update,references",
+                    "Comment": ""
+                },
+                {
+                    "Field": "bestellung_ok",
+                    "Type": "int(1)",
+                    "Collation": null,
+                    "Null": "NO",
+                    "Key": "",
+                    "Default": null,
+                    "Extra": "",
+                    "Privileges": "select,insert,update,references",
+                    "Comment": ""
+                },
+                {
+                    "Field": "bezahlung_ok",
+                    "Type": "int(1)",
+                    "Collation": null,
+                    "Null": "NO",
+                    "Key": "",
+                    "Default": null,
+                    "Extra": "",
+                    "Privileges": "select,insert,update,references",
+                    "Comment": ""
+                },
+                {
+                    "Field": "lieferschein_ok",
                     "Type": "int(1)",
                     "Collation": null,
                     "Null": "NO",
@@ -111556,7 +111644,7 @@
                     "Extra": "",
                     "Privileges": "select,insert,update,references",
                     "Comment": ""
-                },                        
+                },
                 {
                     "Field": "skonto",
                     "Type": "decimal(10,2)",
@@ -111776,8 +111864,8 @@
                     "Extra": "",
                     "Privileges": "select,insert,update,references",
                     "Comment": ""
-                },                
-		{
+                },
+                {
                     "Field": "ustid",
                     "Type": "varchar(64)",
                     "Collation": "utf8mb3_general_ci",
@@ -111889,7 +111977,7 @@
                     "Extra": "",
                     "Privileges": "select,insert,update,references",
                     "Comment": ""
-                },         
+                },
                 {
                     "Field": "waehrung",
                     "Type": "varchar(255)",
@@ -114214,7 +114302,7 @@
                         "lieferschein_position"
                     ],
                     "Non_unique": "UNIQUE"
-                } 
+                }
             ]
         },
         {

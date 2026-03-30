@@ -112,7 +112,7 @@ class Auftrag extends GenAuftrag
 
         $heading = array('','', 'Auftrag', 'Vom', 'Kd-Nr.', 'Kunde', 'Land', 'Projekt', 'Zahlung', 'Betrag '.($kleinunternehmer?'netto':'brutto'));
         $width = array('1%','1%', '10%', '10%', '10%', '31%', '5%', '1%', '1%', '1%', '1%', '1%');
-        $findcols = array('open','a.belegnr', 'a.belegnr', 'a.datum'
+        $findcols = array('open','a.belegnr', 'a.belegnr', 'a.sortierdatum'
         ,$useAddr? 'if(a.lieferantenauftrag=1,adr.lieferantennummer,adr.kundennummer)':'a.lieferantkdrnummer',
           'a.name', 'a.land',
           //'p.abkuerzung',
@@ -130,7 +130,7 @@ class Auftrag extends GenAuftrag
           $searchsql[] = $projectCol;
         }
         $alignright = array('10');
-        $defaultorder = 13; //Optional wenn andere Reihenfolge gewuenscht
+        $defaultorder = 3; //Optional wenn andere Reihenfolge gewuenscht
         $hide767 = array('5');
         $defaultorderdesc = 1;
 
@@ -234,15 +234,19 @@ class Auftrag extends GenAuftrag
               ),
               ''
             )
-          ) AS `auftrag`,
-          DATE_FORMAT(a.datum,'%d.%m.%Y') AS `vom`,
+          ) AS `auftrag`, 
+          DATE_FORMAT(a.sortierdatum,'%d.%m.%Y %H:%i') AS `vom`, 
           a.lieferantkdrnummer AS `kunde`,
           CONCAT(
             " . $this->app->erp->MarkerUseredit("a.name", "a.useredittimestamp") . ",
             IF(
               a.internebemerkung = '',
               '',
-              ' <font color=red><strong>*</strong></font>'
+              CONCAT(
+                ' <font color=red title=\"',
+                REPLACE(a.internebemerkung, '\"', '&quot;'),
+                '\"><strong>*</strong></font>'
+              )
             ),
             IF(
               a.freitext = '',
@@ -745,6 +749,98 @@ class Auftrag extends GenAuftrag
 
 
         break;
+        case 'positionen_teillieferschein':
+            $id = (int)$app->Secure->GetGET('id');
+            $allowed['positionen_teillieferschein'] = array('list');
+            
+            // Überschriften erweitert um "Lager"
+            $heading = array('Position', 'Artikel', 'Nr.', 'Bestellt', 'Bereits im LS', 'Lager (Physisch)', 'Verfügbar (Netto)', 'Menge f&uuml;r diesen LS', '');
+            $width = array('1%', '30%', '10%', '5%', '5%', '10%', '10%', '5%', '5%');
+
+            $findcols = array('ap.sort', 'a.name_de', 'a.nummer', 'ap.menge', 'bereits_geliefert', 'lager', 'verfuegbar_netto', 'teilmenge');
+            $searchsql = array('');
+
+            $defaultorder = 2;
+            $defaultorderdesc = 0;
+
+            // SQL für bereits gelieferte Mengen
+            $bereits_geliefert_sql = "IFNULL((SELECT SUM(lp.menge) FROM lieferschein_position lp JOIN lieferschein l ON lp.lieferschein = l.id WHERE lp.auftrag_position_id = ap.id AND l.status != 'storniert'), 0)";
+
+            // Lager-Logik (Physisch)
+            $lager_sql = "IF(a.lagerartikel, 
+                            IFNULL(
+                                (SELECT IF(SUM(l.menge) > 0, TRIM(SUM(l.menge))+0, '<font color=red><b>aus</b></font>') 
+                                 FROM lager_platz_inhalt l WHERE l.artikel=ap.artikel), 
+                                '<font color=red><b>aus</b></font>'
+                            ), 
+                          '-')";
+
+            // Verfügbar Netto Logic: Physisch - (Alle Reservierungen - Reservierungen für diesen Auftrag)
+            // Reservierungen für diesen Auftrag ignorieren wir, da wir diese ja gerade erfüllen wollen.
+            // (r.objekt != 'auftrag' OR r.parameter != $id)
+            // UPDATE: Wir müssen abziehen, was bereits in unversendeten Lieferscheinen für diesen Auftrag liegt, 
+            // da diese Ware zwar physisch da ist (noch nicht gebucht), aber logisch schon "weg" ist.
+            
+            $bereits_im_ls_unversendet_sql = "IFNULL((SELECT SUM(lp.menge) FROM lieferschein_position lp JOIN lieferschein l ON lp.lieferschein = l.id WHERE lp.auftrag_position_id = ap.id AND l.status != 'storniert' AND l.versendet = 0), 0)";
+
+            $verfuegbar_netto_sql = "
+                (
+                    IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
+                    - 
+                    IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r 
+                        WHERE r.artikel = ap.artikel 
+                        AND (
+                            -- Ignoriere Reservierung des aktuellen Auftrags
+                            NOT (r.objekt = 'auftrag' AND r.parameter = $id)
+                            AND 
+                            -- NEU: Ignoriere Reservierung von Lieferscheinen DIESES Auftrags (da wir diese unten separat abziehen)
+                            NOT (r.objekt = 'lieferschein' AND r.parameter IN (SELECT id FROM lieferschein WHERE auftragid = $id))
+                        )
+                    ), 0)
+                    -
+                    $bereits_im_ls_unversendet_sql
+                )
+            ";
+            
+            // Input für die Teilmenge
+            // Value = GREATEST(0, LEAST(Offene Menge, Netto Verfügbar))
+            $offene_menge_sql = "(ap.menge - $bereits_geliefert_sql)";
+            
+            $input_for_menge = "CONCAT(
+                        '<input type=\"number\" step=\"any\" min=\"0\" max=\"',
+                        GREATEST(0, $verfuegbar_netto_sql),
+                        '\" name=\"teilmenge_',
+                        ap.id,
+                        '\" value=\"',
+                        GREATEST(0, LEAST($offene_menge_sql, $verfuegbar_netto_sql)),
+                        '\">'
+                    )";
+            
+            $sql = "SELECT SQL_CALC_FOUND_ROWS 
+                    ap.sort, 
+                    ap.sort, 
+                    a.name_de, 
+                    a.nummer,
+                    " . $this->app->erp->FormatMenge('ap.menge') . " as auftragsmenge,
+                    $bereits_geliefert_sql as bereits_geliefert,
+                    $lager_sql as lager,
+                    IF($verfuegbar_netto_sql > 0, TRIM($verfuegbar_netto_sql)+0, CONCAT('<font color=red><b>', TRIM($verfuegbar_netto_sql)+0, '</b></font>')) as verfuegbar_netto_display,
+                    $input_for_menge
+                    FROM auftrag_position ap 
+                    INNER JOIN artikel a ON ap.artikel = a.id";
+
+            $where = " ap.auftrag = $id 
+                       AND a.lagerartikel = 1 
+                       AND a.geloescht = 0 
+                       HAVING (auftragsmenge - bereits_geliefert) > 0";
+             
+            $count = "SELECT count(DISTINCT ap.id) 
+                      FROM auftrag_position ap 
+                      INNER JOIN artikel a ON ap.artikel = a.id 
+                      WHERE ap.auftrag = $id 
+                      AND a.lagerartikel = 1 
+                      AND a.geloescht = 0";
+        break;
         case 'positionen_teillieferung':
 
                 $id = $app->Secure->GetGET('id');
@@ -848,6 +944,9 @@ class Auftrag extends GenAuftrag
         auf.id,
         auf.status,
         auf.lager_ok,
+        auf.bestellung_ok,
+        auf.bezahlung_ok,
+        auf.lieferschein_ok,
         auf.porto_ok,
         auf.ust_ok,
         auf.vorkasse_ok,
@@ -956,6 +1055,7 @@ class Auftrag extends GenAuftrag
     $this->app->ActionHandler("lieferschein","AuftragLieferschein");
     $this->app->ActionHandler("lieferscheinrechnung","AuftragLieferscheinRechnung");
     $this->app->ActionHandler("teillieferung","AuftragTeillieferung");
+    $this->app->ActionHandler("teillieferschein", "AuftragTeilLieferschein");
     $this->app->ActionHandler("nachlieferung","AuftragNachlieferung");
     //    $this->app->ActionHandler("versand","AuftragVersand");
     $this->app->ActionHandler("freigabe","AuftragFreigabe");
@@ -987,6 +1087,8 @@ class Auftrag extends GenAuftrag
     $this->app->ActionHandler("alsfreigegeben", "AuftragAlsfreigegeben");
     $this->app->ActionHandler("steuer", "AuftragSteuer");
     $this->app->ActionHandler("berechnen", "Auftraegeberechnen");
+
+    $this->app->ActionHandler("supplierorder", "AuftragLieferantBestellen");
 
     $this->app->ActionHandler("offene", "AuftragOffenePositionen");
 
@@ -1254,6 +1356,108 @@ class Auftrag extends GenAuftrag
     $this->app->Tpl->Parse('PAGE','tabview.tpl');
   }
 
+  function AuftragLieferantBestellen()
+  {
+    $id = (int)$this->app->Secure->GetGET("id");
+    
+    // Get Order Positions
+    $sql = "SELECT ap.id, ap.artikel, ap.menge, ap.beschreibung, art.adresse as lieferant 
+            FROM auftrag_position ap
+            JOIN artikel art ON ap.artikel = art.id
+            WHERE ap.auftrag = $id AND art.lagerartikel = 1 AND art.typ != 'pauschale' AND art.typ != 'service'";
+            
+    $positions = $this->app->DB->SelectArr($sql);
+    
+    if(!is_array($positions)) {
+         $msg = $this->app->erp->base64_url_encode("<div class='warning'>Keine Positionen gefunden.</div>");
+         $this->app->Location->execute("index.php?module=auftrag&action=edit&id=$id&msg=$msg");
+         return;
+    }
+
+    $orders = []; // supplier_id => [ items ]
+    $stock_cache = [];
+
+    foreach($positions as $pos) {
+        $artID = $pos['artikel'];
+        $menge = $pos['menge'];
+        
+        if(!isset($stock_cache[$artID])) {
+            $stockSql = "SELECT SUM(lpi.menge) 
+                         FROM lager_platz_inhalt lpi 
+                         INNER JOIN lager_platz lp ON lp.id = lpi.lager_platz
+                         WHERE lpi.artikel = $artID AND lp.sperrlager = 0";
+            $currentStock = $this->app->DB->Select($stockSql);
+            $stock_cache[$artID] = ($currentStock) ? $currentStock : 0;
+        }
+        
+        if($stock_cache[$artID] >= $menge) {
+             $stock_cache[$artID] -= $menge;
+             continue; // Covered
+        }
+        
+        $missing = $menge - $stock_cache[$artID];
+        $stock_cache[$artID] = 0; // consumed all stock
+        
+        if($missing > 0) {
+            $lieferant = $pos['lieferant'];
+            if(!$lieferant) continue; // No supplier linked to article
+            
+            $orders[$lieferant][] = [
+                'artikel' => $artID,
+                'menge' => $missing,
+                'beschreibung' => $pos['beschreibung'],
+                'auftrag_position_id' => $pos['id']
+            ];
+        }
+    }
+    
+    // Get Application Project if available
+    $projekt = $this->app->DB->Select("SELECT projekt FROM auftrag WHERE id='$id'");
+
+    // Create Orders
+    $created_count = 0;
+    foreach($orders as $lieferant => $items) {
+        $bestellid = $this->app->erp->CreateBestellung(['adresse' => $lieferant]);
+        if($bestellid) {
+             $this->app->erp->LoadBestellungStandardwerte($bestellid, $lieferant);
+             
+             // Update Project
+             if($projekt > 0) {
+                 $this->app->DB->Update("UPDATE bestellung SET projekt='$projekt' WHERE id='$bestellid'");
+             }
+
+             $created_count++;
+             $this->app->erp->BestellungProtokoll($bestellid, "Automatisch aus Auftrag $id angelegt");
+             
+             foreach($items as $item) {
+                 $preisid = $this->app->erp->Einkaufspreis($item['artikel'], $item['menge'], $lieferant);
+                 $artikelohnepreis = ($preisid === null) ? $item['artikel'] : null;
+                 
+                 $this->app->erp->AddBestellungPosition(
+                    $bestellid, 
+                    $preisid, 
+                    $item['menge'], 
+                    '', 
+                    $item['beschreibung'], 
+                    $artikelohnepreis, 
+                    '', 
+                    '', 
+                    $item['auftrag_position_id']
+                 );
+             }
+             $this->app->erp->BestellungNeuberechnen($bestellid);
+        }
+    }
+    
+    if($created_count > 0) {
+        $msg = $this->app->erp->base64_url_encode("<div class='success'>$created_count Bestellungen erfolgreich angelegt.</div>");
+    } else {
+        $msg = $this->app->erp->base64_url_encode("<div class='info'>Alle Artikel sind auf Lager oder kein Lieferant zugeordnet. Bestand reicht aus.</div>");
+    }
+    
+    $this->app->Location->execute("index.php?module=auftrag&action=edit&id=$id&msg=$msg");
+  }
+
   function AuftragUpdateVerband()
   {
     $id=$this->app->Secure->GetGET("id");
@@ -1467,8 +1671,67 @@ class Auftrag extends GenAuftrag
     //$art = $this->app->DB->Select("SELECT art FROM auftrag WHERE id='$id' LIMIT 1");
     $alleartikelreservieren = '';
 
-    if ($status==='angelegt' || $status==='freigegeben') {
-        $teillieferungen = '<option value="teillieferung">Teilauftrag erstellen</option>';
+    // 1. Prüfen, ob bereits ein Lieferschein existiert (Szenario 1)
+    $vorhandenerLS = $this->app->DB->Select(sprintf(
+        "SELECT id FROM lieferschein WHERE auftragid = %d AND status != 'storniert' LIMIT 1", 
+        $id
+    ));
+
+    // 2. Prüfen, ob für ALLE Lagerartikel genug Netto-Bestand da ist (Szenario 4)
+    // Wir suchen nach MINDESTENS EINEM Artikel, der NICHT voll lieferbar ist.
+    $artikelFehlend = $this->app->DB->Select(sprintf("
+        SELECT ap.id 
+        FROM auftrag_position ap
+        INNER JOIN artikel a ON ap.artikel = a.id
+        WHERE ap.auftrag = %d 
+        AND a.lagerartikel = 1
+        AND (ap.menge - (
+            IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
+            - 
+            IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.parameter != %d OR r.objekt != 'auftrag')), 0)
+        )) > 0.0001
+        LIMIT 1
+    ", $id, $id));
+
+    // 3. Prüfen, ob überhaupt noch etwas offen ist (nicht geliefert)
+    $offenePositionen = $this->app->DB->Select(sprintf("
+        SELECT ap.id 
+        FROM auftrag_position ap
+        WHERE ap.auftrag = %d 
+        AND (ap.menge - IFNULL((SELECT SUM(lp.menge) FROM lieferschein_position lp JOIN lieferschein l ON lp.lieferschein = l.id WHERE lp.auftrag_position_id = ap.id AND l.status != 'storniert'), 0)) > 0.0001
+        LIMIT 1
+    ", $id));
+
+    // 4. Prüfen, ob MINDESTENS ein Artikel lieferbar ist
+    $mindestensEinerLieferbar = $this->app->DB->Select(sprintf("
+        SELECT ap.id 
+        FROM auftrag_position ap
+        INNER JOIN artikel a ON ap.artikel = a.id
+        WHERE ap.auftrag = %d 
+        AND a.lagerartikel = 1
+        -- Nur betrachten, wenn Position noch offen ist (Menge > Geliefert)
+        AND (ap.menge - IFNULL((SELECT SUM(lp.menge) FROM lieferschein_position lp JOIN lieferschein l ON lp.lieferschein = l.id WHERE lp.auftrag_position_id = ap.id AND l.status != 'storniert'), 0)) > 0.0001
+        -- Und Bestand verfügbar ist
+        AND (
+            IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
+            - 
+            IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.parameter != %d OR r.objekt != 'auftrag')), 0)
+        ) > 0.0001
+        LIMIT 1
+    ", $id, $id));
+
+    $optionDelivery = '';
+    $teillieferungen = '';
+
+    if ($status === 'freigegeben' && $offenePositionen) {
+        // Bedingung: Kein LS vorhanden UND Alles auf Lager
+        if (!$vorhandenerLS && !$artikelFehlend) {
+            $optionDelivery = '<option value="delivery">Lieferschein erstellen</option>';
+        } 
+        // Bedingung: LS vorhanden ODER nicht alles auf Lager (aber mindestens einer lieferbar)
+        elseif ($mindestensEinerLieferbar) {
+            $teillieferungen = '<option value="teillieferschein">Teillieferschein erstellen</option>';
+        }
     }
 
     if($status==='freigegeben') {
@@ -1552,14 +1815,60 @@ class Auftrag extends GenAuftrag
       $extendtext = 'HINWEIS: Es existiert bereits eine Rechnung zu diesem Auftrag! ';
     }
 
-    if($lieferantenauftrag!='1') {
-      $alsrechnung = '<option value="invoice">als Rechnung weiterf&uuml;hren</option>';
+    $alsrechnung = '';
+    if($lieferantenauftrag != '1') {
+      $alsrechnung = '<option value="invoice">Rechnung erstellen</option>';
+      if($checkifrgexists>0) {
+        $alsrechnung = '<option value="invoice">Weitere Rechnung erstellen</option>';
+      }
     }
 
     $hookoption = '';
     $hookcase = '';
     $this->app->erp->RunHook('Auftrag_Aktion_option',3, $id, $status, $hookoption);
     $this->app->erp->RunHook('Auftrag_Aktion_case',3, $id, $status, $hookcase);
+
+    $showSupplierOrder = false;
+    $positions = $this->app->DB->SelectArr("SELECT ap.id, ap.artikel, ap.menge FROM auftrag_position ap JOIN artikel art ON ap.artikel = art.id WHERE ap.auftrag = '$id' AND art.lagerartikel = 1 AND art.typ != 'pauschale' AND art.typ != 'service'");
+    if (is_array($positions)) {
+       $stock_cache = [];
+       foreach ($positions as $pos) {
+          $artID = $pos['artikel'];
+          if (!isset($stock_cache[$artID])) {
+               $stockSql = "SELECT SUM(lpi.menge) 
+                            FROM lager_platz_inhalt lpi 
+                            INNER JOIN lager_platz lp ON lp.id = lpi.lager_platz
+                            WHERE lpi.artikel = $artID AND lp.sperrlager = 0";
+               $currentStock = $this->app->DB->Select($stockSql);
+               $stock_cache[$artID] = ($currentStock) ? $currentStock : 0;
+          }
+          
+          $ordered = $this->app->DB->Select("SELECT SUM(bp.menge) FROM bestellung_position bp JOIN bestellung b ON bp.bestellung = b.id WHERE bp.auftrag_position_id = '". $pos['id'] ."' AND b.status != 'storniert'");
+          $ordered = ($ordered) ? $ordered : 0;
+          
+          $needed = $pos['menge'] - $ordered;
+          
+          if ($needed > 0) {
+             if ($stock_cache[$artID] >= $needed) {
+                 $stock_cache[$artID] -= $needed;
+             } else {
+                 $showSupplierOrder = true;
+                 break;
+             }
+          }
+       }
+    }
+    
+    $supplierorder = '';
+    if($showSupplierOrder) {
+        $supplierorder = '<option value="supplierorder">Fehlende Artikel bestellen</option>';
+    }
+
+    $lagermenu = '';
+    if($supplierorder != '' || $optionDelivery != '' || $teillieferungen != '') {
+        $lagermenu = "<optgroup label=\"Lager & Logistik\">$supplierorder $optionDelivery $teillieferungen</optgroup>";
+    }
+
     $menu ="
 
       <script type=\"text/javascript\">
@@ -1575,9 +1884,13 @@ class Auftrag extends GenAuftrag
           case 'teillieferung':
             window.location.href='index.php?module=auftrag&action=teillieferung&id=%value%';
           break;
+          case 'teillieferschein': 
+            window.location.href='index.php?module=auftrag&action=teillieferschein&id=%value%'; 
+          break;
           case 'anfrage':   if(!confirm('Wirklich rückführen?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=auftrag&action=anfrage&id=%value%'; break;
           case 'kreditlimit':       if(!confirm('Wirklich Kreditlimit für diesen Auftrag freigeben?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=auftrag&action=kreditlimit&id=%value%'; break;
           case 'copy': if(!confirm('Wirklich kopieren?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=auftrag&action=copy&id=%value%'; break;
+          case 'supplierorder': if(!confirm('Wirklich Bestellungen für fehlende Artikel bei Lieferanten anlegen?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=auftrag&action=supplierorder&id=%value%'; break;
           case 'delivery': if(!confirm('Wirklich als Lieferschein weiterführen?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=auftrag&action=lieferschein&id=%value%'; break;
           case 'deliveryinvoice': if(!confirm('Wirklich als Lieferschein und Rechnung weiterführen und Artikel automatisch aus Lager abziehen?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=auftrag&action=lieferscheinrechnung&id=%value%'; break;
           case 'invoice': if(!confirm('".$extendtext."Wirklich als Rechnung weiterführen?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=auftrag&action=rechnung&id=%value%'; break;
@@ -1610,35 +1923,43 @@ class Auftrag extends GenAuftrag
 
 
       Aktion:&nbsp;<select id=\"aktion$prefix\" onchange=\"onchangeauftrag(this.value);\">
-      <option>bitte w&auml;hlen ...</option>
-      $storno
-      <option value=\"copy\">Auftrag kopieren</option>
-      $freigabe
-      <option value=\"abschicken\">Auftrag abschicken</option>
-      <!--<option value=\"proforma\">Proforma Rechnung &ouml;ffnen</option>-->
-      $alsbestellung
-      $alsproduktion
-      <option value=\"delivery\">als Lieferschein weiterf&uuml;hren</option>
-      $alsrechnung
-      $proformarechnungoption
-      <option value=\"abschluss\">als abgeschlossen markieren</option>
-      $alsfreigegeben
-      <!--<option value=\"deliveryinvoice\">manuell weiterf&uuml;hren + ausbuchen</option>-->
-      $kreditlimit
-      $teillieferungen
-      $auswahlentsprechendkommissionierung
-      $zertifikatoption
-      $artikeleinlagern
-      $artikelauslagern
-      $shopexport
-      $optionlieferkette
-      $optioncustom
-      $optionhook
-      $optionbelegeimport
-      $alleartikelreservieren
-      $hookoption
-      <option value=\"etiketten\">Etiketten drucken</option>
-      <option value=\"pdf\">PDF &ouml;ffnen</option>
+        <option>bitte w&auml;hlen ...</option>
+        
+        <!--<option value=\"copy\">Auftrag kopieren</option>-->
+        <!--<option value=\"proforma\">Proforma Rechnung &ouml;ffnen</option>-->
+        <!--<option value=\"deliveryinvoice\">manuell weiterf&uuml;hren + ausbuchen</option>-->
+        <!-- $auswahlentsprechendkommissionierung -->
+        <!-- $artikeleinlagern -->
+        <!-- $artikelauslagern -->
+        <!-- $shopexport -->
+        <!-- $optionlieferkette -->
+        <!-- $optioncustom -->
+        <!-- $optionhook -->
+        <!-- $optionbelegeimport -->
+        <!-- $alleartikelreservieren -->
+        <!-- $hookoption -->
+        <!-- <option value=\"etiketten\">Etiketten drucken</option> -->
+        <!-- $proformarechnungoption -->
+        <!-- $alsfreigegeben -->
+        <!-- $kreditlimit -->
+        <!-- $zertifikatoption -->
+
+        $lagermenu
+        
+        <optgroup label=\"Buchhaltung\">
+         $alsrechnung <!-- LABEL: Rechnung erstellen -->
+        </optgroup>
+        
+        <optgroup label=\"Auftrag\">
+          <option value=\"abschluss\">Auftrag abschliessen</option>
+          $freigabe <!-- LABEL: Auftrag freigeben -->
+          $storno <!-- LABEL: Auftrag stornieren -->
+        </optgroup>
+
+        <optgroup label=\"Dokument\">
+          <option value=\"pdf\">PDF herunterladen</option>
+          <option value=\"abschicken\">Dokument versenden</option>
+        </optgroup>
       </select>&nbsp;
 
     <a href=\"index.php?module=auftrag&action=pdf&id=%value%\" title=\"PDF\"><img border=\"0\" src=\"./themes/new/images/pdf.svg\"></a>";
@@ -3854,7 +4175,31 @@ class Auftrag extends GenAuftrag
 
   public function AuftragLieferschein()
   {
-    $id = $this->app->Secure->GetGET('id');
+    $id = (int)$this->app->Secure->GetGET('id');
+
+    // Sicherheits-Check: Existiert bereits ein Lieferschein?
+    $vorhandenerLS = $this->app->DB->Select("SELECT id FROM lieferschein WHERE auftragid='$id' AND status!='storniert' LIMIT 1");
+    
+    if ($vorhandenerLS) {
+        $msg = $this->app->erp->base64_url_encode('<div class="error">Aktion abgebrochen: Es existieren bereits Teil-Lieferscheine. Bitte nutzen Sie "Teillieferschein erstellen".</div>');
+        $this->app->Location->execute("index.php?module=auftrag&action=edit&id=$id&msg=$msg");
+        return;
+    }
+    
+    // Sicherheits-Check: Ist wirklich alles da?
+    $artikelFehlend = $this->app->DB->Select(sprintf("
+        SELECT ap.id FROM auftrag_position ap INNER JOIN artikel a ON ap.artikel = a.id
+        WHERE ap.auftrag = %d AND a.lagerartikel = 1
+        AND ap.menge > (IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
+        - IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.parameter != %d OR r.objekt != 'auftrag')), 0))
+        LIMIT 1", $id, $id));
+
+    if ($artikelFehlend) {
+        $msg = $this->app->erp->base64_url_encode('<div class="error">Aktion abgebrochen: Nicht alle Artikel sind ausreichend auf Lager.</div>');
+        $this->app->Location->execute("index.php?module=auftrag&action=edit&id=$id&msg=$msg");
+        return;
+    }
+
     $posids = $this->app->Secure->GetGET('posids');
     if($posids)
     {
@@ -5276,6 +5621,29 @@ class Auftrag extends GenAuftrag
         }
       }
 
+      // #106 --- START: GUTSCHRIFTEN LADEN ---
+      $foundInvoiceIds = array_keys($rechnungen);
+
+    if(!empty($foundInvoiceIds)) {
+        $idList = implode(',', $foundInvoiceIds);
+
+        $gutschriften = $this->app->DB->SelectPairs(
+            "SELECT id, belegnr FROM gutschrift WHERE rechnungid IN ($idList)"
+        );
+
+        // 4. Buttons generieren
+        if(!empty($gutschriften)) {
+            foreach($gutschriften as $gsId => $gsNumber) {
+                $optional .= "&nbsp;<input type=\"button\" value=\"GS "
+                    .$gsNumber
+                    ."\" onclick=\"window.location.href='index.php?module=gutschrift&action=edit&id="
+                    .$gsId."'\">";
+            }
+        }
+    }
+
+    // --- ENDE: GUTSCHRIFTEN LADEN ---
+
       $projekt = $this->app->DB->Select("SELECT projekt from auftrag where id = '$id' LIMIT 1");
 
     if ($kommissioniert) {
@@ -5751,7 +6119,7 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
     $zusatzcheck = true;
     $this->app->erp->RunHook('AuftragVersandZusatzcheck', 2, $id, $zusatzcheck);
     if(($auftrag[0]['status']==='freigegeben' && $auftrag[0]['nachlieferung']=='0'
-        && $auftrag[0]['lager_ok']=='1'&&$auftrag[0]['porto_ok']=='1'&&$auftrag[0]['ust_ok']=='1'
+        && $auftrag[0]['lager_ok']=='1'&&$auftrag[0]['bestellung_ok']=='1'&&$auftrag[0]['bezahlung_ok']=='1'&&$auftrag[0]['lieferschein_ok']=='1'&&$auftrag[0]['porto_ok']=='1'&&$auftrag[0]['ust_ok']=='1'
         && $auftrag[0]['vorkasse_ok']=='1'&&$auftrag[0]['nachnahme_ok']=='1' &&($auftrag[0]['liefertermin_ok']=='1' || $ignoriereliefertermin)
         && $auftrag[0]['check_ok']=='1' && $auftrag[0]['autoversand']=='1'
         && $auftrag[0]['kreditlimit_ok']=='1' && $auftrag[0]['liefersperre_ok']=='1' && ($useredittimestamp > 45 || $useredittimestamp <= 0 || $internmodus)
@@ -6431,7 +6799,6 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
 
   public function AuftragAmpel($id,$parsetarget)
   {
-/*
     $status = $this->app->DB->Select("SELECT status FROM auftrag WHERE id='$id' LIMIT 1");
 
     if($status=='abgeschlossen' || $status=='storniert')
@@ -6455,17 +6822,19 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
     $subsql = "'0' as ist,";
     $sql .= $subsql. "if(a.check_ok,'','<a href=\"index.php?module=auftrag&action=checkdisplay&id=1031&frame=false\" onclick=\"makeRequest(this); return false;\">$check</a>') as AC,
 
-        if(a.reserviert_ok,'$reserviert','') as AR,
-        if(a.lager_ok,'$go','$stop') as LA,
-        if(a.porto_ok,'$go','$stop') as PO,
-        if(a.ust_ok,'$go',CONCAT('<a href=\"/index.php?module=adresse&action=ustprf&id=',a.adresse,'\">','$stop','</a>')) as ST,
-        if(a.vorkasse_ok,'$go','$stop') as ZE,
-        if(a.nachnahme_ok,'$go','$stop') as N,
-        if(a.autoversand,'$go','$stop') as A,
-        if(a.liefertermin_ok,'$go','$stop') as LT,
+        if(a.reserviert_ok,'$reserviert','') as AR, 
+        if(a.lager_ok,'$go','$stop') as LA, 
+        if(a.bestellung_ok,'$go','$stop') as BE, 
+        if(a.bezahlung_ok,'$go','$stop') as BEZ, 
+        if(a.lieferschein_ok,'$go','$stop') as LS, 
+        if(a.porto_ok,'$go','$stop') as PO, 
+        if(a.ust_ok,'$go',CONCAT('<a href=\"/index.php?module=adresse&action=ustprf&id=',a.adresse,'\">','$stop','</a>')) as ST, 
+        if(a.vorkasse_ok,'$go','$stop') as ZE, 
+        if(a.nachnahme_ok,'$go','$stop') as N, 
+        if(a.autoversand,'$go','$stop') as A, 
+        if(a.liefertermin_ok,'$go','$stop') as LT, 
         a.id
         FROM auftrag a, projekt p WHERE a.inbearbeitung=0 AND p.id=a.projekt AND a.id=$id LIMIT 1";
-  */
 
     $table = new EasyTable($this->app);
     $sql = "
@@ -7524,6 +7893,205 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
 
     $this->app->Tpl->Parse('PAGE','auftrag_teillieferung.tpl');
   } // AuftragTeillieferung
+
+  function AuftragTeilLieferschein() {
+    $id = (int)$this->app->Secure->GetGET('id');
+    $this->AuftragMenu();
+    $submit = $this->app->Secure->GetPOST('submit');
+
+    $sql = "SELECT * from auftrag WHERE id = $id";
+    $auftrag = $this->app->DB->SelectRow($sql);
+    
+    if ($auftrag && $auftrag['status'] == 'freigegeben') {
+        if ($submit == 'speichern') {
+            $teilmenge_input = $this->app->Secure->GetPOSTArray();
+            $pos_ids_to_process = array();
+            $qty_map = array();
+
+            // 1. Eingaben sammeln (Was wird JETZT geliefert)
+            foreach ($teilmenge_input as $key => $value) {
+                // HINWEIS: Wir runden den Input hier bereits auf 4 Stellen, um "1,0000001" Eingabefehler zu vermeiden
+                $val_float = round((float)str_replace(',', '.', $value), 4);
+                
+                if (strpos($key, 'teilmenge_') === 0 && $val_float > 0) {
+                    $posid = (int)substr($key, 10);
+                    $pos_ids_to_process[] = $posid;
+                    $qty_map[$posid] = $val_float;
+                }
+            }
+
+            if (!empty($pos_ids_to_process)) {
+                
+                // 1b. Rückstände ermitteln (Was ist noch offen, wird aber JETZT NICHT geliefert)
+                // Alle Positionen des Auftrags laden
+                $all_pos = $this->app->DB->SelectArr("SELECT id, menge FROM auftrag_position WHERE auftrag = $id ORDER BY sort ASC");
+                $backlog_ids = array();
+                $split_map = array(); 
+
+                if(is_array($all_pos)) {
+                    foreach($all_pos as $pos) {
+                        $ap_id = $pos['id'];
+                        
+                        // DB Menge holen und runden
+                        $menge_total = round((float)$pos['menge'], 4);
+                        
+                        // Prüfen, ob bereits alles geliefert wurde in vorherigen LS
+                        $bereits_geliefert_raw = $this->app->DB->Select("
+                            SELECT SUM(lp.menge) 
+                            FROM lieferschein_position lp 
+                            JOIN lieferschein l ON lp.lieferschein = l.id 
+                            WHERE lp.auftrag_position_id = $ap_id 
+                            AND l.status != 'storniert'
+                        ");
+                        
+                        // Sicherstellen, dass wir eine Zahl haben und runden
+                        $bereits_geliefert = round((float)$bereits_geliefert_raw, 4);
+                        
+                        // Offene Menge berechnen (Exakt)
+                        $offen = round($menge_total - $bereits_geliefert, 4);
+
+                        // Wenn diese Position bereits für die aktuelle Lieferung markiert ist, prüfen wir auf Split
+                        if(in_array($ap_id, $pos_ids_to_process)) {
+                             $input_menge = $qty_map[$ap_id];
+                             
+                             // FIX: Wir prüfen, ob die Offene Menge signifikant größer ist als die Eingabe.
+                             // Durch das vorherige Round(..., 4) sind Mikro-Differenzen bereits eliminiert.
+                             if ($offen > $input_menge) {
+                                 $rest = round($offen - $input_menge, 4);
+                                 
+                                 // Nur wenn der Rest > 0 ist, ist es ein echter Rückstand
+                                 if($rest > 0.0001) {
+                                     $split_map[$ap_id] = $rest;
+                                 }
+                             }
+                             continue;
+                        }
+
+                        // Wenn noch was offen ist, muss es als 0-Position auf den LS (Reiner Rückstand)
+                        if($offen > 0.0001) {
+                            $backlog_ids[] = $ap_id;
+                        }
+                    }
+                }
+
+                // 2. DIE STANDARD-FUNKTION NUTZEN
+                $all_ids_for_ls = array_merge($pos_ids_to_process, $backlog_ids);                
+                
+                $lieferschein_id = $this->app->erp->WeiterfuehrenAuftragZuLieferschein($id, $all_ids_for_ls);
+
+                if ($lieferschein_id > 0) {
+                    
+                    $current_sort_index = 1;
+
+                    // 3. Mengen anpassen & Reservierungsschutz
+                    foreach ($qty_map as $auftrag_pos_id => $user_qty) {
+                        
+                        $check = $this->app->DB->SelectRow("
+                            SELECT ap.artikel,
+                            (
+                                IFNULL((SELECT SUM(lpi.menge) FROM lager_platz_inhalt lpi WHERE lpi.artikel = ap.artikel), 0) 
+                                - 
+                                IFNULL((SELECT SUM(r.menge) FROM lager_reserviert r WHERE r.artikel = ap.artikel AND (r.objekt != 'auftrag' OR r.parameter != $id)), 0)
+                            ) as verfuegbar_netto
+                            FROM auftrag_position ap 
+                            WHERE ap.id = $auftrag_pos_id
+                        ");
+
+                        $available = (float)$check['verfuegbar_netto'];
+                        // Menge darf nicht kleiner 0 sein
+                        $final_qty = max(0, min($user_qty, $available));
+
+                        $this->app->DB->Update("
+                            UPDATE lieferschein_position 
+                            SET menge = $final_qty, sort = $current_sort_index
+                            WHERE lieferschein = $lieferschein_id 
+                            AND auftrag_position_id = $auftrag_pos_id
+                        ");
+                        $current_sort_index++;
+                    }
+
+                    // 4. Rückstandspositionen auf Menge 0 setzen und sortieren (INKLUSIVE SPLITS)
+                    if(!empty($backlog_ids) || !empty($split_map)) {
+                        
+                        // JSON für den Wert (Style)
+                        $json_wert = json_encode(array(
+                            "name" => "",
+                            "kurztext" => "<strong><u>Folgende Artikel befinden sich im Rückstand und werden nachgeliefert:<\/u><\/strong>",
+                            "Abstand_Oben" => 0,
+                            "Abstand_Unten" => 5,
+                            "Schriftgroesse" => 8,
+                            "Fett" => true,
+                            "Unterstrichen" => false,
+                            "Abstand_Links" => 0,
+                            "Kurztext_Abstand_Links" => 0,
+                            "Kurztext_Unterstrichen" => false
+                        ));
+                        
+                        $pos = $current_sort_index - 1;
+                        $this->app->DB->Insert("
+                            INSERT INTO beleg_zwischenpositionen (doctype, doctypeid, pos, sort, postype, wert)
+                            VALUES ('lieferschein', $lieferschein_id, $pos, 0, 'gruppe', '".$this->app->DB->real_escape_string($json_wert)."')
+                        ");
+                        
+                        $current_sort_index++;
+
+                        // B. Reine Rückstandsartikel
+                        foreach($backlog_ids as $b_id) {
+                            $this->app->DB->Update("
+                                UPDATE lieferschein_position 
+                                SET menge = 0, sort = $current_sort_index
+                                WHERE lieferschein = $lieferschein_id 
+                                AND auftrag_position_id = $b_id
+                            ");
+                            $current_sort_index++;
+                        }
+
+                        // C. Split-Artikel duplizieren
+                        foreach($split_map as $s_id => $remainder) {
+                            $original_ls_pos = $this->app->DB->SelectRow("
+                                SELECT id FROM lieferschein_position 
+                                WHERE lieferschein = $lieferschein_id 
+                                AND auftrag_position_id = $s_id
+                            ");
+
+                            if ($original_ls_pos) {
+                                $new_ls_pos_id = $this->app->DB->MysqlCopyRow('lieferschein_position', 'id', $original_ls_pos['id']);
+                                
+                                // Die Kopie ist jetzt der Rückstand -> Menge 0
+                                $this->app->DB->Update("
+                                    UPDATE lieferschein_position
+                                    SET menge = 0, sort = $current_sort_index
+                                    WHERE id = $new_ls_pos_id
+                                ");
+                                $current_sort_index++;
+                            }
+                        }
+                    }
+
+                    // 5. Abschluss
+                    $this->app->erp->AuftragProtokoll($id, "Teil-Lieferschein (Standard-Routine + Rückstandsausweis) erstellt: LS-$lieferschein_id");
+                    header('Location: index.php?module=lieferschein&action=edit&id='.$lieferschein_id);
+                    exit;
+                } else {
+                    $msg = "Fehler beim Erstellen des Lieferscheins durch die System-Routine.";
+                }
+            } else {
+                $msg = "Keine Mengen zum Liefern ausgewählt.";
+            }
+        } elseif ($submit == 'abbrechen') {
+            header('Location: index.php?module=auftrag&action=edit&id='.$id);
+            exit;
+        } else {
+            $msg = "Wählen Sie die Positionen und Mengen für den Teil-Lieferschein.";
+        }
+    } else {
+        $msg = "Aktion in diesem Status nicht möglich.";
+    }
+
+    $this->app->Tpl->Add('INFOTEXT', $msg);
+    $this->app->YUI->TableSearch('TABLE', 'positionen_teillieferschein', 'show', '', '', basename(__FILE__), __CLASS__);
+    $this->app->Tpl->Parse('PAGE', 'auftrag_teillieferschein.tpl');
+  }
 
   function AuftragOffenePositionen() {
     $this->AuftraguebersichtMenu();

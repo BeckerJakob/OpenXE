@@ -97,7 +97,7 @@ class Verbindlichkeit {
 
                 $menu = "<table cellpadding=0 cellspacing=0><tr><td nowrap>" . "<a href=\"index.php?module=verbindlichkeit&action=edit&id=%value%\"><img src=\"./themes/{$app->Conf->WFconf['defaulttheme']}/images/edit.svg\" border=\"0\"></a>&nbsp;<a href=\"#\" onclick=DeleteDialog(\"index.php?module=verbindlichkeit&action=delete&id=%value%\");>" . "<img src=\"themes/{$app->Conf->WFconf['defaulttheme']}/images/delete.svg\" border=\"0\"></a>" . "</td></tr></table>";
 
-                $payment_status = "(SELECT payment_status FROM payment_transaction WHERE doc_typ = 'verbindlichkeit' AND doc_id = v.id)";
+                $fibu_fully_booked = $this->verbindlichkeit_fully_paid_sql('v.id');
 
                 $sql = "SELECT SQL_CALC_FOUND_ROWS
                             v.id,
@@ -110,7 +110,7 @@ class Verbindlichkeit {
                             ".$app->erp->FormatMenge('v.betrag',2).",
                             v.waehrung,
                             v.zahlungsweise,
-                            if(v.bezahlt,'bezahlt',COALESCE(".$payment_status.",'offen')),
+                            if(v.bezahlt OR COALESCE(".$fibu_fully_booked.",0) = 1,'bezahlt','offen'),
                             ".$app->erp->FormatDate("v.zahlbarbis").",
                             IF(v.skonto <> 0,".$app->erp->FormatDate("v.skontobis").",''),
                             IF(v.skonto <> 0,CONCAT(".$app->erp->FormatMenge('v.skonto',0).",'%'),''),
@@ -133,8 +133,6 @@ class Verbindlichkeit {
                     $count = "SELECT count(DISTINCT id) FROM verbindlichkeit v WHERE $where";
                     // Toggle filters
                     $this->app->Tpl->Add('JQUERYREADY', "$('#anhang').click( function() { fnFilterColumn1( 0 ); } );");
-                    $this->app->Tpl->Add('JQUERYREADY', "$('#wareneingang').click( function() { fnFilterColumn2( 0 ); } );");
-                    $this->app->Tpl->Add('JQUERYREADY', "$('#rechnungsfreigabe').click( function() { fnFilterColumn3( 0 ); } );");
                     $this->app->Tpl->Add('JQUERYREADY', "$('#nichtbezahlt').click( function() { fnFilterColumn4( 0 ); } );");
                     $this->app->Tpl->Add('JQUERYREADY', "$('#stornierte').click( function() { fnFilterColumn5( 0 ); } );");
                     $this->app->Tpl->Add('JQUERYREADY', "$('#abgeschlossen').click( function() { fnFilterColumn6( 0 ); } );");
@@ -163,23 +161,9 @@ class Verbindlichkeit {
                     } else {
                     }
 
-                    $more_data2 = $this->app->Secure->GetGET("more_data2");
-                    if ($more_data2 == 1) {
-                       $where .= " AND v.freigabe <> '1'";
-                    }
-                    else {
-                    }
-
-                    $more_data3 = $this->app->Secure->GetGET("more_data3");
-                    if ($more_data3 == 1) {
-                       $where .= " AND v.rechnungsfreigabe <> '1'";
-                    }
-                    else {
-                    }
-
                     $more_data4 = $this->app->Secure->GetGET("more_data4");
                     if ($more_data4 == 1) {
-                       $where .= " AND v.bezahlt <> 1";
+                       $where .= " AND v.bezahlt <> 1 AND COALESCE(".$fibu_fully_booked.",0) <> 1";
                     }
                     else {
                     }
@@ -390,13 +374,13 @@ class Verbindlichkeit {
                 $freigabe = $app->DB->Select("SELECT freigabe FROM verbindlichkeit WHERE id = '".$id."'");
                 $rechnungsfreigabe = $app->DB->Select("SELECT rechnungsfreigabe FROM verbindlichkeit WHERE id = '".$id."'");
 
-                $heading = array('',  'Paket-Nr.','Paket-Pos.', 'Bestellung', 'Artikel-Nr.','Artikel','Bemerkung','Menge','Preis','Steuersatz','Sachkonto');
-                $width = array(  '1%','1%',       '1%' ,        '2%',         '2%',         '20%',    '20%',   '1%',   '1%',        '3%',       '1%',       '1%');
+                $heading = array('', 'Bezeichnung','Menge','Preis','Steuersatz','Sachkonto');
+                $width = array(  '1%','30%',   '1%',   '1%',        '3%',       '10%',       '1%');
 
-                $findcols = array('vp.id','pd.paketannahme','pd.id','b.belegnr','art.nummer','art.name_de','pd.bemerkung','vp.menge','vp.preis','vp.steuersatz',"CONCAT(skv.sachkonto,' ',skv.beschriftung)",'vp.id');
-                $searchsql = array('p.nummer', 'p.name', 'p.bemerkung');
+                $findcols = array('vp.id',"COALESCE(art.name_de, vp.bezeichnung)",'vp.menge','vp.preis','vp.steuersatz',"CONCAT(skv.sachkonto,' ',skv.beschriftung)",'vp.id');
+                $searchsql = array('art.nummer', 'art.name_de', 'vp.bezeichnung', 'pd.bemerkung');
 
-                $alignright = array(8,9,10);
+                $alignright = array(4,5,6);
 
                 $defaultorder = 1;
                 $defaultorderdesc = 0;
@@ -413,24 +397,11 @@ class Verbindlichkeit {
 
         	    $box = "CONCAT('<input type=\"checkbox\" name=\"auswahl[]\" value=\"',vp.id,'\" />') AS `auswahl`";
 
-               $paketlink = array (
-                    '<a href="index.php?module=wareneingang&action=distriinhalt&id=',
-                    ['sql' => 'pd.paketannahme'],
-                    '">',
-                    ['sql' => 'pd.paketannahme'],
-                    '</a>'
-                );
-
                 $sql = "
                     SELECT SQL_CALC_FOUND_ROWS
                         vp.id,
                         $box,
-                        ".$this->app->erp->ConcatSQL($paketlink)." pa,
-                        pd.id paket_position,
-                        b.belegnr,
-                        art.nummer,
-                        art.name_de,
-                        pd.bemerkung,
+                        COALESCE(art.name_de, vp.bezeichnung) AS name_de,
                         vp.menge,
                         TRIM(vp.preis)+0,
                         vp.steuersatz,
@@ -440,10 +411,10 @@ class Verbindlichkeit {
                         verbindlichkeit_position vp
                     INNER JOIN verbindlichkeit v ON
                         v.id = vp.verbindlichkeit
-                    INNER JOIN paketdistribution pd ON
-                        pd.id = vp.paketdistribution
-                    INNER JOIN artikel art ON
-                        art.id = pd.artikel
+                    LEFT JOIN paketdistribution pd ON
+                        pd.id = vp.paketdistribution AND vp.paketdistribution <> 0
+                    LEFT JOIN artikel art ON
+                        art.id = COALESCE(pd.artikel, vp.artikel)
                     INNER JOIN adresse adr ON
                         adr.id = v.adresse
                     LEFT JOIN bestellung_position bp ON pd.bestellung_position = bp.id
@@ -479,6 +450,7 @@ class Verbindlichkeit {
                 $ids = $this->app->DB->SelectArr($sql);
 
                 foreach ($ids as $verbindlichkeit) {
+                    $this->verbindlichkeit_sync_bezahlt_via_fibu((int)$verbindlichkeit['id'], false);
                     $this->verbindlichkeit_abschliessen($verbindlichkeit['id']);
                 }
 
@@ -642,14 +614,31 @@ class Verbindlichkeit {
                 // Add checks here
 
                 $freigabe = $this->app->DB->SelectArr("SELECT rechnungsfreigabe, freigabe FROM verbindlichkeit WHERE id =".$id)[0];
+                $kopf_sachkonto = $input['sachkonto'] ?? '';
+                $kopf_ustnormal = $input['ustnormal'] ?? '';
+                $kopf_betrag = $input['betrag'] ?? '';
                 if ($freigabe['rechnungsfreigabe'] || $freigabe['freigabe']) {
                     $internebemerkung = $input['internebemerkung'];
                     $projekt = $input['projekt'];
                     $kostenstelle = $input['kostenstelle'];
+                    $kopfposition_erlaubt = false;
+                    $verbindlichkeit_id = (int)$id;
+                    if ($verbindlichkeit_id > 0) {
+                        $position_count = (int)$this->app->DB->Select(
+                            "SELECT COUNT(*) FROM verbindlichkeit_position WHERE verbindlichkeit = ".$verbindlichkeit_id
+                        );
+                        if ($position_count === 1 && empty($freigabe['rechnungsfreigabe'])) {
+                            $kopfposition_erlaubt = true;
+                        }
+                    }
                     unset($input);
                     $input['internebemerkung'] = $internebemerkung;
                     $input['projekt'] = $this->app->erp->ReplaceProjekt(true,$projekt,true);
                     $input['kostenstelle'] = $this->app->DB->Select("SELECT id FROM kostenstellen WHERE nummer = '".$kostenstelle."'");
+                    if ($kopfposition_erlaubt) {
+                        $input['sachkonto'] = $kopf_sachkonto;
+                        $input['ustnormal'] = $kopf_ustnormal;
+                    }
                 } else {
 
                     $input['rechnungsdatum'] = $this->app->erp->ReplaceDatum(true,$input['rechnungsdatum'],true); // Parameters: Target db?, value, from form?
@@ -724,6 +713,7 @@ class Verbindlichkeit {
 //               echo($sql);
 
                 $this->app->DB->Update($sql);
+                $this->verbindlichkeit_kopfposition_synchronisieren((int)$id, $kopf_sachkonto, $kopf_ustnormal, $kopf_betrag);
 
                 if ($id == 'NULL') {
                     $id = $this->app->DB->GetInsertID();
@@ -895,6 +885,43 @@ class Verbindlichkeit {
                     $this->app->DB->Update($sql);
                 }
             break;
+            case 'manuelle_position_hinzufuegen':
+
+                $freigabe = $this->app->DB->SelectArr("SELECT rechnungsfreigabe, freigabe FROM verbindlichkeit WHERE id =".$id)[0];
+                if ($freigabe['rechnungsfreigabe'] || $freigabe['freigabe']) {
+                    break;
+                }
+
+                $man_bezeichnung = $this->app->Secure->GetPOST('man_bezeichnung');
+                $man_menge = (float)$this->app->Secure->GetPOST('man_menge');
+                $man_preis = (float)$this->app->Secure->GetPOST('man_preis');
+                $man_steuersatz = (float)$this->app->Secure->GetPOST('man_steuersatz');
+                $man_sachkonto = $this->app->Secure->GetPOST('man_sachkonto');
+                $man_bruttoeingabe = $this->app->Secure->GetPOST('man_bruttoeingabe');
+
+                if (empty($man_bezeichnung)) {
+                    $this->app->YUI->Message('warning','Bitte eine Bezeichnung eingeben.');
+                    break;
+                }
+
+                if ($man_menge <= 0) {
+                    $this->app->YUI->Message('warning','Menge muss gr&ouml;&szlig;er als 0 sein.');
+                    break;
+                }
+
+                $kontorahmen = 0;
+                if (!empty($man_sachkonto)) {
+                    $kontorahmen = $this->app->erp->ReplaceKontorahmen(true,$man_sachkonto,false);
+                }
+
+                if ($man_bruttoeingabe && $man_steuersatz > 0) {
+                    $man_preis = $man_preis / (1 + ($man_steuersatz / 100));
+                }
+
+                $sql = "INSERT INTO verbindlichkeit_position (verbindlichkeit, bezeichnung, menge, preis, steuersatz, kontorahmen, paketdistribution) VALUES ($id, '".$this->app->DB->real_escape_string($man_bezeichnung)."', $man_menge, $man_preis, $man_steuersatz, $kontorahmen, 0)";
+                $this->app->DB->Insert($sql);
+
+            break;
         }
 
 
@@ -978,8 +1005,42 @@ class Verbindlichkeit {
             $this->app->Tpl->Set(strtoupper($key), $value);
         }
 
+        $this->app->Tpl->Set('KOPFFELDERHIDDEN', '');
+        $this->app->Tpl->Set('KOPFFELDERDISABLED', '');
         if (!empty($result[0])) {
             $verbindlichkeit_from_db = $result[0];
+            if (!empty($verbindlichkeit_from_db['sachkonto'])) {
+                $sachkonto_display = $this->app->DB->Select(
+                    "SELECT CONCAT(sachkonto,' ',beschriftung) FROM kontorahmen WHERE sachkonto = '".
+                    $this->app->DB->real_escape_string($verbindlichkeit_from_db['sachkonto'])."' LIMIT 1"
+                );
+                if (!empty($sachkonto_display)) {
+                    $this->app->Tpl->Set('SACHKONTO', $sachkonto_display);
+                }
+            }
+        }
+        if (!empty($verbindlichkeit_from_db)) {
+            $position_count = (int)$this->app->DB->Select(
+                "SELECT COUNT(*) FROM verbindlichkeit_position WHERE verbindlichkeit = ".$verbindlichkeit_from_db['id']
+            );
+            if ($position_count > 1 || (!empty($verbindlichkeit_from_db['freigabe']) && $position_count !== 1)) {
+                $this->app->Tpl->Set('KOPFFELDERHIDDEN', 'hidden');
+            }
+            $kopfFelderDisabled = '';
+            if (!empty($verbindlichkeit_from_db['rechnungsfreigabe'])) {
+                $kopfFelderDisabled = 'disabled';
+            } else if (!empty($verbindlichkeit_from_db['freigabe']) && $position_count !== 1) {
+                $kopfFelderDisabled = 'disabled';
+            }
+            $this->app->Tpl->Set('KOPFFELDERDISABLED', $kopfFelderDisabled);
+            $ustnormal_display = '';
+            if ($verbindlichkeit_from_db['ustnormal'] !== '' && $verbindlichkeit_from_db['ustnormal'] !== null) {
+                $ustnormal_value = (float)str_replace(',', '.', (string)$verbindlichkeit_from_db['ustnormal']);
+                if ($ustnormal_value >= 0) {
+                    $ustnormal_display = number_format($ustnormal_value, 2, '.', '');
+                }
+            }
+            $this->app->Tpl->Set('USTNORMAL', $ustnormal_display);
         }
 
         // Check  positions
@@ -1067,15 +1128,18 @@ class Verbindlichkeit {
         } else {
             $this->app->Tpl->Set('RUECKSETZENBUCHHALTUNGHIDDEN','hidden');
         }
-        if ($verbindlichkeit_from_db['bezahlt'] == '1') {
+        $ist_als_bezahlt_anzuzeigen = (
+            $verbindlichkeit_from_db['bezahlt'] == '1'
+            || $this->verbindlichkeit_is_vollstaendig_bebucht((int)$verbindlichkeit_from_db['id'])
+        );
+
+        if ($ist_als_bezahlt_anzuzeigen) {
             $this->app->Tpl->Set('FREIGABEBEZAHLTHIDDEN','hidden');
         } else {
             $this->app->Tpl->Set('RUECKSETZENBEZAHLTHIDDEN','hidden');
         }
 
-      	$this->app->Tpl->Set('WARENEINGANGCHECKED', $verbindlichkeit_from_db['freigabe']==1?"checked":"");
-      	$this->app->Tpl->Set('RECHNUNGSFREIGABECHECKED', $verbindlichkeit_from_db['rechnungsfreigabe']==1?"checked":"");
-      	$this->app->Tpl->Set('BEZAHLTCHECKED', $verbindlichkeit_from_db['bezahlt']==1?"checked":"");
+      	$this->app->Tpl->Set('BEZAHLTCHECKED', $ist_als_bezahlt_anzuzeigen ? "checked" : "");
 
         $this->app->Tpl->Set('RECHNUNGSDATUM',$this->app->erp->ReplaceDatum(false,$verbindlichkeit_from_db['rechnungsdatum'],false));
         $this->app->YUI->DatePicker("rechnungsdatum");
@@ -1104,6 +1168,7 @@ class Verbindlichkeit {
         $this->app->YUI->AutoComplete("projekt", "projektname", 1);
         $this->app->Tpl->Set('PROJEKT',$this->app->erp->ReplaceProjekt(false,$verbindlichkeit_from_db['projekt'],false));
         $this->app->YUI->AutoComplete("kostenstelle", "kostenstelle", 1);
+        $this->app->YUI->AutoComplete("sachkonto", "sachkonto", 1);
         $this->app->Tpl->Set('KOSTENSTELLE',$this->app->DB->SELECT("SELECT nummer FROM kostenstellen WHERE id = '".$verbindlichkeit_from_db['kostenstelle']."'"));
 
         $waehrungenselect = $this->app->erp->GetSelect($this->app->erp->GetWaehrung(), $verbindlichkeit_from_db['waehrung']);
@@ -1139,9 +1204,17 @@ class Verbindlichkeit {
             $this->app->YUI->TableSearch('PAKETDISTRIBUTION', 'verbindlichkeit_paketdistribution_list', "show", "", "", basename(__FILE__), __CLASS__);
         }
 
+        // Standard-Steuersatz für manuelles Positionsformular
+        $standardsteuersatz = $this->app->erp->Firmendaten('steuersatz_normal');
+        if (empty($standardsteuersatz)) {
+            $standardsteuersatz = 19;
+        }
+        $this->app->Tpl->Set('STANDARDSTEUERSATZ', $standardsteuersatz);
+
         if (!empty($verbindlichkeit_from_db)) {
             // -- POSITIONEN
             $this->app->YUI->AutoComplete("positionen_sachkonto", "sachkonto", 1);
+            $this->app->YUI->AutoComplete("man_sachkonto", "sachkonto", 1);
             $this->app->YUI->TableSearch('POSITIONEN', 'verbindlichkeit_positionen', "show", "", "", basename(__FILE__), __CLASS__);
             $this->app->Tpl->Parse('POSITIONENTAB', "verbindlichkeit_positionen.tpl");
             // -- POSITIONEN
@@ -1164,13 +1237,11 @@ class Verbindlichkeit {
         $menge = $this->app->Secure->GetPOST('menge');
         $preis = $this->app->Secure->GetPOST('preis');
         $steuersatz = $this->app->Secure->GetPOST('steuersatz');
+        $bezeichnung = $this->app->Secure->GetPOST('bezeichnung');
 
         $kontorahmen = $this->app->erp->ReplaceKontorahmen(true,$sachkonto,false);
         if ($menge < 0) {
             $menge = 0;
-        }
-        if ($preis < 0) {
-            $preis = 0;
         }
         if ($steuersatz < 0) {
             $steuersatz = 0;
@@ -1202,7 +1273,8 @@ class Verbindlichkeit {
                         menge = '$menge',
                         preis = '$preis',
                         steuersatz = '$steuersatz',
-                        kontorahmen = '$kontorahmen'
+                        kontorahmen = '$kontorahmen',
+                        bezeichnung = '".$this->app->DB->real_escape_string($bezeichnung)."'
                     WHERE id = ".$posid."
                 ";
                 $this->app->DB->Update($sql);
@@ -1214,7 +1286,7 @@ class Verbindlichkeit {
 
         // Load values again from database
 	    $dropnbox = "'<img src=./themes/new/images/details_open.png class=details>' AS `open`, CONCAT('<input type=\"checkbox\" name=\"auswahl[]\" value=\"',v.id,'\" />') AS `auswahl`";
-        $result = $this->app->DB->SelectArr("SELECT SQL_CALC_FOUND_ROWS v.id, $dropnbox, v.steuersatz, v.preis, v.menge, v.kontorahmen, v.id FROM verbindlichkeit_position v"." WHERE id=$posid");
+        $result = $this->app->DB->SelectArr("SELECT SQL_CALC_FOUND_ROWS v.id, $dropnbox, v.steuersatz, v.preis, v.menge, v.kontorahmen, v.bezeichnung, v.id FROM verbindlichkeit_position v"." WHERE id=$posid");
 
         foreach ($result[0] as $key => $value) {
             $this->app->Tpl->Set(strtoupper($key), $value);
@@ -1266,7 +1338,61 @@ class Verbindlichkeit {
         $input['bestellung'] = $this->app->Secure->GetPOST('bestellung');
 	    $input['kostenstelle'] = $this->app->Secure->GetPOST('kostenstelle');
 	    $input['internebemerkung'] = $this->app->Secure->GetPOST('internebemerkung');
+        $input['sachkonto'] = $this->normalize_sachkonto($this->app->Secure->GetPOST('sachkonto'));
+        $input['ustnormal'] = $this->normalize_steuersatz($this->app->Secure->GetPOST('ustnormal'));
         return $input;
+    }
+
+    private function normalize_sachkonto($value): string
+    {
+        $value = trim((string)$value);
+        if ($value === '') {
+            return '';
+        }
+        $parts = preg_split('/\s+/', $value, 2);
+        return $parts[0];
+    }
+
+    private function normalize_steuersatz($value): string
+    {
+        $value = trim((string)$value);
+        if ($value === '') {
+            return '';
+        }
+        return str_replace(',', '.', $value);
+    }
+
+    private function normalize_betrag($value): float
+    {
+        $value = trim((string)$value);
+        if ($value === '') {
+            return 0.0;
+        }
+        if (strpos($value, ',') !== false && strpos($value, '.') !== false) {
+            if (strrpos($value, ',') > strrpos($value, '.')) {
+                $value = str_replace('.', '', $value);
+                $value = str_replace(',', '.', $value);
+            } else {
+                $value = str_replace(',', '', $value);
+            }
+        } else {
+            $value = str_replace(',', '.', $value);
+        }
+        return (float)$value;
+    }
+
+    private function verbindlichkeit_position_umsatzsteuerklasse(float $steuersatz, int $verbindlichkeitId): string
+    {
+        if ($steuersatz <= 0) {
+            return 'befreit';
+        }
+
+        $steuersatz_ermaessigt = (float)$this->get_steuersatz('ermaessigt', $verbindlichkeitId);
+        if ($steuersatz_ermaessigt > 0 && abs($steuersatz - $steuersatz_ermaessigt) < 0.00001) {
+            return 'ermaessigt';
+        }
+
+        return 'normal';
     }
 
     function verbindlichkeit_menu($id) {
@@ -1347,9 +1473,143 @@ class Verbindlichkeit {
     function verbindlichkeit_freigabe()
     {
         $id = $this->app->Secure->GetGET('id');
+        $this->verbindlichkeit_kopfposition_anlegen($id);
         $this->app->erp->BelegFreigabe('verbindlichkeit',$id);
         $this->app->erp->BelegProtokoll("verbindlichkeit",$id,"Verbindlichkeit freigegeben");
         $this->verbindlichkeit_edit();
+    }
+
+    private function verbindlichkeit_kopfposition_anlegen($id): void
+    {
+        $id = (int)$id;
+        if ($id <= 0) {
+            return;
+        }
+
+        $verbindlichkeit = $this->app->DB->SelectRow(
+            "SELECT betrag, sachkonto, ustnormal FROM verbindlichkeit WHERE id = ".$id
+        );
+        if (empty($verbindlichkeit)) {
+            return;
+        }
+
+        $sachkonto = trim((string)$verbindlichkeit['sachkonto']);
+        $steuersatz_raw = $verbindlichkeit['ustnormal'];
+
+        if ($sachkonto === '' || $steuersatz_raw === '' || $steuersatz_raw === null) {
+            return;
+        }
+
+        $steuersatz_raw = str_replace(',', '.', (string)$steuersatz_raw);
+        if (!is_numeric($steuersatz_raw)) {
+            return;
+        }
+
+        $steuersatz = (float)$steuersatz_raw;
+        if ($steuersatz < 0) {
+            return;
+        }
+
+        $position_count = (int)$this->app->DB->Select(
+            "SELECT COUNT(*) FROM verbindlichkeit_position WHERE verbindlichkeit = ".$id
+        );
+        if ($position_count > 0) {
+            return;
+        }
+
+        $brutto_raw = $verbindlichkeit['betrag'];
+        if ($brutto_raw === '' || $brutto_raw === null) {
+            return;
+        }
+        $brutto = $this->normalize_betrag($brutto_raw);
+        if ($brutto <= 0) {
+            return;
+        }
+
+        $kontorahmen = (int)$this->app->erp->ReplaceKontorahmen(true, $sachkonto, false);
+        if ($kontorahmen <= 0) {
+            return;
+        }
+
+        $preis_netto = $brutto;
+        if ($steuersatz > 0) {
+            $preis_netto = $brutto / (1 + ($steuersatz / 100));
+        }
+        $preis_netto = round($preis_netto, 6);
+        $umsatzsteuer = $this->app->DB->real_escape_string(
+            $this->verbindlichkeit_position_umsatzsteuerklasse($steuersatz, $id)
+        );
+
+        $bezeichnung = $this->app->DB->real_escape_string('Gesamtbetrag');
+        $sql = "INSERT INTO verbindlichkeit_position ".
+               "(verbindlichkeit, bezeichnung, menge, preis, steuersatz, umsatzsteuer, kontorahmen, paketdistribution) ".
+               "VALUES (".$id.", '".$bezeichnung."', 1, ".$preis_netto.", ".$steuersatz.", '".$umsatzsteuer."', ".$kontorahmen.", 0)";
+        $this->app->DB->Insert($sql);
+    }
+
+    private function verbindlichkeit_kopfposition_synchronisieren(int $id, string $sachkonto, string $steuersatz_raw, $betrag_raw): void
+    {
+        if ($id <= 0) {
+            return;
+        }
+
+        $verbindlichkeit = $this->app->DB->SelectRow(
+            "SELECT betrag, rechnungsfreigabe FROM verbindlichkeit WHERE id = ".$id
+        );
+        if (empty($verbindlichkeit) || !empty($verbindlichkeit['rechnungsfreigabe'])) {
+            return;
+        }
+
+        $position_count = (int)$this->app->DB->Select(
+            "SELECT COUNT(*) FROM verbindlichkeit_position WHERE verbindlichkeit = ".$id
+        );
+        if ($position_count !== 1) {
+            return;
+        }
+
+        $position = $this->app->DB->SelectRow(
+            "SELECT id FROM verbindlichkeit_position WHERE verbindlichkeit = ".$id." LIMIT 1"
+        );
+        if (empty($position)) {
+            return;
+        }
+
+        $updates = [];
+
+        if ($sachkonto !== '') {
+            $kontorahmen = (int)$this->app->erp->ReplaceKontorahmen(true, $sachkonto, false);
+            if ($kontorahmen > 0) {
+                $updates[] = "kontorahmen = ".$kontorahmen;
+            }
+        }
+
+        $steuersatz = null;
+        if ($steuersatz_raw !== '' && is_numeric($steuersatz_raw)) {
+            $steuersatz = (float)$steuersatz_raw;
+            if ($steuersatz >= 0) {
+                $updates[] = "steuersatz = ".$steuersatz;
+                $updates[] = "umsatzsteuer = '".$this->app->DB->real_escape_string(
+                    $this->verbindlichkeit_position_umsatzsteuerklasse($steuersatz, $id)
+                )."'";
+            } else {
+                $steuersatz = null;
+            }
+        }
+
+        if ($steuersatz !== null) {
+            $brutto_basis = $betrag_raw !== '' ? $betrag_raw : $verbindlichkeit['betrag'];
+            $brutto = $this->normalize_betrag($brutto_basis);
+            if ($brutto > 0) {
+                $preis_netto = $brutto / (1 + ($steuersatz / 100));
+                $preis_netto = round($preis_netto, 6);
+                $updates[] = "preis = ".$preis_netto;
+            }
+        }
+
+        if (!empty($updates)) {
+            $sql = "UPDATE verbindlichkeit_position SET ".implode(', ', $updates)." WHERE id = ".$position['id'];
+            $this->app->DB->Update($sql);
+        }
     }
 
     // Returns true or error message
@@ -1372,6 +1632,18 @@ class Verbindlichkeit {
         }
 
         // Check wareneingang status
+    // Count positions with paketdistribution link
+    $sql_pd_positions = "SELECT COUNT(*) FROM verbindlichkeit_position WHERE verbindlichkeit='$id' AND paketdistribution <> 0";
+    $count_pd_positions = $this->app->DB->Select($sql_pd_positions);
+
+    // Count manual positions (without paketdistribution)
+    $sql_man_positions = "SELECT COUNT(*) FROM verbindlichkeit_position WHERE verbindlichkeit='$id' AND (paketdistribution = 0 OR paketdistribution IS NULL)";
+    $count_man_positions = $this->app->DB->Select($sql_man_positions);
+
+    $check_ok = false;
+
+    if ($count_pd_positions > 0) {
+        // If there are paketdistribution-linked positions, check their wareneingang status
         $sql = "SELECT
                     pa.id
                 FROM verbindlichkeit_position vp
@@ -1382,16 +1654,22 @@ class Verbindlichkeit {
                 AND
                     pa.status = 'abgeschlossen'
                 ";
-
         $check = $this->app->DB->SelectArr($sql);
+        if (!empty($check)) {
+            $check_ok = true;
+        }
+    } else if ($count_man_positions > 0) {
+        // Only manual positions: no wareneingang check needed
+        $check_ok = true;
+    }
 
-        if (empty($check)) {
-            if ($gotoedit) {
-                $this->app->YUI->Message('warning','Waren-/Leistungspr&uuml;fung (Einkauf) nicht abgeschlossen');
-            } else {
-                return('Waren-/Leistungspr&uuml;fung (Einkauf) nicht abgeschlossen '.$this->verbindlichkeit_get_belegnr($id));
-            }
+    if (!$check_ok) {
+        if ($gotoedit) {
+            $this->app->YUI->Message('warning','Waren-/Leistungspr&uuml;fung (Einkauf) nicht abgeschlossen');
         } else {
+            return('Waren-/Leistungspr&uuml;fung (Einkauf) nicht abgeschlossen '.$this->verbindlichkeit_get_belegnr($id));
+        }
+    } else {
             $sql = "UPDATE verbindlichkeit SET freigabe = 1 WHERE id=".$id;
             $this->app->DB->Update($sql);
 
@@ -1501,19 +1779,13 @@ class Verbindlichkeit {
             $gotoedit = true;
         }
 
-        $sql = "SELECT freigabe, rechnungsfreigabe, bezahlt, betrag FROM verbindlichkeit WHERE id =".$id;
+        $this->verbindlichkeit_sync_bezahlt_via_fibu((int)$id, false);
+
+        $sql = "SELECT bezahlt FROM verbindlichkeit WHERE id =".$id;
         $verbindlichkeit = $this->app->DB->SelectRow($sql);
 
-        if ($verbindlichkeit['freigabe'] != 1) {
-            $einkauf_check = $this->check_positions($id,$verbindlichkeit['betrag']);
-            if ($einkauf_check['pos_ok']) {
-                $this->verbindlichkeit_freigabeeinkauf($id);
-                $verbindlichkeit['freigabe'] = 1;
-            }
-        }
-
         $anzahldateien = $this->app->erp->AnzahlDateien("verbindlichkeit",$id);
-        if (!empty($anzahldateien) && $verbindlichkeit['freigabe'] && $verbindlichkeit['rechnungsfreigabe'] && $verbindlichkeit['bezahlt']) {
+        if (!empty($anzahldateien) && $verbindlichkeit['bezahlt']) {
             $sql = "UPDATE verbindlichkeit SET status = 'abgeschlossen' WHERE id=".$id;
             $this->app->DB->Update($sql);
             $this->app->erp->BelegProtokoll("verbindlichkeit",$id,"Verbindlichkeit abgeschlossen");
@@ -1563,6 +1835,48 @@ class Verbindlichkeit {
         if ($gotoedit) {
             $this->verbindlichkeit_edit();
         }
+    }
+
+    private function verbindlichkeit_has_payment_sql(string $idField): string
+    {
+        return "(SELECT IF(COUNT(*) > 0, 1, 0) FROM fibu_buchungen fb WHERE ((fb.von_typ = 'verbindlichkeit' AND fb.von_id = ".$idField." AND fb.nach_typ IN ('kontoauszuege','kasse')) OR (fb.nach_typ = 'verbindlichkeit' AND fb.nach_id = ".$idField." AND fb.von_typ IN ('kontoauszuege','kasse'))))";
+    }
+
+    private function verbindlichkeit_fully_paid_sql(string $idField): string
+    {
+        $hasPaymentSql = $this->verbindlichkeit_has_payment_sql($idField);
+        return "(SELECT IF(COUNT(*) > 0 AND ROUND(SUM(betrag), 2) = 0 AND ".$hasPaymentSql." = 1, 1, 0) FROM fibu_buchungen_alle WHERE typ = 'verbindlichkeit' AND id = ".$idField.")";
+    }
+
+    function verbindlichkeit_is_vollstaendig_bebucht($id)
+    {
+        $id = (int)$id;
+        if ($id <= 0) {
+            return false;
+        }
+
+        $sql = $this->verbindlichkeit_fully_paid_sql((string)$id);
+        return (int)$this->app->DB->Select($sql) === 1;
+    }
+
+    function verbindlichkeit_sync_bezahlt_via_fibu($id, $writeProtocol = false)
+    {
+        $id = (int)$id;
+        if ($id <= 0 || !$this->verbindlichkeit_is_vollstaendig_bebucht($id)) {
+            return false;
+        }
+
+        $isAlreadyMarked = (int)$this->app->DB->Select("SELECT bezahlt FROM verbindlichkeit WHERE id = ".$id." LIMIT 1");
+        if ($isAlreadyMarked === 1) {
+            return true;
+        }
+
+        $this->app->DB->Update("UPDATE verbindlichkeit SET bezahlt = 1 WHERE id = ".$id);
+        if ($writeProtocol) {
+            $this->app->erp->BelegProtokoll("verbindlichkeit",$id,"Verbindlichkeit automatisch als bezahlt markiert (vollst&auml;ndig bebucht)");
+        }
+
+        return true;
     }
   
 /*    function verbindlichkeit_schreibschutz($id = null)
@@ -1813,6 +2127,9 @@ class Verbindlichkeit {
     // Check positions and return status and values
     function check_positions($id, $bruttobetrag_verbindlichkeit) : array {
 
+        // Ensure numeric value (may come as formatted string from FormatMengeBetrag)
+        $bruttobetrag_verbindlichkeit = (float)str_replace(',', '.', str_replace('.', '', $bruttobetrag_verbindlichkeit));
+
         $result = array(
             "pos_ok" => false,
             "betrag_netto" => 0,
@@ -1854,13 +2171,19 @@ class Verbindlichkeit {
 
                 $this->app->erp->GetSteuerPosition("verbindlichkeit",$position['id'],$tmpsteuersatz,$tmpsteuertext,$erloes);
 
+                // Fallback: If GetSteuerPosition returned null (e.g. no article linked for manual positions),
+                // use the steuersatz stored directly on the position
+                if ($tmpsteuersatz === null && $position['steuersatz'] !== null) {
+                    $tmpsteuersatz = (float)$position['steuersatz'];
+                }
+
                 $position['steuersatz_berechnet'] = $tmpsteuersatz;
                 $position['steuertext_berechnet'] = $tmpsteuertext;
                 $position['steuererloes_berechnet'] = $erloes;
 
-                $betrag_netto_pos = ($position['menge']*$position['preis']);
+                $betrag_netto_pos = ((float)$position['menge']*(float)$position['preis']);
                 $betrag_netto += $betrag_netto_pos;
-                $betrag_brutto_pos = ($position['menge']*$position['preis'])*(1+($tmpsteuersatz/100));
+                $betrag_brutto_pos = ((float)$position['menge']*(float)$position['preis'])*(1+((float)$tmpsteuersatz/100));
                 $betrag_brutto += $betrag_brutto_pos;
                 $betrag_brutto_pos_summe += round($betrag_brutto_pos,2);
                 $betrag_netto_pro_steuersatz[$tmpsteuersatz] += round($betrag_netto_pos,2);
@@ -1871,7 +2194,7 @@ class Verbindlichkeit {
             $result['betrag_brutto'] = round($betrag_brutto,2);
 
             foreach ($betrag_netto_pro_steuersatz as $steuersatz => $betrag_netto) {
-                $betrag_brutto_alternativ += round($betrag_netto*(1+($steuersatz/100)),2);
+                $betrag_brutto_alternativ += round($betrag_netto*(1+((float)$steuersatz/100)),2);
             }
 
             if ($bruttobetrag_verbindlichkeit == round($betrag_brutto,2)) {

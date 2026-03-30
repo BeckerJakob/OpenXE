@@ -46,7 +46,7 @@ final class DatevExport
     * format: "ISO-8859-1", "UTF-8", "UTF-8-BOM"
     * @throws ConsistencyException with string (list of items) if consistency check fails and no sachkonto for differences is given
     */
-    static function createBuchungsstapelCSV($beleg_data, string $berater, string $mandant, string $bearbeiter, datetime $wj_beginn, int $sachkontenlaenge, datetime $von, datetime $bis, string $filename = 'EXTF_Buchungsstapel_DATEV_export.csv', $diffignore = false, $sachkonto_differences, $sachkonto_missing, string $format = "ISO-8859-1") : string {
+    static function createBuchungsstapelCSV($beleg_data, string $berater, string $mandant, string $bearbeiter, datetime $wj_beginn, int $sachkontenlaenge, datetime $von, datetime $bis, string $filename = 'EXTF_Buchungsstapel_DATEV_export.csv', $diffignore = false, $sachkonto_differences = null, $sachkonto_missing = null, string $format = "ISO-8859-1", array $zusaetzliche_buchungen = array(), bool $includeTestbuchung = false) : string {
 
         $datev_header_definition = array (
             '1' => 'Kennzeichen',
@@ -230,7 +230,7 @@ final class DatevExport
         $data['Diktatkürzel'] = substr($bearbeiter,0,2);
         $data['Buchungstyp'] = 1;
         $data['Rechnungs- legungszweck'] = 0;
-        $data['Festschreibung'] = 1;
+        $data['Festschreibung'] = 0;
         $data['WKZ'] = 'EUR';
         $data['Reserviert'] = '';
         $data['Derivatskennzeichen'] = '';
@@ -241,6 +241,9 @@ final class DatevExport
         $data['Reserviert'] = '';
         $data['Reserviert'] = '';
         $data['Anwendungs- information'] = '';
+
+        $throw_exception = false;
+        $differences = array();
 
         // Start
         $csv = "";
@@ -267,7 +270,10 @@ final class DatevExport
         foreach ($beleg_data as $typ => $belege_zu_typ) {
             foreach ($belege_zu_typ['belege'] as $beleg) { // Belege
                 $sum_pos = 0;
-                foreach ($beleg['positionen'] as $row) {
+                $positionen = isset($beleg['positionen']) && is_array($beleg['positionen'])
+                    ? $beleg['positionen']
+                    : array();
+                foreach ($positionen as $row) {
 
                     $posid = $row['pos_id'];
                     $result = array();
@@ -300,7 +306,11 @@ final class DatevExport
                     $data['Buchungstext'] = mb_strimwidth($beleg['name'],0,60);
                     $data['EU-Mitgliedstaat u. UStID (Bestimmung)'] = $beleg['ustid'];
                     $data['Land'] = $beleg['land'];
-                    $data['Auftragsnummer'] = ($beleg['auftrag']!=0)?$beleg['auftrag']:'';
+                    $auftragsnummer = ($beleg['auftrag'] != 0) ? $beleg['auftrag'] : '';
+                    if ($auftragsnummer !== '' && !empty($belege_zu_typ['Buchungstyp'])) {
+                        $data['Auftragsnummer'] = $auftragsnummer;
+                        $data['Buchungstyp'] = $belege_zu_typ['Buchungstyp'];
+                    }
 
                     if (!empty($beleg['guid'])) {
                         $data['Beleglink'] = 'BEDI '.$beleg['guid'];
@@ -342,7 +352,11 @@ final class DatevExport
                         }
                         $data['EU-Mitgliedstaat u. UStID (Bestimmung)'] = $beleg['ustid'];
                         $data['Land'] = $beleg['land'];
-                        $data['Auftragsnummer'] = $beleg['auftrag'];
+                        $auftragsnummer = ($beleg['auftrag'] != 0) ? $beleg['auftrag'] : '';
+                        if ($auftragsnummer !== '' && !empty($belege_zu_typ['Buchungstyp'])) {
+                            $data['Auftragsnummer'] = $auftragsnummer;
+                            $data['Buchungstyp'] = $belege_zu_typ['Buchungstyp'];
+                        }
 
                         if (!empty($beleg['guid'])) {
                             $data['Beleglink'] = 'BEDI '.$beleg['guid'];
@@ -355,25 +369,200 @@ final class DatevExport
             } // Foreach belege
         } // Foreach typ
 
+        foreach ($zusaetzliche_buchungen as $buchung) {
+            $csv .= self::create_line($datev_buchungsstapel_definition, $buchung);
+        }
+
         if ($throw_exception) {
             $e = new ConsistencyException("",$differences);
             throw $e;
         }
 
-        $csv .= '"0";"S";"EUR";"0";"";"";"1234";"1370";"";"101";"";"";"";"Testbuchung";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"0";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""'; // Testbuchung
-
-        switch ($format) {
-            case "UTF-8":
-            break;
-            case "UTF-8-BOM":
-                $csv = "\xef\xbb\xbf".$csv;
-            break;
-            default:
-                $csv = mb_convert_encoding($csv, "ISO-8859-1", "UTF-8");
-            break;
+        if ($includeTestbuchung) {
+            $csv .= '"0";"S";"EUR";"0";"";"";"1234";"1370";"";"101";"";"";"";"Testbuchung";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"0";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""'; // Testbuchung
         }
 
-        return($csv);
+        return self::encodeCsvOutput($csv, $format);
+    }
+
+    static function createDebitorenKreditorenStammdatenCSV(array $adress_rows, string $berater, string $mandant, string $wirtschaftsjahr_beginn, int $sachkontenlaenge, string $bearbeiter, string $filename = 'EXTF_Stammdaten_DebitorenKreditoren_DATEV_export.csv', string $format = "ISO-8859-1") : string
+    {
+        $datev_header_definition = array (
+            '1' => 'Kennzeichen',
+            '2' => 'Versionsnummer',
+            '3' => 'Formatkategorie',
+            '4' => 'Formatname',
+            '5' => 'Formatversion',
+            '6' => 'Erzeugt am',
+            '7' => 'Reserviert',
+            '8' => 'Reserviert',
+            '9' => 'Reserviert',
+            '10' => 'Reserviert',
+            '11' => 'Beraternummer',
+            '12' => 'Mandantennummer',
+            '13' => 'WJ-Beginn',
+            '14' => 'Sachkontenlänge',
+            '15' => 'Datum von',
+            '16' => 'Datum bis',
+            '17' => 'Bezeichnung',
+            '18' => 'Diktatkürzel',
+            '19' => 'Buchungstyp',
+            '20' => 'Rechnungs- legungszweck',
+            '21' => 'Festschreibung',
+            '22' => 'WKZ',
+            '23' => 'Reserviert',
+            '24' => 'Derivatskennzeichen',
+            '25' => 'Reserviert',
+            '26' => 'Reserviert',
+            '27' => 'Sachkonten- rahmen',
+            '28' => 'ID der Branchen- lösung',
+            '29' => 'Reserviert',
+            '30' => 'Reserviert',
+            '31' => 'Anwendungs- information'
+        );
+
+        $datev_stammdaten_definition = array(
+            '1' => 'Konto',
+            '2' => 'Name (Adressatentyp Unternehmen)',
+            '3' => 'Unternehmensgegenstand',
+            '4' => 'Name (Adressatentyp natürl. Person)',
+            '5' => 'Vorname (Adressatentyp natürl. Person)',
+            '6' => 'Name (Adressatentyp keine Angabe)',
+            '7' => 'Adressatentyp',
+            '8' => 'Kurzbezeichnung',
+            '9' => 'EU-Mitgliedsstaat',
+            '10' => 'EU-USt-IdNr.',
+            '11' => 'Anrede',
+            '12' => 'Titel/Akad. Grad',
+            '13' => 'Adelstitel',
+            '14' => 'Namensvorsatz',
+            '15' => 'Adressart',
+            '16' => 'Straße',
+            '17' => 'Postfach',
+            '18' => 'Postleitzahl',
+            '19' => 'Ort',
+            '20' => 'Land',
+            '21' => 'Versandzusatz',
+            '22' => 'Adresszusatz',
+            '23' => 'Abweichende Anrede',
+            '24' => 'Abw. Zustellbezeichnung 1',
+            '25' => 'Abw. Zustellbezeichnung 2',
+            '26' => 'Kennz. Korrespondenzadresse',
+            '27' => 'Adresse gültig von',
+            '28' => 'Adresse gültig bis',
+            '29' => 'Telefon',
+            '30' => 'Bemerkung (Telefon)',
+            '31' => 'Telefon Geschäftsleitung',
+            '32' => 'Bemerkung (Telefon GL)',
+            '33' => 'E-Mail',
+            '34' => 'Bemerkung (E-Mail)',
+            '35' => 'Internet',
+            '36' => 'Bemerkung (Internet)',
+            '37' => 'Fax'
+        );
+
+        $heute = date('Ymd');
+        $wj_beginn = date_create(date('Y').$wirtschaftsjahr_beginn);
+        if (!($wj_beginn instanceof datetime)) {
+            $wj_beginn = date_create(date('Y').'0101');
+        }
+
+        $data = array();
+        $data['Kennzeichen'] = 'EXTF';
+        $data['Versionsnummer'] = '700';
+        $data['Formatkategorie'] = '16';
+        $data['Formatname'] = 'Debitoren/Kreditoren';
+        $data['Formatversion'] = '5';
+        $data['Erzeugt am'] = date('YmdHis').'000';
+        $data['Beraternummer'] = $berater;
+        $data['Mandantennummer'] = $mandant;
+        $data['WJ-Beginn'] = date_format($wj_beginn, "Ymd");
+        $data['Sachkontenlänge'] = $sachkontenlaenge;
+        $data['Datum von'] = $heute;
+        $data['Datum bis'] = $heute;
+        $data['Bezeichnung'] = mb_strimwidth($filename, 0, 30);
+        $data['Diktatkürzel'] = mb_substr($bearbeiter, 0, 2);
+
+        $csv = "";
+        $comma = "";
+        foreach ($datev_header_definition as $key => $value) {
+            if (!isset($data[$value])) {
+                $data[$value] = '';
+            }
+            $csv .= $comma.'"'.$data[$value].'"';
+            $comma = ";";
+        }
+        $csv .= "\r\n";
+
+        $comma = "";
+        foreach ($datev_stammdaten_definition as $key => $value) {
+            $csv .= $comma.'"'.$value.'"';
+            $comma = ";";
+        }
+        $csv .= "\r\n";
+
+        $seen_accounts = array();
+        foreach ($adress_rows as $row) {
+            $konten = array($row['debitorenkonto'], $row['kreditorenkonto']);
+            foreach ($konten as $konto_raw) {
+                $konto = self::normalizeDatevAccountNumber($konto_raw);
+                if ($konto === '' || isset($seen_accounts[$konto])) {
+                    continue;
+                }
+                $seen_accounts[$konto] = true;
+
+                list($eu_mitgliedsstaat, $eu_ustidnr) = self::splitDatevUstId($row['ustid']);
+
+                $data = array();
+                $data['Konto'] = $konto;
+                $data['Name (Adressatentyp Unternehmen)'] = mb_strimwidth((string)$row['name'], 0, 50);
+                $data['Adressatentyp'] = '0';
+                $data['Kurzbezeichnung'] = mb_strimwidth((string)$row['name'], 0, 15);
+                $data['EU-Mitgliedsstaat'] = $eu_mitgliedsstaat;
+                $data['EU-USt-IdNr.'] = $eu_ustidnr;
+                $data['Straße'] = mb_strimwidth((string)$row['strasse'], 0, 36);
+                $data['Postleitzahl'] = mb_strimwidth((string)$row['plz'], 0, 10);
+                $data['Ort'] = mb_strimwidth((string)$row['ort'], 0, 30);
+                $data['Land'] = mb_strimwidth(strtoupper((string)$row['land']), 0, 2);
+                $data['Adresszusatz'] = mb_strimwidth((string)$row['adresszusatz'], 0, 36);
+                $data['Telefon'] = mb_strimwidth((string)$row['telefon'], 0, 30);
+                $data['E-Mail'] = mb_strimwidth((string)$row['email'], 0, 72);
+                $data['Fax'] = mb_strimwidth((string)$row['telefax'], 0, 30);
+
+                $csv .= self::create_line($datev_stammdaten_definition, $data);
+            }
+        }
+
+        return self::encodeCsvOutput($csv, $format);
+    }
+
+    private static function normalizeDatevAccountNumber($konto) : string
+    {
+        $konto = preg_replace('/[^0-9]/', '', (string)$konto);
+
+        return mb_substr($konto, 0, 9);
+    }
+
+    private static function splitDatevUstId($ustid) : array
+    {
+        $ustid = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)$ustid));
+        if (mb_strlen($ustid) < 3) {
+            return array('', $ustid);
+        }
+
+        return array(mb_substr($ustid, 0, 2), mb_substr($ustid, 2));
+    }
+
+    private static function encodeCsvOutput(string $csv, string $format = "ISO-8859-1") : string
+    {
+        switch ($format) {
+            case "UTF-8":
+                return $csv;
+            case "UTF-8-BOM":
+                return "\xef\xbb\xbf".$csv;
+            default:
+                return mb_convert_encoding($csv, "ISO-8859-1", "UTF-8");
+        }
     }
 
     static function create_line($definition, $data) : string {

@@ -174,8 +174,7 @@ class Bestellvorschlag {
             'versendet',
             'freigegeben'
             $entwuerfe
-        ) AND NOT (auf.zahlungsweise = 'vorkasse' AND auf.vorabbezahltmarkieren <> 1)
-        AND $reserviersperre
+        ) AND $reserviersperre
 ) AS auftrag,
 (
     SELECT
@@ -354,132 +353,239 @@ FROM
         return $erg;
     }
 
-    function bestellvorschlag_list() {
+    public function bestellvorschlag_offene_auftraege_mit_beschreibung(int $artikelId): array
+    {
+        $artikelId = (int)$artikelId;
+        // Prüfe, ob Entwürfe berücksichtigt werden sollen. Diese Info wird
+        // via GET übergeben und entspricht der Tabelleinstellung.
+        $includeDrafts = false;
+        $moreData2 = (int)$this->app->Secure->GetGET('more_data2');
+        if ($moreData2 === 1) {
+            $includeDrafts = true;
+        }
+        // Statustabelle für Bestellungen: ohne Entwürfe nur freigegeben/versendet
+        $bestellStatusList = $includeDrafts ? "('angelegt','freigegeben','versendet')" : "('freigegeben','versendet')";
 
+        $sql = "
+            SELECT
+                aufp.id AS auftrag_position_id,
+                aufp.auftrag AS auftrag_id,
+                GREATEST(
+                    (aufp.menge - aufp.geliefert)
+                    - COALESCE((
+                        SELECT SUM(bp.menge - bp.geliefert)
+                        FROM bestellung_position bp
+                        INNER JOIN bestellung b ON b.id = bp.bestellung
+                        WHERE bp.artikel = aufp.artikel
+                          AND b.status IN {$bestellStatusList}
+                          AND bp.auftrag_position_id = aufp.id
+                    ), 0),
+                    0
+                ) AS restmenge,
+                COALESCE(aufp.beschreibung, '') AS beschreibung
+            FROM auftrag_position aufp
+            INNER JOIN auftrag auf ON auf.id = aufp.auftrag
+            WHERE aufp.artikel = {$artikelId}
+              AND (aufp.menge - aufp.geliefert) > 0
+              AND auf.status IN ('versendet','freigegeben','angelegt')
+              AND COALESCE(auf.nicht_reservieren, 0) <> 1
+            HAVING restmenge > 0
+            ORDER BY auf.datum, auf.id, aufp.id
+        ";
 
+        $rows = $this->app->DB->SelectArr($sql);
+        return is_array($rows) ? $rows : [];
+    }
+
+    public function bestellvorschlag_list(): void
+    {
         $submit = $this->app->Secure->GetPOST('submit');
-        $user = $this->app->User->GetID();
+        $user   = $this->app->User->GetID();
 
-        $monate_absatz = $this->app->Secure->GetPOST('monate_absatz');
-        if (empty($monate_absatz)) {
-             $monate_absatz = 0;
-        }
-        $monate_voraus = $this->app->Secure->GetPOST('monate_voraus');
-        if (empty($monate_voraus)) {
-             $monate_voraus = 0;
-        }
-
-        $kategorienfilter = $this->app->Secure->GetPOST('kategorien');
-
-        // For transfer to tablesearch
+        // Eingelesene Filter persistieren
+        $monate_absatz = (int)$this->app->Secure->GetPOST('monate_absatz');
+        $monate_voraus = (int)$this->app->Secure->GetPOST('monate_voraus');
+        $kategorienfilter = (array)$this->app->Secure->GetPOST('kategorien');
+        $this->app->User->SetParameter('bestellvorschlag_monate_absatz', $monate_absatz);
+        $this->app->User->SetParameter('bestellvorschlag_monate_voraus', $monate_voraus);
         if (!empty($kategorienfilter)) {
-            $this->app->User->SetParameter('bestellvorschlag_kategorienfilter', implode(', ',$kategorienfilter));
+            $this->app->User->SetParameter('bestellvorschlag_kategorienfilter', implode(', ', $kategorienfilter));
         } else {
             $this->app->User->SetParameter('bestellvorschlag_kategorienfilter', '');
         }
 
-        $this->app->User->SetParameter('bestellvorschlag_monate_absatz', $monate_absatz);
-        $this->app->User->SetParameter('bestellvorschlag_monate_voraus', $monate_voraus);
+        $msg = '';
 
         switch ($submit) {
             case 'loeschen':
-                $sql = "DELETE FROM bestellvorschlag where user = $user";
-                $this->app->DB->Delete($sql);
-            break;
-            case 'speichern':
+                // Alle gespeicherten Vorschläge des Users entfernen
+                $this->app->DB->Delete("DELETE FROM bestellvorschlag WHERE user = {$user}");
+                break;
 
+            case 'speichern':
+                // Speichere die Einstellung, ob Beschreibungen aus Aufträgen
+                // übernommen werden sollen
+                $beschreibungPost = $this->app->Secure->GetPOST('beschreibung_aus_auftrag');
+                $beschreibungVal  = ($beschreibungPost === '1') ? 1 : 0;
+                $this->app->User->SetParameter('bestellvorschlag_beschreibung_aus_auftrag', $beschreibungVal);
+
+                // Alle Mengen aus den Eingabefeldern übernehmen und in die
+                // Tabelle bestellvorschlag schreiben (Upsert)
                 $menge_input = $this->app->Secure->GetPOSTArray();
-                $mengen = array();
                 foreach ($menge_input as $key => $menge) {
-                    if ((strpos($key,'menge_') === 0) && ($menge !== '')) {
-                        $artikel = substr($key,'6');
+                    if (strpos($key, 'menge_') === 0 && $menge !== '') {
+                        $artikel = (int)substr($key, 6);
+                        $menge   = (float)$menge;
                         if ($menge >= 0) {
-                            $sql = "INSERT INTO bestellvorschlag (artikel, user, menge) VALUES($artikel,$user,$menge) ON DUPLICATE KEY UPDATE menge = $menge";
+                            $sql = "INSERT INTO bestellvorschlag (artikel, user, menge) VALUES({$artikel}, {$user}, {$menge}) ON DUPLICATE KEY UPDATE menge = {$menge}";
                             $this->app->DB->Insert($sql);
                         }
                     }
                 }
-            break;
+                break;
+
             case 'bestellungen_erzeugen':
-
-                $auswahl = $this->app->Secure->GetPOST('auswahl');
+                // IDs der ausgewählten Artikel sammeln
+                $auswahl = (array)$this->app->Secure->GetPOST('auswahl');
                 $selectedIds = [];
-
-                if(empty($auswahl)) {
+                foreach ($auswahl as $selectedId) {
+                    $selectedId = (int)$selectedId;
+                    if ($selectedId > 0) {
+                        $selectedIds[] = $selectedId;
+                    }
+                }
+                if (empty($selectedIds)) {
                     $msg = '<div class="error">Bitte Artikel ausw&auml;hlen.</div>';
                     break;
                 }
 
-                if(!empty($auswahl)) {
-                    foreach ($auswahl as $selectedId) {
-                        $selectedId = (int) $selectedId;
-                        if ($selectedId > 0) {
-                          $selectedIds[] = $selectedId;
-                        }
-                    }
-                }
-
+                // Hole alle Mengen aus dem Post, aber nur für die ausgewählten
+                // Artikel und nur solche mit Menge > 0
                 $menge_input = $this->app->Secure->GetPOSTArray();
-                $mengen = array();
-
+                $mengen = [];
                 foreach ($selectedIds as $artikel_id) {
                     foreach ($menge_input as $key => $menge) {
-                        if ((strpos($key,'menge_') === 0) && ($menge !== '')) {
-                            $artikel = substr($key,'6');
-                            if ($menge > 0 && $artikel == $artikel_id) {
-                              $mengen[] = array('id' => $artikel,'menge' => $menge);
+                        if (strpos($key, 'menge_') === 0 && $menge !== '') {
+                            $artikel = (int)substr($key, 6);
+                            if ($artikel == $artikel_id) {
+                                $menge = (float)$menge;
+                                if ($menge > 0) {
+                                    $mengen[] = ['id' => $artikel, 'menge' => $menge];
+                                }
                             }
                         }
                     }
                 }
 
-                $mengen_pro_adresse = array();
+                // Gruppiere Bestellmengen nach Lieferant (Adresse)
+                $mengen_pro_adresse = [];
                 foreach ($mengen as $menge) {
-                    $sql = "SELECT adresse FROM artikel WHERE id = ".$menge['id'];
-                    $adresse = $this->app->DB->Select($sql);
+                    $adresse = $this->app->DB->Select("SELECT adresse FROM artikel WHERE id = {$menge['id']}");
                     if (!empty($adresse)) {
-                        $index = array_search($adresse, array_column($mengen_pro_adresse,'adresse'));
+                        // Prüfe, ob es die Adresse bereits im Array gibt
+                        $index = array_search($adresse, array_column($mengen_pro_adresse, 'adresse'));
                         if ($index !== false) {
                             $mengen_pro_adresse[$index]['positionen'][] = $menge;
                         } else {
-                            $mengen_pro_adresse[] = array('adresse' => $adresse,'positionen' => array($menge));
+                            $mengen_pro_adresse[] = ['adresse' => $adresse, 'positionen' => [$menge]];
                         }
                     }
                 }
 
                 $angelegt = 0;
+                $beschreibung_aus_auftrag = (int)$this->app->User->GetParameter('bestellvorschlag_beschreibung_aus_auftrag') === 1;
+
+                // Aktuelles Datum für Bestellungen
+                $datum = date('Y-m-d');
 
                 foreach ($mengen_pro_adresse as $bestelladresse) {
                     $bestellid = $this->app->erp->CreateBestellung($bestelladresse);
-                    if (!empty($bestellid)) {
+                    if (empty($bestellid)) {
+                        continue;
+                    }
+                    $angelegt++;
+                    // Standardwerte laden und Bestellung protokollieren
+                    $this->app->erp->LoadBestellungStandardwerte($bestellid, $bestelladresse['adresse']);
+                    $this->app->erp->BestellungProtokoll($bestellid, "Bestellung angelegt");
 
-                        $angelegt++;
+                    // Für jede Position wird zunächst der offene Bedarf aus
+                    // Auftragspostionen ermittelt (sofern aktiviert). Danach
+                    // werden die Bestellpositionen hinzugefügt.
+                    foreach ($bestelladresse['positionen'] as $position) {
+                        $artikelId    = (int)$position['id'];
+                        $bestellMenge = (float)$position['menge'];
+                        $rest         = $bestellMenge;
 
-                        $this->app->erp->LoadBestellungStandardwerte($bestellid,$bestelladresse['adresse']);
-                        $this->app->erp->BestellungProtokoll($bestellid,"Bestellung angelegt");
-                        foreach ($bestelladresse['positionen'] as $position) {
-                            $preisid = $this->app->erp->Einkaufspreis($position['id'], $position['menge'], $bestelladresse['adresse']);
-
-                            if ($preisid == null) {
-                                $artikelohnepreis = $position['id'];
-                            } else {
-                                $artikelohnepreis = null;
+                        if ($beschreibung_aus_auftrag) {
+                            // Hole offene Bedarfe inkl. Beschreibung aus
+                            // Auftragspositionen
+                            $bedarfe = $this->bestellvorschlag_offene_auftraege_mit_beschreibung($artikelId);
+                            foreach ($bedarfe as $bedarf) {
+                                if ($rest <= 0) {
+                                    break;
+                                }
+                                $bedarfRest = (float)$bedarf['restmenge'];
+                                if ($bedarfRest <= 0) {
+                                    continue;
+                                }
+                                $teilmenge = min($rest, $bedarfRest);
+                                if ($teilmenge <= 0) {
+                                    continue;
+                                }
+                                // Preisermittlung für die jeweilige Teilmenge
+                                $preisid = $this->app->erp->Einkaufspreis($artikelId, $teilmenge, $bestelladresse['adresse']);
+                                $artikelohnepreis = ($preisid === null) ? $artikelId : null;
+                                $beschreibung = trim((string)$bedarf['beschreibung']);
+                                $auftragpositionid = (int)$bedarf['auftrag_position_id'];
+                                // Bestellposition anlegen
+                                $this->app->erp->AddBestellungPosition(
+                                    $bestellid,
+                                    $preisid,
+                                    $teilmenge,
+                                    $datum,
+                                    $beschreibung,
+                                    $artikelohnepreis,
+                                    '',
+                                    '',
+                                    $auftragpositionid
+                                );
+                                $rest -= $teilmenge;
                             }
-
+                        }
+                        // Für übrig gebliebene Menge ohne Auftragsbezug (oder wenn
+                        // Auftragsbezug deaktiviert) einfache Bestellposition
+                        if ($rest > 0) {
+                            $preisid = $this->app->erp->Einkaufspreis($artikelId, $rest, $bestelladresse['adresse']);
+                            $artikelohnepreis = ($preisid === null) ? $artikelId : null;
                             $this->app->erp->AddBestellungPosition(
                                 $bestellid,
                                 $preisid,
-                                $position['menge'],
+                                $rest,
                                 $datum,
                                 '',
                                 $artikelohnepreis
                             );
                         }
-                        $this->app->erp->BestellungNeuberechnen($bestellid);
+                    }
+                    // Bestellung neu berechnen
+                    $this->app->erp->BestellungNeuberechnen($bestellid);
+                    // Vorschläge für verwendete Artikel entfernen
+                    $ids_zum_loeschen = [];
+                    foreach ($bestelladresse['positionen'] as $pos) {
+                        $aid = (int)$pos['id'];
+                        if ($aid > 0) {
+                            $ids_zum_loeschen[] = $aid;
+                        }
+                    }
+                    if (!empty($ids_zum_loeschen)) {
+                        $ids_sql = implode(',', $ids_zum_loeschen);
+                        $this->app->DB->Delete("DELETE FROM bestellvorschlag WHERE user = {$user} AND artikel IN ({$ids_sql})");
                     }
                 }
-                $msg .= "<div class=\"success\">Es wurden $angelegt Bestellungen angelegt.</div>";
-            break;
+                if ($angelegt > 0) {
+                    $msg .= "<div class=\"success\">Es wurden {$angelegt} Bestellungen angelegt.</div>";
+                }
+                break;
         }
 
         $this->app->erp->MenuEintrag("index.php?module=bestellvorschlag&action=list", "&Uuml;bersicht");
@@ -489,6 +595,17 @@ FROM
 
         $this->app->Tpl->Set('MONATE_ABSATZ',$monate_absatz);
         $this->app->Tpl->Set('MONATE_VORAUS',$monate_voraus);
+
+        $beschreibung_aus_auftrag = (int)$this->app->User->GetParameter('bestellvorschlag_beschreibung_aus_auftrag');
+        if ($beschreibung_aus_auftrag === null) {
+            $beschreibung_aus_auftrag = 1;
+            $this->app->User->SetParameter('bestellvorschlag_beschreibung_aus_auftrag', 1);
+        }
+
+        $this->app->Tpl->Set(
+            'BESCHREIBUNG_AUS_AUFTRAG',
+            ((int)$beschreibung_aus_auftrag === 1) ? 'checked="checked"' : ''
+        );
 
         $this->app->Tpl->Set('MESSAGE',$msg);
 

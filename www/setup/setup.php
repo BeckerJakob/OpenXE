@@ -127,9 +127,16 @@ Bitte nach der Installation das <a href=\"".$weburllink."index.php?module=upgrad
             {
 						 	$import = file_get_contents($value);
 
-   						$import = preg_replace ("%/\*(.*)\*/%Us", '', $import);
-   						$import = preg_replace ("%^--(.*)\n%mU", '', $import);
-   						$import = preg_replace ("%^$\n%mU", '', $import);
+              // Normalize line endings/BOM and keep SQL script executable across Windows/Linux
+              $import = preg_replace('/^\xEF\xBB\xBF/', '', $import);
+              $import = str_replace(array("\r\n", "\r"), "\n", $import);
+
+              // Convert MySQL versioned comments to plain SQL and remove non-versioned block comments.
+              $import = preg_replace('/\/\*![0-9]+\s*(.*?)\*\//s', '$1', $import);
+              $import = preg_replace('/\/\*(?!\!)(.*?)\*\//s', '', $import);
+              $import = preg_replace('/^\s*--.*$/m', '', $import);
+              $import = preg_replace('/^\s*#.*$/m', '', $import);
+              $import = preg_replace('/^\s*;\s*$/m', '', $import);
 
 							$db= mysqli_connect($_SESSION['setup'][$configfile]['WFdbhost'],$_SESSION['setup'][$configfile]['WFdbuser'],$_SESSION['setup'][$configfile]['WFdbpass']);
               if($db)
@@ -155,11 +162,26 @@ Bitte nach der Installation das <a href=\"".$weburllink."index.php?module=upgrad
 		}
 
 
-                  $import = explode (";\n", $import); 
+                  $import = trim($import);
+                  if($import !== '')
+                  {
+                    if(!mysqli_multi_query($db, $import))
+                    {
+                      $error = "Konnte SQL-Import nicht ausf&uuml;hren: ".mysqli_error($db);
+                    }
+                    else
+                    {
+                      do {
+                        if($result = mysqli_store_result($db))
+                        {
+                          mysqli_free_result($result);
+                        }
+                      } while(mysqli_more_results($db) && mysqli_next_result($db));
 
-                  foreach ($import as $imp){
-                    if ($imp != '' && $imp != ' ' && trim($imp) != ''){
-                      mysqli_query($db,$imp);
+                      if(mysqli_errno($db))
+                      {
+                        $error = "Konnte SQL-Import nicht vollst&auml;ndig ausf&uuml;hren: ".mysqli_error($db);
+                      }
                     }
                   }
 

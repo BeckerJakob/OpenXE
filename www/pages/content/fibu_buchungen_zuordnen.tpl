@@ -47,6 +47,12 @@
                                             <option value="sachkonto">{|auf Sachkonto buchen|}</option>
                                         </select>&nbsp;Sachkonto:
                                         <input type="text" form="buchungenform" id="sachkonto" name="sachkonto" value="">
+                                        <input type="hidden" id="is_kontoauszuege" value="[IS_KONTOAUSZUEGE]">
+                                        <span id="buchungsschluessel_wrapper" style="display:none;">&nbsp;Buchungsschl&uuml;ssel:
+                                            <select form="buchungenform" id="buchungsschluessel" name="buchungsschluessel">
+                                                [BUCHUNGSSCHLUESSEL_OPTIONS]
+                                            </select>
+                                        </span>
                                         <button name="submit" form="buchungenform" value="BUCHEN" class="ui-button-icon">{|BUCHEN|}</button>
                                     </td>
                                 </tr>                             
@@ -75,5 +81,21 @@
       $('#fibu_buchungen_zuordnen').find('input[type="checkbox"]').prop('checked',wert);
       $('#fibu_buchungen_zuordnen').find('input[type="checkbox"]').first().trigger('change');
     });
+
+    function toggleBuchungsschluessel() {
+      var isKontoauszuege = $('#is_kontoauszuege').val() === '1';
+      var isSachkontoAktion = $('#sel_aktion').val() === 'sachkonto';
+      var show = isKontoauszuege && isSachkontoAktion;
+
+      $('#buchungsschluessel_wrapper').toggle(show);
+      $('#buchungsschluessel').prop('disabled', !show);
+
+      if (!show) {
+        $('#buchungsschluessel').val('');
+      }
+    }
+
+    $('#sel_aktion').on('change', toggleBuchungsschluessel);
+    toggleBuchungsschluessel();
   
 </script>

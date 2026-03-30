@@ -716,13 +716,23 @@ class Gutschrift extends GenGutschrift
     $this->app->erp->CheckBearbeiter($id,'gutschrift');
     $doctype = 'gutschrift';
 
-    $sql = "SELECT belegnr, rechnungid FROM gutschrift WHERE id='$id' LIMIT 1";
+    $sql = "SELECT belegnr, rechnungid, datum, IF(waehrung <> '', waehrung, 'EUR') AS waehrung FROM gutschrift WHERE id='$id' LIMIT 1";
     $result = $this->app->DB->SelectArr($sql);
     $belegnr = $result[0]['belegnr'];
     $rechnungid = $result[0]['rechnungid'];
+    $buchungsdatum = $result[0]['datum'];
     $name = $this->app->DB->Select("SELECT a.name FROM gutschrift b LEFT JOIN adresse a ON a.id=b.adresse WHERE b.id='$id' LIMIT 1");
     $summe = $this->app->DB->Select("SELECT soll FROM gutschrift WHERE id='$id' LIMIT 1");
-    $waehrung = $this->app->DB->Select("SELECT waehrung FROM gutschrift_position WHERE gutschrift='$id' LIMIT 1");
+    $waehrung = $result[0]['waehrung'];
+    if (empty($waehrung)) {
+      $waehrung = $this->app->DB->Select("SELECT waehrung FROM gutschrift_position WHERE gutschrift='$id' LIMIT 1");
+    }
+    if (empty($waehrung)) {
+      $waehrung = 'EUR';
+    }
+    if (empty($buchungsdatum) || $buchungsdatum == '0000-00-00') {
+      $buchungsdatum = date("Y-m-d");
+    }
 
     if(empty($intern)){
       $this->app->erp->RunHook('beleg_freigabe', 4, $doctype, $id, $allowedFrm, $showDefault);
@@ -735,7 +745,7 @@ class Gutschrift extends GenGutschrift
         // Create fibu_buchung
         $gegen_rechnung = $this->app->Secure->GetGET('gegen_rechnung');
         if ($gegen_rechnung && $rechnungid > 0) {
-            $this->app->erp->fibu_buchungen_buchen('gutschrift', $id, 'rechnung', $rechnungid, -$summe, $waehrung, date("Y-m-d"), 'Verrechnung');
+            $this->app->erp->fibu_buchungen_buchen('gutschrift', $id, 'rechnung', $rechnungid, -$summe, $waehrung, $buchungsdatum, 'Verrechnung');
         }
 
         if($intern) {

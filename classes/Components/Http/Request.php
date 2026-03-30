@@ -23,6 +23,7 @@ class Request
         'GET',
         'POST',
         'PUT',
+        'PATCH',
         'DELETE',
     ];
 
@@ -104,7 +105,7 @@ class Request
 
         if (
             $request->server->get('CONTENT_TYPE') === 'application/x-www-form-urlencoded' &&
-            strtoupper($request->server->get('REQUEST_METHOD')) === 'PUT'
+            in_array(strtoupper($request->server->get('REQUEST_METHOD')), ['PUT', 'PATCH'], true)
         ) {
             parse_str($request->getContent(), $postParams);
             $request->post = new ReadonlyParameterCollection($postParams);

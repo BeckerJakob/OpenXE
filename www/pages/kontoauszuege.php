@@ -63,7 +63,7 @@ class Kontoauszuege {
                             k.kurzbezeichnung,
                             ".$this->app->erp->FormatUCfirst('k.type').",
                             ".$this->app->erp->FormatMenge('SUM(COALESCE(ka.soll,0))+k.saldo_betrag',2)." AS kontostand,
-                            ".$this->app->erp->FormatDatetime("MIN(ka.importdatum)")." AS datum,
+                            ".$this->app->erp->FormatDatetime("MAX(ka.importdatum)")." AS datum,
                             k.id
                         FROM
                             konten k

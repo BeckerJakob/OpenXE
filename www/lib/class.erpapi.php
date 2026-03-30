@@ -3149,6 +3149,7 @@ function LieferscheinEinlagern($id,$grund="Lieferschein Einlagern", $lpiids = nu
           }else{
             if($belegtyp=="lieferschein")
             {
+              $this->app->DB->Update("UPDATE lieferschein_position SET geliefert='$geliefert' WHERE id='$subid' LIMIT 1");
               $auftragposid=$this->app->DB->Select("SELECT auftrag_position_id FROM lieferschein_position WHERE id='$subid'");
               if($auftragposid>0)
               {
@@ -8602,6 +8603,9 @@ function StandardFirmendatenWerte()
   $this->AddNeuenFirmendatenWert( 'zeiterfassung_pflicht', 'int', '1', '', '0', '0', 0, 0);
 
   $this->AddNeuenFirmendatenWert( 'ampellager', 'int', '1', '', '0', '0', 0, 0);
+  $this->AddNeuenFirmendatenWert( 'ampelbestellung', 'int', '1', '', '0', '0', 0, 0);
+  $this->AddNeuenFirmendatenWert( 'ampelbezahlung', 'int', '1', '', '0', '0', 0, 0);
+  $this->AddNeuenFirmendatenWert( 'ampellieferschein', 'int', '1', '', '0', '0', 0, 0);
   $this->AddNeuenFirmendatenWert( 'ampelporto', 'int', '1', '', '0', '0', 0, 0);
   $this->AddNeuenFirmendatenWert( 'ampelust', 'int', '1', '', '0', '0', 0, 0);
   $this->AddNeuenFirmendatenWert( 'ampelzahlung', 'int', '1', '', '0', '0', 0, 0);
@@ -12406,70 +12410,267 @@ function SendPaypalFromAuftrag($auftrag, $test = false)
       $this->app->DB->Update("UPDATE auftrag SET ust_ok='1' WHERE id='$auftrag' LIMIT 1");
     }
 
-/*
     // Lager Check
-    if (!$auftraege[0]['kommission_ok']) {
-        $positionen_vorhanden = 0;
-        $artikelzaehlen=0;
-        $cartikelarr = $artikelarr?count($artikelarr):0;
-        for($k=0;$k<$cartikelarr; $k++)  {
-          $menge = $artikelarr[$k]['menge'] - $artikelarr[$k]['geliefert_menge'];
-          $artikel = $artikelarr[$k]['artikel'];
-          $artikel_position_id = $artikelarr[$k]['id'];
-          $lagerartikel = $artikelarr[$k]['artlagerartikel'];
-          if($lagerartikel==1) {
-            // wenn artikel oefters im Auftrag nehme gesamte summe her
+    $positionen_voll_lieferbar = 0;
+    $positionen_teil_lieferbar = 0;
+    $artikelzaehlen = 0;
+    $cartikelarr = $artikelarr ? count($artikelarr) : 0;
+    
+    for($k=0; $k < $cartikelarr; $k++) {
+      $menge = $artikelarr[$k]['menge'] - $artikelarr[$k]['geliefert_menge'];
+      $artikel = $artikelarr[$k]['artikel'];
+      $lagerartikel = $artikelarr[$k]['artlagerartikel'];
 
-            $gesamte_menge_im_auftrag= $this->app->DB->Select("SELECT SUM(menge-geliefert_menge) FROM auftrag_position WHERE auftrag='$auftrag' AND artikel='$artikel'");
-            if($gesamte_menge_im_auftrag > $menge) {
-              $menge = $gesamte_menge_im_auftrag;
-            }
-            $artikelzaehlen++;
-            if($this->LagerCheck($adresse,$artikel,$menge,"auftrag",$auftrag)>0) {
-              $positionen_vorhanden++;
-            }
-            elseif($positionen_vorhanden > 0) {
-              break;
-            }
-            //else { if($auftrag==314) {echo "Artikel $artikel Menge $menge";exit;} }
-
-          }
+      if($lagerartikel == 1) {
+        $artikelzaehlen++;
+        
+        // Gesamte Menge im Auftrag berücksichtigen
+        $gesamte_menge_im_auftrag = $this->app->DB->Select("SELECT SUM(menge-geliefert_menge) FROM auftrag_position WHERE auftrag='$auftrag' AND artikel='$artikel'");
+        if($gesamte_menge_im_auftrag > $menge) {
+          $menge = $gesamte_menge_im_auftrag;
         }
-        $projekt = $this->app->DB->Select("SELECT projekt FROM auftrag WHERE id='$auftrag' LIMIT 1");
 
-        $this->app->DB->Update("UPDATE auftrag SET teillieferung_moeglich='0' WHERE id='$auftrag' LIMIT 1");
-        //echo "$positionen_vorhanden $artikelzaehlen<hr>";
-        if($positionen_vorhanden==$artikelzaehlen){
-          $this->app->DB->Update("UPDATE auftrag SET lager_ok='1' WHERE id='$auftrag' LIMIT 1");
-        }
-        else {
-          $kommissionierverfahren = $this->app->DB->Select("SELECT kommissionierverfahren FROM projekt WHERE id = '$projekt' LIMIT 1");
-          if($kommissionierverfahren == 'rechnungsmail')
-          {
-            $this->app->DB->Update("UPDATE auftrag SET lager_ok='1' WHERE id='$auftrag' LIMIT 1");
-          }else{
-            $this->app->DB->Update("UPDATE auftrag SET lager_ok='0' WHERE id='$auftrag' LIMIT 1");
-          }
-          if($positionen_vorhanden > 0 && $artikelzaehlen > 0)
-          {
-            $this->app->DB->Update("UPDATE auftrag SET teillieferung_moeglich='1' WHERE id='$auftrag' LIMIT 1");
-          }
-        }
-    } else {
-        $this->app->DB->Update("UPDATE auftrag SET lager_ok='1' WHERE id='$auftrag' LIMIT 1");
-    } */
-
-
-    if (!$auftraege[0]['kommission_ok']) {
-        $lagercheck = $this->app->erp->LagerCheckBeleg(doctype:  'auftrag', doctypeid: $auftrag);
-        if ($lagercheck['success']) {
-           $this->app->DB->Update("UPDATE auftrag SET lager_ok='1' WHERE id='$auftrag' LIMIT 1");
+        if($this->LagerCheck($adresse, $artikel, $menge, "auftrag", $auftrag) > 0) {
+          $positionen_voll_lieferbar++;
         } else {
-           $this->app->DB->Update("UPDATE auftrag SET lager_ok='0' WHERE id='$auftrag' LIMIT 1");
+             // Check for partial availability (Physical Stock > 0)
+             $stockSql = "SELECT SUM(lpi.menge) 
+                         FROM lager_platz_inhalt lpi 
+                         INNER JOIN lager_platz lp ON lp.id = lpi.lager_platz
+                         WHERE lpi.artikel = '$artikel' AND lp.sperrlager = 0";
+             $currentStock = $this->app->DB->Select($stockSql);
+             
+             if($currentStock > 0) {
+                 $positionen_teil_lieferbar++;
+             }
         }
-    } else {
-        $this->app->DB->Update("UPDATE auftrag SET lager_ok='1' WHERE id='$auftrag' LIMIT 1");
+      }
     }
+    
+    $projekt = $this->app->DB->Select("SELECT projekt FROM auftrag WHERE id='$auftrag' LIMIT 1");
+    $this->app->DB->Update("UPDATE auftrag SET teillieferung_moeglich='0' WHERE id='$auftrag' LIMIT 1");
+    
+    $lager_ok = 0;
+    
+    // Logic for lager_ok status
+    if ($artikelzaehlen > 0 && $positionen_voll_lieferbar == $artikelzaehlen) {
+        $lager_ok = 1;
+    } elseif ($positionen_voll_lieferbar > 0 || $positionen_teil_lieferbar > 0) {
+        $lager_ok = 2;
+    } else {
+        $lager_ok = 0;
+    }
+
+    // Override for rechnungsmail project setting
+    $kommissionierverfahren = $this->app->DB->Select("SELECT kommissionierverfahren FROM projekt WHERE id = '$projekt' LIMIT 1");
+    if($kommissionierverfahren == 'rechnungsmail') {
+        $lager_ok = 1;
+    }
+
+    $this->app->DB->Update("UPDATE auftrag SET lager_ok='$lager_ok' WHERE id='$auftrag' LIMIT 1");
+
+    // Set teillieferung_moeglich if we have something but not everything fully (based on physical availability, ignoring override)
+    if (($positionen_voll_lieferbar > 0 || $positionen_teil_lieferbar > 0) && ($positionen_voll_lieferbar < $artikelzaehlen)) {
+         $this->app->DB->Update("UPDATE auftrag SET teillieferung_moeglich='1' WHERE id='$auftrag' LIMIT 1");
+    }
+
+    // Calculate bestellung_ok (Purchase Order Status)
+    // 0 = Orange (Nicht erstellt), 2 = Gelb (Angelegt/Wait), 3 = Blau (Freigegeben/Ready), 1 = Grün (Versendet/Go)
+    $bestellung_ok = 1; // Wir starten optimistisch bei "Grün" (Alles erledigt oder im Lager)
+
+    // Nur relevante Lagerartikel prüfen (keine Pauschalen/Services)
+    $positions = $this->app->DB->SelectArr("SELECT ap.id, ap.artikel, ap.menge 
+                                            FROM auftrag_position ap 
+                                            JOIN artikel art ON ap.artikel = art.id 
+                                            WHERE ap.auftrag = '$auftrag' 
+                                            AND art.lagerartikel = 1 
+                                            AND art.typ != 'pauschale' 
+                                            AND art.typ != 'service'");
+
+    if (is_array($positions)) {
+        $stock_cache = [];
+        foreach ($positions as $pos) {
+            $artID = (int)$pos['artikel'];
+            
+            // 1. Lagerbestand abfragen (Cache zur Performance-Optimierung)
+            if (!isset($stock_cache[$artID])) {
+                $stockSql = "SELECT SUM(lpi.menge) 
+                            FROM lager_platz_inhalt lpi 
+                            INNER JOIN lager_platz lp ON lp.id = lpi.lager_platz
+                            WHERE lpi.artikel = $artID AND lp.sperrlager = 0";
+                $currentStock = $this->app->DB->Select($stockSql);
+                $stock_cache[$artID] = ($currentStock) ? $currentStock : 0;
+            }
+
+            // Wieviel wird nach Lagerabzug noch benötigt?
+            $needed = $pos['menge'];
+            if ($stock_cache[$artID] > 0) {
+                $take = min($needed, $stock_cache[$artID]);
+                $needed -= $take;
+                $stock_cache[$artID] -= $take;
+            }
+
+            // 2. Wenn nach Lagerprüfung noch Bedarf besteht, Bestellungen prüfen
+            if ($needed > 0) {
+                $po_positions = $this->app->DB->SelectArr("SELECT bp.menge, b.status 
+                                                          FROM bestellung_position bp 
+                                                          JOIN bestellung b ON bp.bestellung = b.id 
+                                                          WHERE bp.auftrag_position_id = '". (int)$pos['id'] ."' 
+                                                          AND b.status != 'storniert'");
+                
+                $ordered_qty = 0;
+                $lowest_po_status_for_pos = 1; // Standard für diese Position: Grün
+
+                if (is_array($po_positions)) {
+                    foreach ($po_positions as $po) {
+                        $ordered_qty += $po['menge'];
+                        
+                        // NEUES Status-Mapping für die Ampel:
+                        if ($po['status'] == 'angelegt' || $po['status'] == 'freigegeben') {
+                            // Interner Status: Dokument existiert, wurde aber noch nicht verschickt
+                            $current_status_val = 2; // Gelb ($wait_bestellung)
+                        } elseif ($po['status'] == 'versendet') {
+                            // Externer Status: Lieferant hat Bestellung, wir warten auf Ware
+                            $current_status_val = 3; // Blau ($ready_bestellung)
+                        } elseif ($po['status'] == 'abgeschlossen') {
+                            // Abgeschlossen: Ware ist da
+                            $current_status_val = 1; // Grün ($go_bestellung)
+                        } else {
+                            $current_status_val = 1; 
+                        }
+
+                        // Priorität: Wir zeigen immer den "unfertigsten" Status an.
+                        // 0 (fehlt) > 2 (Warten auf Versand) > 3 (Warten auf Ware) > 1 (Erledigt)
+                        if ($current_status_val == 2) {
+                            $lowest_po_status_for_pos = 2;
+                        } elseif ($current_status_val == 3 && $lowest_po_status_for_pos != 2) {
+                            $lowest_po_status_for_pos = 3;
+                        }
+                    }
+                }
+
+                // 3. Finale Entscheidung für den Gesamtstatus der Ampel
+                if ($ordered_qty < $needed) {
+                    // Es fehlt Menge, für die es keine Bestellung gibt -> SOFORT ORANGE
+                    $bestellung_ok = 0;
+                    break; // Abbruch der Schleife, da der schlechteste Status (0) erreicht ist
+                } else {
+                    // Menge ist durch Bestellungen gedeckt, wir prüfen die "Farbe"
+                    // Die Ampel wird nur herabgestuft (0 > 2 > 3 > 1)
+                    if ($bestellung_ok != 0) {
+                        if ($lowest_po_status_for_pos == 2) {
+                            $bestellung_ok = 2; // Gelb gewinnt
+                        } elseif ($lowest_po_status_for_pos == 3 && $bestellung_ok != 2) {
+                            $bestellung_ok = 3; // Blau gewinnt, falls nicht schon Gelb
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Wert in die Datenbank schreiben
+    $this->app->DB->Update("UPDATE auftrag SET bestellung_ok='$bestellung_ok' WHERE id='$auftrag' LIMIT 1");
+
+    // bezahlung_ok CODE
+    $bezahlung_ok = 0;
+        
+    // Wir holen uns die aktuellste, nicht stornierte Rechnung zum Auftrag
+    // Hinweis: Ich verwende 'auftragid' wie in deinem Snippet angegeben
+    $rechnung = $this->app->DB->SelectRow("
+        SELECT status, zahlungsstatus 
+        FROM rechnung 
+        WHERE auftragid = '$auftrag' AND status != 'storniert' AND status != 'angelegt'
+        ORDER BY id DESC LIMIT 1
+    ");
+
+    if ($rechnung) {
+        $ist_bezahlt = ($rechnung['zahlungsstatus'] == 'bezahlt');
+
+        if (!$ist_bezahlt) {
+            // Fall 2: Rechnung freigegeben, aber noch nicht bezahlt
+            $bezahlung_ok = 2; // Blau
+        } else {
+            // Fall 1: Rechnung bezahlt (unabhängig von versandstatus)
+            $bezahlung_ok = 1; // Grün
+        }
+    }
+
+    $this->app->DB->Update("UPDATE auftrag SET bezahlung_ok = '$bezahlung_ok' WHERE id = '$auftrag' LIMIT 1");
+
+    // lieferschein_ok CODE
+    $lieferschein_ok = 0;
+    
+    $lieferscheine = $this->app->DB->SelectArr("SELECT id, status FROM lieferschein WHERE auftragid = '$auftrag' AND status != 'storniert'");
+
+    if (is_array($lieferscheine) && count($lieferscheine) > 0) {
+        
+        $sql_coverage = "SELECT 
+                            ap.id, 
+                            ap.menge as soll_menge, 
+                            IFNULL(SUM(lp.menge), 0) as ist_menge
+                         FROM auftrag_position ap
+                         LEFT JOIN artikel a ON ap.artikel = a.id
+                         LEFT JOIN lieferschein_position lp ON lp.auftrag_position_id = ap.id
+                         LEFT JOIN lieferschein l ON lp.lieferschein = l.id AND l.status != 'storniert'
+                         WHERE ap.auftrag = '$auftrag'
+                         AND a.lagerartikel = 1
+                         GROUP BY ap.id";
+                         
+        $coverage_check = $this->app->DB->SelectArr($sql_coverage);
+        
+        $is_fully_covered = true;
+        
+        if (is_array($coverage_check) && count($coverage_check) > 0) {
+            foreach($coverage_check as $pos) {
+                if (($pos['soll_menge'] - $pos['ist_menge']) > 0.0001) {
+                    $is_fully_covered = false;
+                    break;
+                }
+            }
+        } else {
+            $is_fully_covered = false;
+        }
+
+        if ($is_fully_covered) {
+            
+            $check_step2 = true;
+            
+            foreach($lieferscheine as $ls) {
+                 $not_ausgelagert = $this->app->DB->Select("SELECT COUNT(*) FROM lieferschein_position WHERE lieferschein='".$ls['id']."' AND geliefert < menge");
+                 if($not_ausgelagert > 0) {
+                     $check_step2 = false; break;
+                 }
+            }
+            
+            if (!$check_step2) {
+                 $lieferschein_ok = 2;
+            } else {
+                 $check_step3 = true;
+                 foreach($lieferscheine as $ls) {
+                     if($ls['status'] != 'versendet' && $ls['status'] != 'abgeschlossen') {
+                         $check_step3 = false; break;
+                     }
+                 }
+                 
+                 if ($check_step3) {
+                     $lieferschein_ok = 1;
+                 } else {
+                     $lieferschein_ok = 3;
+                 }
+                 
+                 $this->app->DB->Update("UPDATE auftrag SET lager_ok = '1' WHERE id = '$auftrag'");
+            }
+
+        } else {
+            $lieferschein_ok = 0;
+        }
+        
+    } else {
+        $lieferschein_ok = 0;
+    }
+    
+    $this->app->DB->Update("UPDATE auftrag SET lieferschein_ok = '$lieferschein_ok' WHERE id = '$auftrag'");
 
     // projekt check start
     $projektcheck = 0;
@@ -26864,7 +27065,7 @@ function Firmendaten($field,$projekt="")
           'footer_reihenfolge_proformarechnung_aktivieren','zeiterfassung_abrechnenvorausgewaehlt','festetrackingnummer',
           'guenstigste_vk','oneclickrelease','cleaner_logfile','cleaner_protokoll','cleaner_shopimport','cleaner_shopexportlog',
           'cleaner_versandzentrum','cleaner_uebertragungen','cleaner_adapterbox','angebot_auftrag_bestellung_ansprechpartner',
-          'ampellager','ampelporto','ampelust','ampelzahlung','ampelnachnahme','ampelautoversand','ampelkunde',
+          'ampellager','ampelbestellung','ampelbezahlung','ampellieferschein','ampelporto','ampelust','ampelzahlung','ampelnachnahme','ampelautoversand','ampelkunde',
           'ampelliefertermin','ampelkreditlimit','ampelliefersperre','ampelproduktion','freitext1aktiv','freitext2aktiv',
           'reisekosten_ohnebriefpapier','lieferdatumkw','vertriebbearbeiterfuellen','typimdokument','staffelpreiseanzeigen',
           'abmessungimdokument','projektoeffentlich','verkaufspreisevpe','einkaufspreisevpe','apiohnehtmlumwandlung',
@@ -30709,24 +30910,25 @@ function Firmendaten($field,$projekt="")
       $firma = $this->app->DB->Select("SELECT MAX(f.id) FROM firma f INNER JOIN firmendaten fd ON f.id = fd.firma LIMIT 1");
       if(!$firma)$firma = $this->app->DB->Select("SELECT max(id) FROM firma LIMIT 1");
       if(!$firma)$firma = $this->app->DB->Select("SELECT MAX(id) FROM firma LIMIT 1");
-
+        
+        $date = new DateTime(); $date->setTimezone(new DateTimeZone('Europe/Berlin')); $jetzt = $date->format('Y-m-d H:i:s');
         if($this->StandardZahlungsweise($projekt)=="rechnung")
         {
           $this->app->DB->Insert("INSERT INTO auftrag (id,datum,bearbeiter,firma,belegnr,autoversand,zahlungsweise,zahlungszieltage,
-          zahlungszieltageskonto,zahlungszielskonto,status,projekt,adresse,ohne_briefpapier)
+          zahlungszieltageskonto,zahlungszielskonto,status,projekt,adresse,ohne_briefpapier, sortierdatum)
             VALUES ('',NOW(),'','','$belegmax',1,'".$this->StandardZahlungsweise($projekt)."',
               '".$this->ZahlungsZielTage($projekt)."',
               '".$this->ZahlungsZielTageSkonto($projekt)."',
               '".$this->ZahlungsZielSkonto($projekt)."',
-              'angelegt','$projekt','$adresse','".$ohnebriefpapier."')");
+              'angelegt','$projekt','$adresse','".$ohnebriefpapier."', '$jetzt')");
         } else {
           $this->app->DB->Insert("INSERT INTO auftrag (id,datum,bearbeiter,firma,belegnr,autoversand,zahlungsweise,zahlungszieltage,
-          zahlungszieltageskonto,zahlungszielskonto,status,projekt,adresse,ohne_briefpapier)
+          zahlungszieltageskonto,zahlungszielskonto,status,projekt,adresse,ohne_briefpapier, sortierdatum)
             VALUES ('',NOW(),'','','$belegmax',1,'".$this->StandardZahlungsweise($projekt)."',
               '0',
               '0',
               '0',
-              'angelegt','$projekt','$adresse','".$ohnebriefpapier."')");
+              'angelegt','$projekt','$adresse','".$ohnebriefpapier."', '$jetzt')");
         }
 
         $id = $this->app->DB->GetInsertID();
@@ -31885,9 +32087,10 @@ function Firmendaten($field,$projekt="")
           return;
         }
         // kopiere eintraege aus auftrag_position
+        $date = new DateTime(); $date->setTimezone(new DateTimeZone('Europe/Berlin')); $jetzt = $date->format('Y-m-d H:i:s');
         $arr = $this->app->DB->SelectArr(
           sprintf(
-            "SELECT NOW() as datum,projekt,freitext,bodyzusatz,adresse,name,shopextid,
+            "SELECT '%s' as sortierdatum, NOW() as datum,projekt,freitext,bodyzusatz,adresse,name,shopextid,
             standardlager,ansprechpartner,anschreiben,
             abteilung,unterabteilung,strasse,adresszusatz,plz,ort,land,ustid,email,telefon,telefax,betreff,kundennummer,
             ihrebestellnummer,typ,
@@ -31898,6 +32101,7 @@ function Firmendaten($field,$projekt="")
             lieferland,lieferstrasse,lieferort,lieferplz,lieferadresszusatz,lieferansprechpartner,autoversand,art,
             sprache,anzeigesteuer,waehrung,kurs,kostenstelle,gln,liefergln,bundesstaat,lieferemail, lieferbedingung
             FROM auftrag WHERE id=%d LIMIT 1",
+            $jetzt,
             $id
           )
         );
@@ -32189,7 +32393,7 @@ function Firmendaten($field,$projekt="")
       }
 
 
-      function WeiterfuehrenAuftragZuLieferschein($id, $positionen = null, $zwischenpositionen = null)
+      function WeiterfuehrenAuftragZuLieferschein($id, $positionen = null, $zwischenpositionen = null, $allowZeroAmount = false)
       {
         if($id <= 0) {
           return null;
@@ -32251,11 +32455,16 @@ function Firmendaten($field,$projekt="")
           $poswheretmp .= ' AND ('.implode(' OR ',$posa).') ';
         }
 
+        $mengeSql = " AND ap.menge > 0 ";
+        if ($allowZeroAmount) {
+          $mengeSql = ""; // Filter entfernen, wenn Variable true ist
+        }
+
         if($nurlagerartikel)
         {
-          $pos = $this->app->DB->SelectArr("SELECT ap.*,art.porto AS artikelporto FROM auftrag_position ap INNER JOIN artikel art ON ap.artikel = art.id AND (art.lagerartikel = 1 OR (art.stueckliste = 1 AND art.juststueckliste = 1)) WHERE ap.auftrag='$id' AND ap.menge > 0 $poswheretmp ORDER BY ap.sort");
+          $pos = $this->app->DB->SelectArr("SELECT ap.*,art.porto AS artikelporto FROM auftrag_position ap INNER JOIN artikel art ON ap.artikel = art.id AND (art.lagerartikel = 1 OR (art.stueckliste = 1 AND art.juststueckliste = 1)) WHERE ap.auftrag='$id' $mengeSql $poswheretmp ORDER BY ap.sort");
         }else{
-          $pos = $this->app->DB->SelectArr("SELECT ap.*,art.porto AS artikelporto FROM auftrag_position ap LEFT JOIN artikel art ON ap.artikel = art.id WHERE ap.auftrag='$id' AND ap.menge > 0 $poswheretmp ORDER BY ap.sort");
+          $pos = $this->app->DB->SelectArr("SELECT ap.*,art.porto AS artikelporto FROM auftrag_position ap LEFT JOIN artikel art ON ap.artikel = art.id WHERE ap.auftrag='$id' $mengeSql $poswheretmp ORDER BY ap.sort");
         }
 
         if(empty($pos))
@@ -33310,6 +33519,8 @@ function Firmendaten($field,$projekt="")
         $check_mail = $this->app->DB->Select("SELECT auftrag_email FROM adresse WHERE id='$adresseid'");
         if($check_mail!="") $arr[0]['email'] = $check_mail;
         $arr[0]['autoversand'] = 1-(int)$this->Projektdaten($arr[0]['projekt'],'deactivateautoshipping');
+        $date = new DateTime(); $date->setTimezone(new DateTimeZone('Europe/Berlin'));
+        $arr[0]['sortierdatum'] = $date->format('Y-m-d H:i:s');
         $this->app->DB->UpdateArr('auftrag',$newid, 'id', $arr[0], true);
         $pos = $this->app->DB->SelectArr("SELECT * FROM angebot_position WHERE angebot='$id' order by sort");
         for($i=0;$i<(!empty($pos)?count($pos):0);$i++){
@@ -33412,13 +33623,13 @@ function Firmendaten($field,$projekt="")
         }
       }
 
-      function AddBestellungPosition($bestellung, $einkauf,$menge,$datum, $beschreibung = '',$artikel="",$einheit="", $waehrung = '')
+      function AddBestellungPosition($bestellung, $einkauf,$menge,$datum, $beschreibung = '',$artikel="",$einheit="", $waehrung = '', $auftrag_position_id = 0)
       {
         /** @var Bestellung $obj */
         $obj = $this->LoadModul('bestellung');
         if(!empty($obj) && method_exists($obj, 'AddBestellungPosition'))
         {
-          return $obj->AddBestellungPosition($bestellung, $einkauf,$menge,$datum, $beschreibung,$artikel,$einheit, $waehrung);
+          return $obj->AddBestellungPosition($bestellung, $einkauf,$menge,$datum, $beschreibung,$artikel,$einheit, $waehrung, $auftrag_position_id);
         }
       }
 
@@ -34910,16 +35121,148 @@ function Firmendaten($field,$projekt="")
    * @param null|string $ustid
    * @param int         $projekt
    */
-      public function getErloesFirmendaten($artikel, $ust_befreit,$aufwendung,  &$tmpsteuersatz,  &$tmpsteuertext, &$tmperloes, $umsatzsteuerpos, $ustid = null, $projekt = 0) {
+      private function normalizeUmsatzsteuerklasse($umsatzsteuer)
+      {
+        $umsatzsteuer = trim((string)$umsatzsteuer);
+        if($umsatzsteuer === 'ermaessigt' || $umsatzsteuer === 'befreit' || $umsatzsteuer === 'normal') {
+          return $umsatzsteuer;
+        }
+
+        return '';
+      }
+
+      private function getUmsatzsteuerklasseAusPositionsdaten($ust_befreit, $umsatzsteuerpos, $steuersatzpos, $fallbackUmsatzsteuer = '', $steuertyp = '', $steuertypid = 0)
+      {
+        $fallbackUmsatzsteuer = $this->normalizeUmsatzsteuerklasse($fallbackUmsatzsteuer);
+        $umsatzsteuerpos = $this->normalizeUmsatzsteuerklasse($umsatzsteuerpos);
+
+        if($steuersatzpos !== '' && $steuersatzpos !== null && is_numeric($steuersatzpos))
+        {
+          $steuersatzpos = (float)$steuersatzpos;
+          if($steuersatzpos > 0)
+          {
+            $steuersatzermaessigt = (float)$this->Firmendaten('steuersatz_ermaessigt');
+            if(!empty($steuertyp) && (int)$steuertypid > 0) {
+              $tmpsteuersatzermaessigt = $this->GetSteuersatzErmaessigt(false, (int)$steuertypid, $steuertyp);
+              if(is_numeric($tmpsteuersatzermaessigt) && (float)$tmpsteuersatzermaessigt > 0) {
+                $steuersatzermaessigt = (float)$tmpsteuersatzermaessigt;
+              }
+            }
+            if($steuersatzermaessigt > 0 && abs($steuersatzpos - $steuersatzermaessigt) < 0.00001) {
+              return 'ermaessigt';
+            }
+
+            return 'normal';
+          }
+
+          if(abs($steuersatzpos) < 0.00001)
+          {
+            if($umsatzsteuerpos !== '') {
+              return $umsatzsteuerpos;
+            }
+            if((int)$ust_befreit === 0) {
+              return 'befreit';
+            }
+            if($fallbackUmsatzsteuer !== '') {
+              return $fallbackUmsatzsteuer;
+            }
+
+            return 'normal';
+          }
+        }
+
+        if($umsatzsteuerpos !== '') {
+          return $umsatzsteuerpos;
+        }
+        if($fallbackUmsatzsteuer !== '') {
+          return $fallbackUmsatzsteuer;
+        }
+
+        return 'normal';
+      }
+
+      private function getErloesOhneArtikel($ust_befreit, $aufwendung, &$tmpsteuertext, &$tmperloes, $umsatzsteuer, $ustid = null, $projekt = 0)
+      {
+        $tmpsteuertext = '';
+        $tmperloes = '';
+        $field = '';
+        $projectRow = null;
+        if($projekt) {
+          $projectRow = $this->app->DB->SelectRow(
+            sprintf(
+              'SELECT * FROM projekt WHERE id = %d',
+              (int)$projekt
+            )
+          );
+        }
+
+        switch($ust_befreit) {
+          case 1:
+            if($aufwendung) {
+              if(trim((string)$ustid) !== '') {
+                $field = 'steuer_aufwendung_inland_euermaessigt';
+              } elseif($umsatzsteuer === 'ermaessigt') {
+                $field = 'steuer_aufwendung_inland_euermaessigt';
+              } else {
+                $field = 'steuer_aufwendung_inland_eunormal';
+              }
+            } else {
+              if(trim((string)$ustid) !== '') {
+                $field = 'steuer_erloese_inland_innergemeinschaftlich';
+              } elseif($umsatzsteuer === 'ermaessigt') {
+                $field = 'steuer_erloese_inland_euermaessigt';
+              } else {
+                $field = 'steuer_erloese_inland_eunormal';
+              }
+            }
+            break;
+          case 2:
+            $field = $aufwendung ? 'steuer_aufwendung_inland_import' : 'steuer_erloese_inland_export';
+            break;
+          case 3:
+            $field = $aufwendung ? 'steuer_aufwendung_inland_nichtsteuerbar' : 'steuer_erloese_inland_nichtsteuerbar';
+            break;
+          default:
+            if($aufwendung) {
+              if($umsatzsteuer === 'ermaessigt') {
+                $field = 'steuer_aufwendung_inland_ermaessigt';
+              } elseif($umsatzsteuer === 'befreit') {
+                $field = 'steuer_aufwendung_inland_nichtsteuerbar';
+              } else {
+                $field = 'steuer_aufwendung_inland_normal';
+              }
+            } else {
+              if($umsatzsteuer === 'ermaessigt') {
+                $field = 'steuer_erloese_inland_ermaessigt';
+              } elseif($umsatzsteuer === 'befreit') {
+                $field = 'steuer_erloese_inland_nichtsteuerbar';
+              } else {
+                $field = 'steuer_erloese_inland_normal';
+              }
+            }
+            break;
+        }
+
+        if($field === '') {
+          return;
+        }
+
+        if(!empty($projectRow[$field])) {
+          $tmperloes = $projectRow[$field];
+          return;
+        }
+
+        $tmperloes = $this->Firmendaten($field);
+      }
+
+      public function getErloesFirmendaten($artikel, $ust_befreit,$aufwendung,  &$tmpsteuersatz,  &$tmpsteuertext, &$tmperloes, $umsatzsteuerpos, $ustid = null, $projekt = 0, $steuersatzpos = null, $steuertyp = '', $steuertypid = 0) {
         $tmperloes = '';
         $artikeldata = $this->app->DB->SelectRow("SELECT * FROM artikel WHERE id = '$artikel' LIMIT 1");
         if(empty($artikeldata)) {
           return;
         }
-        $umsatzsteuer = $artikeldata['umsatzsteuer'] === 'ermaessigt'?'ermaessigt':($artikeldata['umsatzsteuer']==='befreit'?'befreit':'normal');
-        if($umsatzsteuerpos) {
-          $umsatzsteuer = $umsatzsteuerpos;
-        }
+        $fallbackUmsatzsteuer = $artikeldata['umsatzsteuer'] === 'ermaessigt' ? 'ermaessigt' : ($artikeldata['umsatzsteuer'] === 'befreit' ? 'befreit' : 'normal');
+        $umsatzsteuer = $this->getUmsatzsteuerklasseAusPositionsdaten($ust_befreit, $umsatzsteuerpos, $steuersatzpos, $fallbackUmsatzsteuer, $steuertyp, $steuertypid);
         switch($ust_befreit) {
           case 1:
             if($aufwendung) {
@@ -35002,17 +35345,15 @@ function Firmendaten($field,$projekt="")
       * @param null|string $ustid
       * @param int         $projekt
       */
-      function GetArtikelSteuer($artikel, $ust_befreit,$aufwendung,  &$tmpsteuersatz,  &$tmpsteuertext, &$tmperloes, $umsatzsteuerpos, $ustid = null, $projekt = 0)
+      function GetArtikelSteuer($artikel, $ust_befreit,$aufwendung,  &$tmpsteuersatz,  &$tmpsteuertext, &$tmperloes, $umsatzsteuerpos, $ustid = null, $projekt = 0, $steuersatzpos = null, $steuertyp = '', $steuertypid = 0)
       {
         $tmperloes = '';
         $artikeldata = $this->app->DB->SelectRow("SELECT * FROM artikel WHERE id = '$artikel' LIMIT 1");
         if(empty($artikeldata)) {
           return;
         }
-        $umsatzsteuer = $artikeldata['umsatzsteuer'] === 'ermaessigt'?'ermaessigt':($artikeldata['umsatzsteuer']==='befreit'?'befreit':'normal');
-        if($umsatzsteuerpos) {
-          $umsatzsteuer = $umsatzsteuerpos;
-        }
+        $fallbackUmsatzsteuer = $artikeldata['umsatzsteuer'] === 'ermaessigt' ? 'ermaessigt' : ($artikeldata['umsatzsteuer'] === 'befreit' ? 'befreit' : 'normal');
+        $umsatzsteuer = $this->getUmsatzsteuerklasseAusPositionsdaten($ust_befreit, $umsatzsteuerpos, $steuersatzpos, $fallbackUmsatzsteuer, $steuertyp, $steuertypid);
         $projectRow = null;
         if($projekt) {
           $projectRow = $this->app->DB->SelectRow(
@@ -35278,36 +35619,20 @@ function Firmendaten($field,$projekt="")
             (int)$posid
           )
         );
-
-        if(empty($posRow['artikel'])) {
+        if(empty($posRow)) {
           return;
         }
+        $typid = $posRow[$typ];
         $projekt = (int)$this->app->DB->Select(
           sprintf(
             'SELECT projekt FROM `%s` WHERE id = %d',
-            $typ, $posRow[$typ]
+            $typ, $typid
           )
         );
-        $artikel = $posRow['artikel'];
-
         $tmpsteuersatz = $posRow['steuersatz'];
         if($tmpsteuersatz === '') {
           $tmpsteuersatz = null;
         }
-        $typid = $posRow[$typ];
-        if($tmpsteuersatz < 0 || $tmpsteuersatz === null)
-        {
-          if($posRow['umsatzsteuer'] === 'ermaessigt')
-          {
-            $tmpsteuersatz = $this->GetSteuersatzErmaessigt(false,$typid,$typ);
-          }elseif($posRow['umsatzsteuer'] === 'befreit')
-          {
-            $tmpsteuersatz = 0;
-          }else{
-            $tmpsteuersatz = $this->GetSteuersatzNormal(false,$typid,$typ);
-          }
-        }
-
         $ust_befreit = $this->app->DB->Select("SELECT ust_befreit FROM $typ WHERE id = '$typid' LIMIT 1");
         $ustid = $this->app->DB->Select("SELECT ustid FROM $typ WHERE id = '$typid' LIMIT 1");
         $aufwendung = false;
@@ -35319,10 +35644,53 @@ function Firmendaten($field,$projekt="")
             $aufwendung = true;
           break;
         }
+        $umsatzsteuerPosition = $this->getUmsatzsteuerklasseAusPositionsdaten(
+          $ust_befreit,
+          isset($posRow['umsatzsteuer']) ? $posRow['umsatzsteuer'] : '',
+          $tmpsteuersatz,
+          '',
+          $typ,
+          $typid
+        );
 
-        $this->GetArtikelSteuer($artikel, $ust_befreit, $aufwendung, $tmpsteuersatz, $tmpsteuertext, $erloes, $posRow['umsatzsteuer'], $ustid, $projekt);
+        if(empty($posRow['artikel'])) {
+          if(isset($posRow['steuertext']) && trim((string)$posRow['steuertext']) !== '') {
+            $tmpsteuertext = $posRow['steuertext'];
+          }
+          if(isset($posRow['erloese']) && trim((string)$posRow['erloese']) !== '') {
+            $erloes = $posRow['erloese'];
+          }
+          if($tmpsteuersatz === null) {
+            if($umsatzsteuerPosition === 'ermaessigt') {
+              $tmpsteuersatz = $this->GetSteuersatzErmaessigt(false, $typid, $typ);
+            } elseif($umsatzsteuerPosition === 'normal') {
+              $tmpsteuersatz = $this->GetSteuersatzNormal(false, $typid, $typ);
+            } elseif((int)$ust_befreit === 0) {
+              $tmpsteuersatz = 0;
+            }
+          }
+          if(!$erloes) {
+            $this->getErloesOhneArtikel($ust_befreit, $aufwendung, $tmpsteuertext, $erloes, $umsatzsteuerPosition, $ustid, $projekt);
+          }
+          return;
+        }
+        $artikel = $posRow['artikel'];
+        if($tmpsteuersatz < 0 || $tmpsteuersatz === null)
+        {
+          if($umsatzsteuerPosition === 'ermaessigt')
+          {
+            $tmpsteuersatz = $this->GetSteuersatzErmaessigt(false,$typid,$typ);
+          }elseif($umsatzsteuerPosition === 'befreit' && (int)$ust_befreit === 0)
+          {
+            $tmpsteuersatz = 0;
+          }else{
+            $tmpsteuersatz = $this->GetSteuersatzNormal(false,$typid,$typ);
+          }
+        }
 
-        $this->getErloesFirmendaten($artikel, $ust_befreit, $aufwendung, $tmpsteuersatzFD, $tmpsteuertextFD, $tmperloesFD, $posRow['umsatzsteuer'], $ustid, $projekt);
+        $this->GetArtikelSteuer($artikel, $ust_befreit, $aufwendung, $tmpsteuersatz, $tmpsteuertext, $erloes, $posRow['umsatzsteuer'], $ustid, $projekt, $tmpsteuersatz, $typ, $typid);
+
+        $this->getErloesFirmendaten($artikel, $ust_befreit, $aufwendung, $tmpsteuersatzFD, $tmpsteuertextFD, $tmperloesFD, $posRow['umsatzsteuer'], $ustid, $projekt, $tmpsteuersatz, $typ, $typid);
 
         if (!$tmpsteuersatz) {
             $tmpsteuersatz = $tmpsteuersatzFD;
@@ -35705,13 +36073,13 @@ function Firmendaten($field,$projekt="")
           $steuersatzermaessigt = $this->GetSteuersatzErmaessigt(true,$id,'rechnung');
           $steuersatznormal = $this->GetSteuersatzNormal(true,$id,'rechnung');
           foreach($arr as $k => $v) {
-            $_ust_befreit = $ust_befreit;
-            if($v['steuersatz'] !== null && $v['steuersatz'] == 0 && $ust_befreit == 0) {
-              $ust_befreit = 3;
+            $position_ust_befreit = $ust_befreit;
+            if($v['steuersatz'] !== null && $v['steuersatz'] == 0 && $position_ust_befreit == 0) {
+              $position_ust_befreit = 3;
             }
-            $erloese = $this->Gegenkonto($ust_befreit, $ustid, 'rechnung', $id);
+            $erloese = $this->Gegenkonto($position_ust_befreit, $ustid, 'rechnung', $id);
             $this->GetArtikelSteuer(
-              $v['artikel'], $ust_befreit,0, $dummysteuersatz, $tmpsteuertext, $tmperloes,$v['usteuer'], $ustid, $projekt
+              $v['artikel'], $position_ust_befreit,0, $dummysteuersatz, $tmpsteuertext, $tmperloes,$v['usteuer'], $ustid, $projekt, $v['steuersatz'], 'rechnung', $id
             );
             if(!$this->RechnungMitUmsatzeuer($id)){
               $v['steuersatz'] = 0;
@@ -35736,20 +36104,20 @@ function Firmendaten($field,$projekt="")
               {
                 $arr[$k]['erloese'] = $tmperloes;
               }else{
-                if($v['usteuer'] === 'befreit' && $ust_befreit == 0)
+                if($v['usteuer'] === 'befreit' && $position_ust_befreit == 0)
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten("steuer_erloese_inland_nichtsteuerbar");
                 }
-                elseif($v['usteuer'] === 'ermaessigt' && $ust_befreit == 0)
+                elseif($v['usteuer'] === 'ermaessigt' && $position_ust_befreit == 0)
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten("steuer_erloese_inland_ermaessigt");
-                }elseif($v['usteuer'] === 'ermaessigt' && $ust_befreit == 1 && (String)$ustid === '')
+                }elseif($v['usteuer'] === 'ermaessigt' && $position_ust_befreit == 1 && (String)$ustid === '')
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten("steuer_erloese_inland_euermaessigt");
-                }elseif($ust_befreit == 1 && (String)$ustid !== ''){
+                }elseif($position_ust_befreit == 1 && (String)$ustid !== ''){
                   
                   $arr[$k]['erloese'] = $this->Firmendaten("steuer_erloese_inland_innergemeinschaftlich");
-                }elseif($v['usteuer'] !== 'ermaessigt' && $v['usteuer'] !== 'befreit' && $ust_befreit == 1 && (String)$ustid === '')
+                }elseif($v['usteuer'] !== 'ermaessigt' && $v['usteuer'] !== 'befreit' && $position_ust_befreit == 1 && (String)$ustid === '')
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten("steuer_erloese_inland_eunormal");
                 }
@@ -35759,7 +36127,6 @@ function Firmendaten($field,$projekt="")
             if($gruppierenpositionen) {
               $arr[$k]['summe'] = round($arr[$k]['summe'], 2);
             }
-            $ust_befreit = $_ust_befreit;
           }
         }
         if($gruppierenpositionen) {
@@ -36226,7 +36593,10 @@ function Firmendaten($field,$projekt="")
             $row['erloese'],
             $umsatzsteuerpos,
             $doc['ustid'],
-            $doc['projekt']
+            $doc['projekt'],
+            $row['steuersatz'],
+            $belegtyp,
+            $id
           );
           if(!empty($row['erloese'])) {
             $ret[$key]['erloese'] = $row['erloese'];
@@ -36241,7 +36611,10 @@ function Firmendaten($field,$projekt="")
             $row['erloese'],
             $umsatzsteuerpos,
             $doc['ustid'],
-            $doc['projekt']
+            $doc['projekt'],
+            $row['steuersatz'],
+            $belegtyp,
+            $id
           );
           if(!empty($row['erloese'])) {
             $ret[$key]['erloese'] = $row['erloese'];
@@ -36500,12 +36873,13 @@ function Firmendaten($field,$projekt="")
           $steuersatzermaessigt = $this->GetSteuersatzErmaessigt(true,$id,'gutschrift');
           $steuersatznormal = $this->GetSteuersatzNormal(true,$id,'gutschrift');
           foreach($arr as $k => $v)  {
-            if($v['steuersatz'] !== null && $v['steuersatz'] == 0 && $ust_befreit == 0) {
-              $ust_befreit = 3;
+            $position_ust_befreit = $ust_befreit;
+            if($v['steuersatz'] !== null && $v['steuersatz'] == 0 && $position_ust_befreit == 0) {
+              $position_ust_befreit = 3;
             }
-            $erloese = $this->Gegenkonto($ust_befreit, $ustid, 'gutschrift', $id);
+            $erloese = $this->Gegenkonto($position_ust_befreit, $ustid, 'gutschrift', $id);
             $this->GetArtikelSteuer(
-              $v['artikel'], $ust_befreit,0, $dummysteuersatz, $tmpsteuertext, $tmperloes, $v['usteuer'], $ustid, $projekt
+              $v['artikel'], $position_ust_befreit,0, $dummysteuersatz, $tmpsteuertext, $tmperloes, $v['usteuer'], $ustid, $projekt, $v['steuersatz'], 'gutschrift', $id
             );
             if(!$this->GutschriftMitUmsatzeuer($id)){
               $v['steuersatz'] = 0;
@@ -36531,19 +36905,19 @@ function Firmendaten($field,$projekt="")
               {
                 $arr[$k]['erloese'] = $tmperloes;
               }else{
-                if($v['usteuer'] === 'befreit' && $ust_befreit == 0)
+                if($v['usteuer'] === 'befreit' && $position_ust_befreit == 0)
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten('steuer_erloese_inland_nichtsteuerbar');
-                }elseif($v['usteuer'] === 'ermaessigt' && $ust_befreit == 0)
+                }elseif($v['usteuer'] === 'ermaessigt' && $position_ust_befreit == 0)
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten('steuer_erloese_inland_ermaessigt');
-                }elseif($v['usteuer'] === 'ermaessigt' && $ust_befreit == 1 && (String)$ustid === '')
+                }elseif($v['usteuer'] === 'ermaessigt' && $position_ust_befreit == 1 && (String)$ustid === '')
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten('steuer_erloese_inland_euermaessigt');
-                }elseif($ust_befreit == 1 && (String)$ustid !== ''){
+                }elseif($position_ust_befreit == 1 && (String)$ustid !== ''){
                   
                   $arr[$k]['erloese'] = $this->Firmendaten('steuer_erloese_inland_innergemeinschaftlich');
-                }elseif($v['usteuer'] !== 'ermaessigt' && $v['usteuer'] !== 'befreit' && $ust_befreit == 1 && (String)$ustid === '')
+                }elseif($v['usteuer'] !== 'ermaessigt' && $v['usteuer'] !== 'befreit' && $position_ust_befreit == 1 && (String)$ustid === '')
                 {
                   $arr[$k]['erloese'] = $this->Firmendaten('steuer_erloese_inland_eunormal');
                 }
@@ -39161,7 +39535,8 @@ function Firmendaten($field,$projekt="")
       }
 
       function ImportCreateAuftrag($data) {
-        $this->app->DB->Insert("INSERT INTO auftrag (id,angelegtam) VALUES ('',NOW())");
+        $date = new DateTime(); $date->setTimezone(new DateTimeZone('Europe/Berlin')); $jetzt = $date->format('Y-m-d H:i:s');
+        $this->app->DB->Insert("INSERT INTO auftrag (id,angelegtam,sortierdatum) VALUES ('',NOW(),'$jetzt')");
         $id = $this->app->DB->GetInsertID();
 
         if($data['firma']=="") $data['firma']=1;

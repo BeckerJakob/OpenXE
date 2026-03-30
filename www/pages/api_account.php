@@ -15,6 +15,12 @@
 <?php
 
 use Xentral\Components\Http\JsonResponse;
+use Xentral\Modules\ApiV3\Auth\ScopeRegistry;
+use Xentral\Modules\ApiV3\Auth\TokenService;
+use Xentral\Modules\ApiV3\Engine\SchemaManager;
+use Xentral\Modules\ApiV3\Http\ApiV3Exception;
+use Xentral\Modules\ApiV3\Repository\ApiAccountRepository;
+use Xentral\Modules\ApiV3\Repository\ApiV3TokenRepository;
 
 class Api_account
 {
@@ -129,6 +135,8 @@ class Api_account
         'cleanutf8' => 0,
         'apitempkey' => '',
         'ishtmltransformation' => 0,
+        'v3_tokens' => [],
+        'v3_scope_groups' => $this->getApiV3ScopeGroups(),
       ];
 
       return new JsonResponse($data);
@@ -147,12 +155,86 @@ class Api_account
       /** @var Api $api */
       $api = $this->app->loadModule('api');
       $data['apitempkey'] = $api->generateHashFromDomainAndKey($data['initkey'], $data['remotedomain']);
+      $data['v3_tokens'] = $this->getApiV3TokenService()->listTokens($id);
+      $data['v3_scope_groups'] = $this->getApiV3ScopeGroups();
       if(!empty($data)) {
         return new JsonResponse($data);
       }
     }
 
     return new JsonResponse(['error'=>'Account nicht gefunden'], JsonResponse::HTTP_BAD_REQUEST);
+  }
+
+  /**
+   * @return JsonResponse
+   */
+  public function HandleCreateV3TokenAjaxAction()
+  {
+    if(!$this->app->erp->RechteVorhanden('api_account', 'edit')) {
+      return new JsonResponse(['error' => 'Fehlende Rechte'], JsonResponse::HTTP_BAD_REQUEST);
+    }
+
+    $apiAccountId = (int)$this->app->Secure->GetPOST('id');
+    if($apiAccountId <= 0) {
+      return new JsonResponse(['error' => 'Bitte speichern Sie zuerst den API Account.'], JsonResponse::HTTP_BAD_REQUEST);
+    }
+
+    $label = (string)$this->app->Secure->GetPOST('token_label');
+    $expiresAt = trim((string)$this->app->Secure->GetPOST('token_expires_at'));
+    $scopeValues = $_POST['scopes'] ?? [];
+    if(!is_array($scopeValues)) {
+      $scopeValues = $scopeValues !== '' ? [$scopeValues] : [];
+    }
+    $scopes = array_values(array_filter(array_map('strval', $scopeValues)));
+
+    try {
+      $result = $this->getApiV3TokenService()->createToken(
+        $apiAccountId,
+        $label,
+        $scopes,
+        $expiresAt !== '' ? $expiresAt : null
+      );
+
+      return new JsonResponse([
+        'success' => true,
+        'token' => $result['token'],
+        'token_meta' => $result['token_meta'],
+        'tokens' => $this->getApiV3TokenService()->listTokens($apiAccountId),
+      ]);
+    } catch (ApiV3Exception $exception) {
+      return new JsonResponse(
+        [
+          'error' => $exception->getMessage(),
+          'details' => $exception->getDetails(),
+        ],
+        $exception->getStatusCode()
+      );
+    } catch (\Throwable $throwable) {
+      return new JsonResponse(['error' => 'Token konnte nicht erstellt werden.'], JsonResponse::HTTP_BAD_REQUEST);
+    }
+  }
+
+  /**
+   * @return JsonResponse
+   */
+  public function HandleRevokeV3TokenAjaxAction()
+  {
+    if(!$this->app->erp->RechteVorhanden('api_account', 'edit')) {
+      return new JsonResponse(['error' => 'Fehlende Rechte'], JsonResponse::HTTP_BAD_REQUEST);
+    }
+
+    $apiAccountId = (int)$this->app->Secure->GetPOST('id');
+    $tokenId = (int)$this->app->Secure->GetPOST('token_id');
+    if($apiAccountId <= 0 || $tokenId <= 0) {
+      return new JsonResponse(['error' => 'Ungültige Token-Anfrage'], JsonResponse::HTTP_BAD_REQUEST);
+    }
+
+    $this->getApiV3TokenService()->revokeToken($tokenId);
+
+    return new JsonResponse([
+      'success' => true,
+      'tokens' => $this->getApiV3TokenService()->listTokens($apiAccountId),
+    ]);
   }
 
   /**
@@ -264,6 +346,12 @@ class Api_account
     if($cmd === 'save') {
       return $this->HandleSaveAjaxAction();
     }
+    if($cmd === 'create-v3-token') {
+      return $this->HandleCreateV3TokenAjaxAction();
+    }
+    if($cmd === 'revoke-v3-token') {
+      return $this->HandleRevokeV3TokenAjaxAction();
+    }
 
     $api = $this->app->loadModule('api');
     $api->fillApiPermissions();
@@ -296,5 +384,38 @@ class Api_account
     $this->app->Tpl->Set('API_PERMISSIONS_HTML', $apiPermissionsHtml);
     $this->app->YUI->Autocomplete('projekt', 'projektname', 1);
     $this->app->Tpl->Parse('PAGE','api_account_list.tpl');
+  }
+
+  /**
+   * @return TokenService
+   */
+  private function getApiV3TokenService()
+  {
+    /** @var \Xentral\Components\Database\Database $database */
+    $database = $this->app->Container->get('Database');
+    $schemaManager = new SchemaManager($database);
+    $schemaManager->ensureSchema();
+
+    return new TokenService(
+      new ApiAccountRepository($database),
+      new ApiV3TokenRepository($database)
+    );
+  }
+
+  /**
+   * @return array<string, array<int, array<string, string>>>
+   */
+  private function getApiV3ScopeGroups()
+  {
+    $groups = [];
+    foreach (ScopeRegistry::definitions() as $scope => $definition) {
+      $groups[$definition['group']][] = [
+        'scope' => $scope,
+        'label' => $definition['label'],
+        'description' => $definition['description'],
+      ];
+    }
+
+    return $groups;
   }
 }

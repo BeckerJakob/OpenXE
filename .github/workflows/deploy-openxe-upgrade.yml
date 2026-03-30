@@ -1,0 +1,48 @@
+name: Deploy OpenXE Upgrade
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openxe-upgrade-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-and-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Prepare SSH client
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.OPENXE_SSH_PRIVATE_KEY }}" > ~/.ssh/openxe_key
+          chmod 600 ~/.ssh/openxe_key
+          printf '%s\n' "${{ secrets.OPENXE_SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy and run database upgrade
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -i ~/.ssh/openxe_key \
+            "${{ secrets.OPENXE_SSH_USER }}@${{ secrets.OPENXE_SSH_HOST }}" <<'EOF'
+            set -euo pipefail
+            cd "${{ secrets.OPENXE_DEPLOY_PATH }}"
+            git pull --ff-only
+            cd upgrade
+            upgrade_user="$(ls -ld data/upgrade.php | awk '{print $3}')"
+            sudo -n -u "$upgrade_user" php data/upgrade.php -do -db
+          EOF

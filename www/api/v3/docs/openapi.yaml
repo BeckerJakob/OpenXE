@@ -1,0 +1,1112 @@
+openapi: 3.0.3
+info:
+  title: OpenXE API v3
+  version: 0.1.0
+  description: |
+    Connector-first REST API for OpenXE.
+
+    Authentication uses opaque Bearer tokens. Every response follows the
+    same JSON envelope with `status`, `data` or `error`, plus optional `meta`.
+servers:
+  - url: /www/api/v3/index.php
+security:
+  - bearerAuth: []
+tags:
+  - name: General
+  - name: Reference Data
+  - name: Customers
+  - name: Suppliers
+  - name: Products
+  - name: Inventory
+  - name: Sales Orders
+  - name: Banking
+  - name: Payables
+  - name: Files
+paths:
+  /me:
+    get:
+      tags: [General]
+      summary: Read token/account context
+      responses:
+        '200':
+          description: Authenticated token context
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Me'
+        '401':
+          $ref: '#/components/responses/Error'
+
+  /projects:
+    get:
+      tags: [Reference Data]
+      summary: List projects
+      responses:
+        '200':
+          $ref: '#/components/responses/ReferenceCollection'
+  /warehouse-locations:
+    get:
+      tags: [Reference Data]
+      summary: List warehouse locations
+      responses:
+        '200':
+          $ref: '#/components/responses/ReferenceCollection'
+  /payment-methods:
+    get:
+      tags: [Reference Data]
+      summary: List payment methods
+      responses:
+        '200':
+          $ref: '#/components/responses/ReferenceCollection'
+  /shipping-methods:
+    get:
+      tags: [Reference Data]
+      summary: List shipping methods
+      responses:
+        '200':
+          $ref: '#/components/responses/ReferenceCollection'
+  /tax-rates:
+    get:
+      tags: [Reference Data]
+      summary: List tax rates
+      responses:
+        '200':
+          $ref: '#/components/responses/ReferenceCollection'
+  /bank-accounts:
+    get:
+      tags: [Reference Data]
+      summary: List bank accounts
+      responses:
+        '200':
+          $ref: '#/components/responses/ReferenceCollection'
+  /ledger-accounts:
+    get:
+      tags: [Reference Data]
+      summary: List ledger accounts
+      responses:
+        '200':
+          $ref: '#/components/responses/ReferenceCollection'
+
+  /customers:
+    get:
+      tags: [Customers]
+      summary: Search customers
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - in: query
+          name: customer_number
+          schema:
+            type: string
+        - in: query
+          name: email
+          schema:
+            type: string
+        - in: query
+          name: query
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/CustomerCollection'
+    post:
+      tags: [Customers]
+      summary: Create customer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerCreateRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/CustomerSingle'
+        '422':
+          $ref: '#/components/responses/Error'
+  /customers/{id}:
+    get:
+      tags: [Customers]
+      summary: Read customer
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/CustomerSingle'
+        '404':
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [Customers]
+      summary: Patch customer
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerPatchRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/CustomerSingle'
+        '404':
+          $ref: '#/components/responses/Error'
+  /customers/{id}/project-links:
+    post:
+      tags: [Customers]
+      summary: Link customer to project
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerProjectLinkRequest'
+      responses:
+        '201':
+          description: Project link created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        additionalProperties: true
+
+  /suppliers:
+    get:
+      tags: [Suppliers]
+      summary: Search suppliers
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - in: query
+          name: supplier_number
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/SupplierCollection'
+  /suppliers/{id}:
+    get:
+      tags: [Suppliers]
+      summary: Read supplier
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/SupplierSingle'
+        '404':
+          $ref: '#/components/responses/Error'
+
+  /products:
+    get:
+      tags: [Products]
+      summary: Search products
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - in: query
+          name: sku
+          schema:
+            type: string
+        - in: query
+          name: query
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/ProductCollection'
+    post:
+      tags: [Products]
+      summary: Create product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCreateRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/ProductSingle'
+  /products/{id}:
+    get:
+      tags: [Products]
+      summary: Read product
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/ProductSingle'
+    patch:
+      tags: [Products]
+      summary: Patch product
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductPatchRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/ProductSingle'
+  /products/{id}/supplier-prices:
+    post:
+      tags: [Products]
+      summary: Add supplier price
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductSupplierPriceRequest'
+      responses:
+        '201':
+          description: Supplier price created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /inventory-levels/{locationId}/{sku}:
+    put:
+      tags: [Inventory]
+      summary: Upsert inventory level by location and SKU
+      parameters:
+        - in: path
+          name: locationId
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: sku
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryLevelUpsertRequest'
+      responses:
+        '200':
+          description: Inventory level updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /sales-orders:
+    get:
+      tags: [Sales Orders]
+      summary: Search sales orders
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - in: query
+          name: external_ref
+          schema:
+            type: string
+        - in: query
+          name: customer_id
+          schema:
+            type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/SalesOrderCollection'
+    post:
+      tags: [Sales Orders]
+      summary: Create sales order
+      description: |
+        For connector compatibility you can either send high-level fields or a full
+        OpenXE-ready payload via `attributes` and `positions[].attributes`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SalesOrderCreateRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/SalesOrderSingle'
+  /sales-orders/{id}:
+    get:
+      tags: [Sales Orders]
+      summary: Read sales order
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/SalesOrderSingle'
+
+  /bank-transactions:
+    get:
+      tags: [Banking]
+      summary: List bank transactions
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - in: query
+          name: account_id
+          schema:
+            type: string
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          $ref: '#/components/responses/BankTransactionCollection'
+  /bank-transaction-imports:
+    post:
+      tags: [Banking]
+      summary: Import bank transactions
+      description: Supports `Idempotency-Key` for safe retries.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BankTransactionImportRequest'
+      responses:
+        '201':
+          description: Import summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /payables:
+    get:
+      tags: [Payables]
+      summary: Search payables
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - in: query
+          name: invoice_number
+          schema:
+            type: string
+        - in: query
+          name: supplier_id
+          schema:
+            type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/PayableCollection'
+    post:
+      tags: [Payables]
+      summary: Create payable
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayableCreateRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/PayableSingle'
+  /payables/{id}:
+    get:
+      tags: [Payables]
+      summary: Read payable
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/PayableSingle'
+  /payables/{id}/attachments:
+    post:
+      tags: [Payables]
+      summary: Attach file to payable
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayableAttachmentRequest'
+      responses:
+        '201':
+          description: Attachment linked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
+  /files:
+    post:
+      tags: [Files]
+      summary: Upload file into DMS
+      description: Accepts either JSON with base64 content or multipart form data.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FileUploadJsonRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FileUploadMultipartRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/FileSingle'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+  parameters:
+    Page:
+      in: query
+      name: page
+      schema:
+        type: integer
+        default: 1
+    PerPage:
+      in: query
+      name: per_page
+      schema:
+        type: integer
+        default: 50
+        maximum: 200
+    Id:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+  responses:
+    Error:
+      description: Error envelope
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ReferenceCollection:
+      description: Reference data collection
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/SuccessEnvelope'
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ReferenceItem'
+    CustomerCollection:
+      description: Customer collection
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CustomerCollectionEnvelope'
+    CustomerSingle:
+      description: Customer
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/SuccessEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Customer'
+    SupplierCollection:
+      description: Supplier collection
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SupplierCollectionEnvelope'
+    SupplierSingle:
+      description: Supplier
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/SuccessEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Supplier'
+    ProductCollection:
+      description: Product collection
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProductCollectionEnvelope'
+    ProductSingle:
+      description: Product
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/SuccessEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Product'
+    SalesOrderCollection:
+      description: Sales order collection
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SalesOrderCollectionEnvelope'
+    SalesOrderSingle:
+      description: Sales order
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/SuccessEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SalesOrder'
+    BankTransactionCollection:
+      description: Bank transaction collection
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BankTransactionCollectionEnvelope'
+    PayableCollection:
+      description: Payable collection
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/PayableCollectionEnvelope'
+    PayableSingle:
+      description: Payable
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/SuccessEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Payable'
+    FileSingle:
+      description: File
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/SuccessEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/File'
+  schemas:
+    SuccessEnvelope:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          type: string
+          enum: [success]
+        data:
+          type: object
+          additionalProperties: true
+        meta:
+          type: object
+          additionalProperties: true
+    ErrorEnvelope:
+      type: object
+      required: [status, error]
+      properties:
+        status:
+          type: string
+          enum: [error]
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+    PaginationMeta:
+      type: object
+      properties:
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            per_page:
+              type: integer
+            total:
+              type: integer
+    ReferenceItem:
+      type: object
+      additionalProperties: true
+    Me:
+      type: object
+      properties:
+        api_account_id:
+          type: integer
+        token_id:
+          type: integer
+        token_label:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        expires_at:
+          type: string
+          nullable: true
+    Customer:
+      type: object
+      additionalProperties: true
+    Supplier:
+      type: object
+      additionalProperties: true
+    Product:
+      type: object
+      additionalProperties: true
+    SalesOrder:
+      type: object
+      additionalProperties: true
+    BankTransaction:
+      type: object
+      additionalProperties: true
+    Payable:
+      type: object
+      additionalProperties: true
+    File:
+      type: object
+      additionalProperties: true
+    CustomerCollectionEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Customer'
+            meta:
+              $ref: '#/components/schemas/PaginationMeta'
+    SupplierCollectionEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Supplier'
+            meta:
+              $ref: '#/components/schemas/PaginationMeta'
+    ProductCollectionEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Product'
+            meta:
+              $ref: '#/components/schemas/PaginationMeta'
+    SalesOrderCollectionEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/SalesOrder'
+            meta:
+              $ref: '#/components/schemas/PaginationMeta'
+    BankTransactionCollectionEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/BankTransaction'
+            meta:
+              $ref: '#/components/schemas/PaginationMeta'
+    PayableCollectionEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Payable'
+            meta:
+              $ref: '#/components/schemas/PaginationMeta'
+    AttributesObject:
+      type: object
+      additionalProperties: true
+      description: Raw OpenXE-ready passthrough attributes for connector migrations.
+    CustomerCreateRequest:
+      type: object
+      properties:
+        customer_number:
+          type: string
+        accounting_customer_number:
+          type: string
+        company:
+          type: boolean
+        name:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        country_code:
+          type: string
+        postal_code:
+          type: string
+        city:
+          type: string
+        street:
+          type: string
+        address_addition:
+          type: string
+        project_id:
+          type: integer
+        currency:
+          type: string
+        payment_method:
+          type: string
+        shipping_method:
+          type: string
+        attributes:
+          $ref: '#/components/schemas/AttributesObject'
+    CustomerPatchRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        postal_code:
+          type: string
+        city:
+          type: string
+        street:
+          type: string
+        attributes:
+          $ref: '#/components/schemas/AttributesObject'
+    CustomerProjectLinkRequest:
+      type: object
+      required: [project_id]
+      properties:
+        project_id:
+          type: integer
+        from_date:
+          type: string
+          format: date
+    ProductCreateRequest:
+      type: object
+      properties:
+        sku:
+          type: string
+        name:
+          type: string
+        short_text:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+        project_id:
+          type: integer
+        supplier_id:
+          type: integer
+        tax_code:
+          type: string
+        is_stocked:
+          type: integer
+        attributes:
+          $ref: '#/components/schemas/AttributesObject'
+    ProductPatchRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        short_text:
+          type: string
+        description:
+          type: string
+        supplier_id:
+          type: integer
+        tax_code:
+          type: string
+        attributes:
+          $ref: '#/components/schemas/AttributesObject'
+    ProductSupplierPriceRequest:
+      type: object
+      properties:
+        supplier_id:
+          type: integer
+        project_id:
+          type: integer
+        purchase_price:
+          type: number
+        currency:
+          type: string
+        label:
+          type: string
+        attributes:
+          $ref: '#/components/schemas/AttributesObject'
+    InventoryLevelUpsertRequest:
+      type: object
+      required: [quantity]
+      properties:
+        quantity:
+          type: number
+        project_id:
+          type: integer
+    SalesOrderCreateRequest:
+      type: object
+      properties:
+        external_ref:
+          type: string
+        customer_id:
+          type: integer
+        customer_number:
+          type: string
+        order_date:
+          type: string
+          format: date
+        ordered_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        street:
+          type: string
+        postal_code:
+          type: string
+        city:
+          type: string
+        country_code:
+          type: string
+        payment_method:
+          type: string
+        shipping_method:
+          type: string
+        total_net:
+          type: number
+        total_gross:
+          type: number
+        attributes:
+          $ref: '#/components/schemas/AttributesObject'
+        positions:
+          type: array
+          items:
+            type: object
+            properties:
+              sku:
+                type: string
+              article_id:
+                type: integer
+              name:
+                type: string
+              description:
+                type: string
+              quantity:
+                type: number
+              unit_price:
+                type: number
+              tax_code:
+                type: string
+              attributes:
+                $ref: '#/components/schemas/AttributesObject'
+    BankTransactionImportRequest:
+      type: object
+      required: [account_id, transactions]
+      properties:
+        account_id:
+          type: string
+        from:
+          type: string
+          format: date
+        transactions:
+          type: array
+          items:
+            type: object
+            properties:
+              external_id:
+                type: string
+              booking_date:
+                type: string
+                format: date
+              amount:
+                type: number
+              fee:
+                type: number
+              booking_text:
+                type: string
+              imported_at:
+                type: string
+                format: date-time
+    PayableCreateRequest:
+      type: object
+      properties:
+        supplier_id:
+          type: integer
+        invoice_number:
+          type: string
+        external_ref:
+          type: string
+        invoice_date:
+          type: string
+          format: date
+        delivery_date:
+          type: string
+          format: date
+        due_date:
+          type: string
+          format: date
+        project_id:
+          type: integer
+        currency:
+          type: string
+        amount_net:
+          type: number
+        amount_tax:
+          type: number
+        amount_gross:
+          type: number
+        ledger_account_number:
+          type: string
+        payment_method:
+          type: string
+        reference:
+          type: string
+        note:
+          type: string
+        status:
+          type: string
+        attributes:
+          $ref: '#/components/schemas/AttributesObject'
+    PayableAttachmentRequest:
+      type: object
+      required: [file_id]
+      properties:
+        file_id:
+          type: integer
+        subject:
+          type: string
+        object:
+          type: string
+    FileUploadJsonRequest:
+      type: object
+      required: [filename, content_base64]
+      properties:
+        filename:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        number:
+          type: string
+        subject:
+          type: string
+        object:
+          type: string
+        parameter:
+          type: string
+        protected:
+          type: boolean
+        content_base64:
+          type: string
+          description: Raw file contents as base64.
+    FileUploadMultipartRequest:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+        title:
+          type: string
+        description:
+          type: string
+        subject:
+          type: string
+        object:
+          type: string
+        parameter:
+          type: string
