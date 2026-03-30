@@ -1210,7 +1210,8 @@ class Acl
   // true if ok, else error text
   protected function CheckHtaccess() {
 
-  $nominal = array('
+  $nominal = array(array(
+'
 # Generated file from class.acl.php
 # For detection of htaccess functionality
 SetEnv HTTP_OPENXE_HTACCESS on
@@ -1231,6 +1232,32 @@ Order deny,allow
 </Files>
 # end
 ',
+'
+# Generated file from class.acl.php
+# For detection of htaccess functionality
+SetEnv HTTP_OPENXE_HTACCESS on
+# Disable directory browsing 
+Options -Indexes
+# Set default page to index.php
+DirectoryIndex "index.php"
+# Deny general access
+Order deny,allow
+<FilesMatch ".">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+# Allow index.php
+<Files "index.php">
+    Order Allow,Deny
+    Allow from all
+</Files>
+<Files "favicon.ico">
+    Order Allow,Deny
+    Allow from all
+    ForceType image/svg+xml
+</Files>
+# end
+'),
 '
 # Generated file from class.acl.php         
 # Disable directory browsing 
@@ -1277,14 +1304,20 @@ Allow from all
         } else {
             $htaccess = trim($htaccess);
         }
-        $htaccess_nominal = trim($nominal[$count]);
-        $result = strcmp($htaccess,$htaccess_nominal);     
+        $nominalVariants = (array)$nominal[$count];
+        $result = false;
+        foreach ($nominalVariants as $variant) {
+            if (strcmp($htaccess, trim($variant)) === 0) {
+                $result = true;
+                break;
+            }
+        }
 
         if ($htaccess === false) {
             return($htaccess_path[$count]." nicht vorhanden.");
         }     
 
-        if ($result !== 0) {
+        if ($result !== true) {
             return($htaccess_path[$count]." fehlerhaft.");
         }
     }
