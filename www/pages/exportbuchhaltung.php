@@ -265,26 +265,43 @@ class Exportbuchhaltung
         return date_format($date, 'dm');
     }
 
+    private function createDatevExportRowMeta($exportDate, int $rowGroup, int $sourceId, string $sourceType): array
+    {
+        return array(
+            'export_date' => (string)$exportDate,
+            'row_group' => $rowGroup,
+            'source_id' => $sourceId,
+            'source_type' => $sourceType,
+        );
+    }
+
     private function sortDatevZusatzbuchungen(array $buchungen): array
     {
-        usort($buchungen, static function (array $left, array $right): int {
-            $dateCompare = strcmp((string)($left['_sort_date'] ?? ''), (string)($right['_sort_date'] ?? ''));
+        $sourceTypeOrder = array(
+            'zahlungsverkehr' => 10,
+            'belegsachkonto' => 20,
+            'dialog' => 30,
+        );
+
+        usort($buchungen, static function (array $left, array $right) use ($sourceTypeOrder): int {
+            $dateCompare = strcmp((string)($left['export_date'] ?? ''), (string)($right['export_date'] ?? ''));
             if ($dateCompare !== 0) {
                 return $dateCompare;
             }
 
-            $groupCompare = ((int)($left['_sort_group'] ?? 0)) <=> ((int)($right['_sort_group'] ?? 0));
+            $groupCompare = ((int)($left['row_group'] ?? 0)) <=> ((int)($right['row_group'] ?? 0));
             if ($groupCompare !== 0) {
                 return $groupCompare;
             }
 
-            return ((int)($left['_sort_id'] ?? 0)) <=> ((int)($right['_sort_id'] ?? 0));
-        });
+            $typeCompare = ($sourceTypeOrder[$left['source_type'] ?? ''] ?? 999)
+                <=> ($sourceTypeOrder[$right['source_type'] ?? ''] ?? 999);
+            if ($typeCompare !== 0) {
+                return $typeCompare;
+            }
 
-        foreach ($buchungen as &$buchung) {
-            unset($buchung['_sort_date'], $buchung['_sort_group'], $buchung['_sort_id']);
-        }
-        unset($buchung);
+            return ((int)($left['source_id'] ?? 0)) <=> ((int)($right['source_id'] ?? 0));
+        });
 
         return $buchungen;
     }
@@ -458,7 +475,8 @@ class Exportbuchhaltung
                                 ".$typvalue['typ']." b
                                 INNER JOIN adresse a ON a.id = b.adresse
                             WHERE
-                                ".$where;
+                                ".$where."
+                            ORDER BY b.".$typvalue['field_date'].", b.id";
                             $belegearr = $this->app->DB->SelectArr($sql);
 
                             $belege[$typkey] = array(
@@ -493,7 +511,8 @@ class Exportbuchhaltung
                                 ".$typvalue['typ']." b
                                 LEFT JOIN ".$typvalue['subtable']." p ON b.id = p.".$typvalue['typ']."
                             WHERE
-                                ".$where;
+                                ".$where."
+                            ORDER BY b.".$typvalue['field_date'].", b.id, p.id";
                             $posarr = $this->app->DB->SelectArr($sql);
 
                             foreach ($posarr as $pos) {
@@ -1022,10 +1041,7 @@ class Exportbuchhaltung
                 'Belegfeld 1' => mb_strimwidth($belegfeld1, 0, 36),
                 'Belegfeld 2' => 'FB'.$row['id'],
                 'Buchungstext' => mb_strimwidth($buchungstext, 0, 60),
-                '_sort_date' => $exportDate,
-                '_sort_group' => 10,
-                '_sort_id' => (int)$row['id'],
-            );
+            ) + $this->createDatevExportRowMeta($exportDate, 30, (int)$row['id'], 'zahlungsverkehr');
         }
 
         return $buchungen;
@@ -1164,10 +1180,7 @@ class Exportbuchhaltung
                 'Belegfeld 1' => mb_strimwidth($belegnr !== '' ? $belegnr : ('FB'.$row['id']), 0, 36),
                 'Belegfeld 2' => 'FB'.$row['id'],
                 'Buchungstext' => mb_strimwidth($buchungstext, 0, 60),
-                '_sort_date' => $row['datum'],
-                '_sort_group' => 20,
-                '_sort_id' => (int)$row['id'],
-            );
+            ) + $this->createDatevExportRowMeta($row['datum'] ?? '', 40, (int)$row['id'], 'belegsachkonto');
         }
 
         return $buchungen;
@@ -1248,10 +1261,7 @@ class Exportbuchhaltung
                 'Belegfeld 1' => mb_strimwidth($belegfeld1, 0, 36),
                 'Belegfeld 2' => 'FB'.$row['id'],
                 'Buchungstext' => mb_strimwidth($buchungstext, 0, 60),
-                '_sort_date' => $row['datum'],
-                '_sort_group' => 30,
-                '_sort_id' => (int)$row['id'],
-            );
+            ) + $this->createDatevExportRowMeta($row['datum'] ?? '', 50, (int)$row['id'], 'dialog');
         }
 
         return $buchungen;

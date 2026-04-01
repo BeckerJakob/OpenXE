@@ -54,6 +54,10 @@ final class ExportbuchhaltungTest extends TestCase
         self::assertSame('1230', $buchungen[0]['Konto']);
         self::assertSame('10025', $buchungen[0]['Gegenkonto (ohne BU-Schlüssel)']);
         self::assertSame('Zahlung 2026-400010', $buchungen[0]['Buchungstext']);
+        self::assertSame('2026-01-03', $buchungen[0]['export_date']);
+        self::assertSame(30, $buchungen[0]['row_group']);
+        self::assertSame(36, $buchungen[0]['source_id']);
+        self::assertSame('zahlungsverkehr', $buchungen[0]['source_type']);
         self::assertStringContainsString("NULLIF(kz.buchung, '0000-00-00')", $database->lastQuery);
         self::assertStringContainsString("NULLIF(ka.belegdatum, '0000-00-00')", $database->lastQuery);
         self::assertStringContainsString("NULLIF(ka.datum, '0000-00-00')", $database->lastQuery);
@@ -106,6 +110,93 @@ final class ExportbuchhaltungTest extends TestCase
         self::assertSame('S', $buchungen[0]['Soll-/Haben-Kennzeichen']);
     }
 
+    public function testCollectDatevZahlungsverkehrBuchungenUsesKreditorFallbackAndNegativeAmounts(): void
+    {
+        $database = new ExportbuchhaltungDatabaseStub(array(
+            array(
+                'id' => 91,
+                'fibu_datum' => '2026-03-12',
+                'export_datum' => '2026-03-12',
+                'betrag' => '-12.34',
+                'waehrung' => 'EUR',
+                'von_typ' => 'verbindlichkeit',
+                'von_id' => 55,
+                'nach_typ' => 'kontoauszuege',
+                'nach_id' => 12,
+                'belegnr' => 'V-55',
+                'debitor' => '',
+                'debitor_beleg' => '',
+                'debitor_fallback' => '',
+                'kreditor' => '70001',
+                'kreditor_beleg' => '',
+                'kreditor_fallback' => '80001',
+                'sachkonto' => '',
+                'bank_datev' => '1200',
+                'kasse_datev' => '',
+                'intern' => '',
+                'kontoauszug_buchungstext' => '',
+                'buchungsschluessel' => '',
+            ),
+        ));
+
+        $exportbuchhaltung = $this->createExportbuchhaltung($database);
+
+        $buchungen = $this->invokePrivateMethod(
+            $exportbuchhaltung,
+            'collectDatevZahlungsverkehrBuchungen',
+            new DateTime('2026-03-01'),
+            new DateTime('2026-03-31'),
+            0
+        );
+
+        self::assertCount(1, $buchungen);
+        self::assertSame('70001', $buchungen[0]['Gegenkonto (ohne BU-Schlüssel)']);
+        self::assertSame('H', $buchungen[0]['Soll-/Haben-Kennzeichen']);
+        self::assertSame('Zahlung V-55', $buchungen[0]['Buchungstext']);
+    }
+
+    public function testCollectDatevZahlungsverkehrBuchungenSkipsRowsWithoutDatevMoneyAccount(): void
+    {
+        $database = new ExportbuchhaltungDatabaseStub(array(
+            array(
+                'id' => 92,
+                'fibu_datum' => '2026-03-15',
+                'export_datum' => '2026-03-15',
+                'betrag' => '15.00',
+                'waehrung' => 'EUR',
+                'von_typ' => 'rechnung',
+                'von_id' => 18,
+                'nach_typ' => 'kontoauszuege',
+                'nach_id' => 13,
+                'belegnr' => 'R-18',
+                'debitor' => '10018',
+                'debitor_beleg' => '',
+                'debitor_fallback' => '',
+                'kreditor' => '',
+                'kreditor_beleg' => '',
+                'kreditor_fallback' => '',
+                'sachkonto' => '',
+                'bank_datev' => '',
+                'kasse_datev' => '',
+                'intern' => '',
+                'kontoauszug_buchungstext' => '',
+                'buchungsschluessel' => '',
+            ),
+        ));
+
+        $exportbuchhaltung = $this->createExportbuchhaltung($database);
+
+        $buchungen = $this->invokePrivateMethod(
+            $exportbuchhaltung,
+            'collectDatevZahlungsverkehrBuchungen',
+            new DateTime('2026-03-01'),
+            new DateTime('2026-03-31'),
+            0
+        );
+
+        self::assertSame(array(), $buchungen);
+    }
+
     public function testSortDatevZusatzbuchungenOrdersByDateGroupAndId(): void
     {
         $exportbuchhaltung = $this->createExportbuchhaltung(new ExportbuchhaltungDatabaseStub(array()));
@@ -116,29 +207,33 @@ final class ExportbuchhaltungTest extends TestCase
             array(
                 array(
                     'Belegfeld 2' => 'FB4',
-                    '_sort_date' => '2026-01-10',
-                    '_sort_group' => 20,
-                    '_sort_id' => 4,
+                    'export_date' => '2026-01-10',
+                    'row_group' => 40,
+                    'source_id' => 4,
+                    'source_type' => 'belegsachkonto',
                 ),
                 array(
                     'Belegfeld 2' => 'FB2',
-                    '_sort_date' => '2026-01-03',
-                    '_sort_group' => 10,
-                    '_sort_id' => 2,
+                    'export_date' => '2026-01-03',
+                    'row_group' => 30,
+                    'source_id' => 2,
+                    'source_type' => 'zahlungsverkehr',
                 ),
                 array(
                     'Belegfeld 2' => 'FB3',
-                    '_sort_date' => '2026-01-10',
-                    '_sort_group' => 10,
-                    '_sort_id' => 3,
+                    'export_date' => '2026-01-10',
+                    'row_group' => 30,
+                    'source_id' => 3,
+                    'source_type' => 'zahlungsverkehr',
                 ),
             )
         );
 
         self::assertSame(array('FB2', 'FB3', 'FB4'), array_column($sorted, 'Belegfeld 2'));
-        self::assertArrayNotHasKey('_sort_date', $sorted[0]);
-        self::assertArrayNotHasKey('_sort_group', $sorted[0]);
-        self::assertArrayNotHasKey('_sort_id', $sorted[0]);
+        self::assertSame('2026-01-03', $sorted[0]['export_date']);
+        self::assertSame(30, $sorted[0]['row_group']);
+        self::assertSame(2, $sorted[0]['source_id']);
+        self::assertSame('zahlungsverkehr', $sorted[0]['source_type']);
     }
 
     private function createExportbuchhaltung(ExportbuchhaltungDatabaseStub $database): \Exportbuchhaltung

@@ -244,6 +244,7 @@ final class DatevExport
 
         $throw_exception = false;
         $differences = array();
+        $buchungszeilen = array();
 
         // Start
         $csv = "";
@@ -268,6 +269,7 @@ final class DatevExport
         $csv .= "\r\n";
 
         foreach ($beleg_data as $typ => $belege_zu_typ) {
+            $sourceType = (string)($belege_zu_typ['typ'] ?? $typ);
             foreach ($belege_zu_typ['belege'] as $beleg) { // Belege
                 $sum_pos = 0;
                 $positionen = isset($beleg['positionen']) && is_array($beleg['positionen'])
@@ -276,8 +278,6 @@ final class DatevExport
                 foreach ($positionen as $row) {
 
                     $posid = $row['pos_id'];
-                    $result = array();
-
                     $data = array();
                     if ($row['betrag'] > 0) {
                         $data['Umsatz'] = number_format($row['betrag'], 2, ',', ''); // obligatory
@@ -316,7 +316,15 @@ final class DatevExport
                         $data['Beleglink'] = 'BEDI '.$beleg['guid'];
                     }
 
-                    $csv .= self::create_line($datev_buchungsstapel_definition,$data);
+                    self::addBuchungsstapelRow(
+                        $buchungszeilen,
+                        $data,
+                        $beleg['datum'] ?? '',
+                        10,
+                        $sourceType,
+                        (int)($beleg['id'] ?? 0),
+                        (int)$posid
+                    );
                 } // Foreach row
 
                 // Check consistency of positions
@@ -363,14 +371,35 @@ final class DatevExport
                         }
 
                         $differences[] = $beleg;
-                        $csv .= self::create_line($datev_buchungsstapel_definition,$data);
+                        self::addBuchungsstapelRow(
+                            $buchungszeilen,
+                            $data,
+                            $beleg['datum'] ?? '',
+                            20,
+                            $sourceType,
+                            (int)($beleg['id'] ?? 0)
+                        );
                     }
                 }
             } // Foreach belege
         } // Foreach typ
 
         foreach ($zusaetzliche_buchungen as $buchung) {
-            $csv .= self::create_line($datev_buchungsstapel_definition, $buchung);
+            self::addBuchungsstapelRow(
+                $buchungszeilen,
+                $buchung,
+                $buchung['export_date'] ?? ($buchung['_sort_date'] ?? ''),
+                (int)($buchung['row_group'] ?? ($buchung['_sort_group'] ?? 90)),
+                (string)($buchung['source_type'] ?? 'additional'),
+                (int)($buchung['source_id'] ?? ($buchung['_sort_id'] ?? 0)),
+                (int)($buchung['pos_id'] ?? 0)
+            );
+        }
+
+        self::sortBuchungsstapelRows($buchungszeilen);
+
+        foreach ($buchungszeilen as $buchungszeile) {
+            $csv .= self::create_line($datev_buchungsstapel_definition, $buchungszeile);
         }
 
         if ($throw_exception) {
@@ -383,6 +412,83 @@ final class DatevExport
         }
 
         return self::encodeCsvOutput($csv, $format);
+    }
+
+    private static function addBuchungsstapelRow(
+        array &$buchungszeilen,
+        array $data,
+        $exportDate,
+        int $rowGroup,
+        string $sourceType,
+        int $sourceId,
+        int $posId = 0
+    ) : void
+    {
+        $data['export_date'] = self::normalizeBuchungsstapelDate($exportDate);
+        $data['row_group'] = $rowGroup;
+        $data['source_type'] = $sourceType;
+        $data['source_id'] = $sourceId;
+        $data['pos_id'] = $posId;
+
+        $buchungszeilen[] = $data;
+    }
+
+    private static function normalizeBuchungsstapelDate($date) : string
+    {
+        if (empty($date)) {
+            return '9999-12-31';
+        }
+
+        $normalizedDate = date_create((string)$date);
+        if (!($normalizedDate instanceof datetime)) {
+            return '9999-12-31';
+        }
+
+        return date_format($normalizedDate, 'Y-m-d');
+    }
+
+    private static function getBuchungsstapelSourceTypeOrder(string $sourceType) : int
+    {
+        $order = array(
+            'rechnung' => 10,
+            'gutschrift' => 20,
+            'verbindlichkeit' => 30,
+            'lieferantengutschrift' => 40,
+            'zahlungsverkehr' => 50,
+            'belegsachkonto' => 60,
+            'dialog' => 70,
+            'additional' => 999,
+        );
+
+        return $order[$sourceType] ?? 999;
+    }
+
+    private static function sortBuchungsstapelRows(array &$buchungszeilen) : void
+    {
+        usort($buchungszeilen, static function (array $left, array $right): int {
+            $dateCompare = strcmp((string)($left['export_date'] ?? ''), (string)($right['export_date'] ?? ''));
+            if ($dateCompare !== 0) {
+                return $dateCompare;
+            }
+
+            $groupCompare = ((int)($left['row_group'] ?? 999)) <=> ((int)($right['row_group'] ?? 999));
+            if ($groupCompare !== 0) {
+                return $groupCompare;
+            }
+
+            $typeCompare = self::getBuchungsstapelSourceTypeOrder((string)($left['source_type'] ?? ''))
+                <=> self::getBuchungsstapelSourceTypeOrder((string)($right['source_type'] ?? ''));
+            if ($typeCompare !== 0) {
+                return $typeCompare;
+            }
+
+            $sourceCompare = ((int)($left['source_id'] ?? 0)) <=> ((int)($right['source_id'] ?? 0));
+            if ($sourceCompare !== 0) {
+                return $sourceCompare;
+            }
+
+            return ((int)($left['pos_id'] ?? 0)) <=> ((int)($right['pos_id'] ?? 0));
+        });
     }
 
     static function createDebitorenKreditorenStammdatenCSV(array $adress_rows, string $berater, string $mandant, string $wirtschaftsjahr_beginn, int $sachkontenlaenge, string $bearbeiter, string $filename = 'EXTF_Stammdaten_DebitorenKreditoren_DATEV_export.csv', string $format = "ISO-8859-1") : string
