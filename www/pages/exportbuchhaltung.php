@@ -219,6 +219,76 @@ class Exportbuchhaltung
         return 'Umbuchung';
     }
 
+    private function getDatevPaymentExportDateSql(): string
+    {
+        return "COALESCE(
+            NULLIF(kz.buchung, '0000-00-00'),
+            NULLIF(ka.belegdatum, '0000-00-00'),
+            NULLIF(ka.datum, '0000-00-00'),
+            fb.datum
+        )";
+    }
+
+    private function normalizeDatevExportAccount($konto): string
+    {
+        $konto = preg_replace('/[^0-9]/', '', trim((string)$konto));
+        if ($konto === null) {
+            return '';
+        }
+
+        return mb_substr($konto, 0, 9);
+    }
+
+    private function getFirstNonEmptyDatevAccount(array $konten): string
+    {
+        foreach ($konten as $konto) {
+            $konto = $this->normalizeDatevExportAccount($konto);
+            if ($konto !== '') {
+                return $konto;
+            }
+        }
+
+        return '';
+    }
+
+    private function formatDatevBelegdatum($datum): string
+    {
+        if (empty($datum)) {
+            return '';
+        }
+
+        $date = date_create((string)$datum);
+        if (!($date instanceof DateTime)) {
+            return '';
+        }
+
+        return date_format($date, 'dm');
+    }
+
+    private function sortDatevZusatzbuchungen(array $buchungen): array
+    {
+        usort($buchungen, static function (array $left, array $right): int {
+            $dateCompare = strcmp((string)($left['_sort_date'] ?? ''), (string)($right['_sort_date'] ?? ''));
+            if ($dateCompare !== 0) {
+                return $dateCompare;
+            }
+
+            $groupCompare = ((int)($left['_sort_group'] ?? 0)) <=> ((int)($right['_sort_group'] ?? 0));
+            if ($groupCompare !== 0) {
+                return $groupCompare;
+            }
+
+            return ((int)($left['_sort_id'] ?? 0)) <=> ((int)($right['_sort_id'] ?? 0));
+        });
+
+        foreach ($buchungen as &$buchung) {
+            unset($buchung['_sort_date'], $buchung['_sort_group'], $buchung['_sort_id']);
+        }
+        unset($buchung);
+
+        return $buchungen;
+    }
+
     function ExportBuchhaltungList() {
         $submit = $this->app->Secure->GetPOST('submit');
         $von_form = $this->app->Secure->GetPOST("von");
@@ -791,18 +861,20 @@ class Exportbuchhaltung
 
     private function collectDatevZusatzbuchungen(DateTime $von, DateTime $bis, int $projekt = 0): array
     {
-        return array_merge(
+        return $this->sortDatevZusatzbuchungen(array_merge(
             $this->collectDatevZahlungsverkehrBuchungen($von, $bis, $projekt),
             $this->collectDatevBelegSachkontoBuchungen($von, $bis, $projekt),
             $this->collectDatevDialogbuchungen($von, $bis, $projekt)
-        );
+        ));
     }
 
     private function collectDatevZahlungsverkehrBuchungen(DateTime $von, DateTime $bis, int $projekt = 0): array
     {
+        $exportDateSql = $this->getDatevPaymentExportDateSql();
         $sql = "SELECT
             fb.id,
-            fb.datum,
+            fb.datum AS fibu_datum,
+            ".$exportDateSql." AS export_datum,
             fb.betrag,
             fb.waehrung,
             fb.von_typ,
@@ -817,6 +889,7 @@ class Exportbuchhaltung
                 NULLIF(v.belegnr, '')
             ) AS belegnr,
             COALESCE(NULLIF(ar.kundennummer_buchhaltung, ''), NULLIF(ag.kundennummer_buchhaltung, '')) AS debitor,
+            COALESCE(NULLIF(r.kundennummer, ''), NULLIF(g.kundennummer, '')) AS debitor_beleg,
             COALESCE(NULLIF(ar.kundennummer, ''), NULLIF(ag.kundennummer, '')) AS debitor_fallback,
             av.lieferantennummer_buchhaltung AS kreditor,
             av.lieferantennummer AS kreditor_fallback,
@@ -859,7 +932,7 @@ class Exportbuchhaltung
                 OR (fb.nach_typ='kasse' AND fb.nach_id=ka.id)
             LEFT JOIN konten kk ON kk.id = ka.konto
         WHERE
-            fb.datum BETWEEN '".date_format($von,"Y-m-d")."' AND '".date_format($bis,"Y-m-d")."'
+            ".$exportDateSql." BETWEEN '".date_format($von,"Y-m-d")."' AND '".date_format($bis,"Y-m-d")."'
             AND (fb.von_typ IN ('kontoauszuege','kasse') OR fb.nach_typ IN ('kontoauszuege','kasse'))
             AND (
                 $projekt = 0
@@ -870,24 +943,36 @@ class Exportbuchhaltung
                 OR kb.projekt = $projekt
                 OR kk.projekt = $projekt
                 OR kr.projekt = $projekt
-            )";
+            )
+        ORDER BY export_datum, fb.id";
 
         $buchungen = array();
         $zahlungen = $this->app->DB->SelectArr($sql);
         foreach ($zahlungen as $row) {
-            $geldkonto = !empty($row['bank_datev']) ? $row['bank_datev'] : $row['kasse_datev'];
-            if (empty($geldkonto)) {
+            $geldkonto = $this->getFirstNonEmptyDatevAccount(array(
+                $row['bank_datev'] ?? '',
+                $row['kasse_datev'] ?? ''
+            ));
+            if ($geldkonto === '') {
                 continue;
             }
 
-            $debitor = !empty($row['debitor']) ? $row['debitor'] : $row['debitor_fallback'];
-            $kreditor = !empty($row['kreditor']) ? $row['kreditor'] : $row['kreditor_fallback'];
-            if (!empty($debitor)) {
+            $debitor = $this->getFirstNonEmptyDatevAccount(array(
+                $row['debitor'] ?? '',
+                $row['debitor_beleg'] ?? '',
+                $row['debitor_fallback'] ?? ''
+            ));
+            $kreditor = $this->getFirstNonEmptyDatevAccount(array(
+                $row['kreditor'] ?? '',
+                $row['kreditor_beleg'] ?? '',
+                $row['kreditor_fallback'] ?? ''
+            ));
+            if ($debitor !== '') {
                 $gegenkonto = $debitor;
-            } elseif (!empty($kreditor)) {
+            } elseif ($kreditor !== '') {
                 $gegenkonto = $kreditor;
             } else {
-                $gegenkonto = !empty($row['sachkonto']) ? $row['sachkonto'] : '9999';
+                $gegenkonto = $this->getFirstNonEmptyDatevAccount(array($row['sachkonto'] ?? '', '9999'));
             }
 
             $money_in = in_array($row['nach_typ'], array('kontoauszuege', 'kasse'), true);
@@ -898,6 +983,12 @@ class Exportbuchhaltung
 
             $betrag = abs((float)$row['betrag']);
             if ($betrag == 0.0) {
+                continue;
+            }
+
+            $exportDate = !empty($row['export_datum']) ? $row['export_datum'] : ($row['fibu_datum'] ?? '');
+            $belegdatum = $this->formatDatevBelegdatum($exportDate);
+            if ($belegdatum === '') {
                 continue;
             }
 
@@ -927,10 +1018,13 @@ class Exportbuchhaltung
                 '_debitor' => $debitor,
                 '_kreditor' => $kreditor,
                 'BU-Schlüssel' => $row['buchungsschluessel'],
-                'Belegdatum' => date_format(date_create($row['datum']), "dm"),
+                'Belegdatum' => $belegdatum,
                 'Belegfeld 1' => mb_strimwidth($belegfeld1, 0, 36),
                 'Belegfeld 2' => 'FB'.$row['id'],
                 'Buchungstext' => mb_strimwidth($buchungstext, 0, 60),
+                '_sort_date' => $exportDate,
+                '_sort_group' => 10,
+                '_sort_id' => (int)$row['id'],
             );
         }
 
@@ -1009,12 +1103,13 @@ class Exportbuchhaltung
                 OR v.projekt = $projekt
                 OR lg.projekt = $projekt
                 OR kr.projekt = $projekt
-            )";
+            )
+        ORDER BY fb.datum, fb.id";
 
         $buchungen = array();
         $belegSachkonten = $this->app->DB->SelectArr($sql);
         foreach ($belegSachkonten as $row) {
-            $konto = trim((string)$row['sachkonto']);
+            $konto = $this->getFirstNonEmptyDatevAccount(array($row['sachkonto'] ?? ''));
             if ($konto === '') {
                 continue;
             }
@@ -1025,14 +1120,25 @@ class Exportbuchhaltung
                 continue;
             }
 
-            $debitor = !empty($row['debitor']) ? $row['debitor'] : $row['debitor_fallback'];
-            $kreditor = !empty($row['kreditor']) ? $row['kreditor'] : $row['kreditor_fallback'];
-            if (!empty($debitor)) {
+            $debitor = $this->getFirstNonEmptyDatevAccount(array(
+                $row['debitor'] ?? '',
+                $row['debitor_fallback'] ?? ''
+            ));
+            $kreditor = $this->getFirstNonEmptyDatevAccount(array(
+                $row['kreditor'] ?? '',
+                $row['kreditor_fallback'] ?? ''
+            ));
+            if ($debitor !== '') {
                 $gegenkonto = $debitor;
-            } elseif (!empty($kreditor)) {
+            } elseif ($kreditor !== '') {
                 $gegenkonto = $kreditor;
             } else {
                 $gegenkonto = '9999';
+            }
+
+            $belegdatum = $this->formatDatevBelegdatum($row['datum'] ?? '');
+            if ($belegdatum === '') {
+                continue;
             }
 
             $belegnr = trim((string)$row['belegnr']);
@@ -1054,10 +1160,13 @@ class Exportbuchhaltung
                 '_debitor' => $debitor,
                 '_kreditor' => $kreditor,
                 'BU-Schlüssel' => $row['buchungsschluessel'],
-                'Belegdatum' => date_format(date_create($row['datum']), "dm"),
+                'Belegdatum' => $belegdatum,
                 'Belegfeld 1' => mb_strimwidth($belegnr !== '' ? $belegnr : ('FB'.$row['id']), 0, 36),
                 'Belegfeld 2' => 'FB'.$row['id'],
                 'Buchungstext' => mb_strimwidth($buchungstext, 0, 60),
+                '_sort_date' => $row['datum'],
+                '_sort_group' => 20,
+                '_sort_id' => (int)$row['id'],
             );
         }
 
@@ -1093,7 +1202,8 @@ class Exportbuchhaltung
                 $projekt = 0
                 OR kr_soll.projekt = $projekt
                 OR kr_haben.projekt = $projekt
-            )";
+            )
+        ORDER BY fb.datum, fb.id";
 
         $buchungen = array();
         $dialogbuchungen = $this->app->DB->SelectArr($sql);
@@ -1113,7 +1223,14 @@ class Exportbuchhaltung
                 $gegenkonto = $row['sollkonto'];
             }
 
-            if (empty($konto) || empty($gegenkonto)) {
+            $konto = $this->getFirstNonEmptyDatevAccount(array($konto));
+            $gegenkonto = $this->getFirstNonEmptyDatevAccount(array($gegenkonto));
+            if ($konto === '' || $gegenkonto === '') {
+                continue;
+            }
+
+            $belegdatum = $this->formatDatevBelegdatum($row['datum'] ?? '');
+            if ($belegdatum === '') {
                 continue;
             }
 
@@ -1127,10 +1244,13 @@ class Exportbuchhaltung
                 'Konto' => $konto,
                 'Gegenkonto (ohne BU-Schlüssel)' => $gegenkonto,
                 'BU-Schlüssel' => $row['buchungsschluessel'],
-                'Belegdatum' => date_format(date_create($row['datum']), "dm"),
+                'Belegdatum' => $belegdatum,
                 'Belegfeld 1' => mb_strimwidth($belegfeld1, 0, 36),
                 'Belegfeld 2' => 'FB'.$row['id'],
                 'Buchungstext' => mb_strimwidth($buchungstext, 0, 60),
+                '_sort_date' => $row['datum'],
+                '_sort_group' => 30,
+                '_sort_id' => (int)$row['id'],
             );
         }
 
