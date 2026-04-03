@@ -644,7 +644,7 @@ ean;';
           }
           break;
         case 'artikelkategorie':
-          $fields_array[] = "'VAR:ARTIKELKATEGORIE' as artikelkategorie";
+          $fields_array[] = "'VAR:ARTIKELKATEGORIE_NUMMER' as artikelkategorie";
           break;
         case 'artikelkategorie_name':
           $fields_array[] = "'VAR:ARTIKELKATEGORIE_NAME' as artikelkategorie_name";
@@ -740,16 +740,7 @@ ean;';
 
   public function generateExport($xls, $sql, $exporterstezeilenummer, $exportdatenmaskierung, $exporttrennzeichen, $ziel, $returnResultByFunction = false, $maxMemory = 0, $maxTime = 0)
   {
-    if(!$returnResultByFunction) {
-      if($xls)
-      {
-        header('Content-Type: application/excel');
-        header('Content-Disposition: attachment; filename="export.csv"');
-      }else{
-        header('Content-Type: text/plain;');
-        header('Content-Disposition: attachment; filename=export.csv');
-      }
-    }
+
     $returnValue = '';
 
     $limit = 10000;
@@ -778,26 +769,28 @@ ean;';
           $returnValue .= $exportdatenmaskierung.$value.$exportdatenmaskierung.$exporttrennzeichen;
         }
         $returnValue .= "\r\n";
-        if(!$returnResultByFunction) {
-          echo $returnValue;
-        }
         $query->data_seek(0);
       }
 
       while($row = $this->app->DB->Fetch_Assoc($query))
       {
         $line = $this->Exportinner($row,$exportdatenmaskierung,$exporttrennzeichen, $returnResultByFunction, $ziel, $xls);
-        if(!$returnResultByFunction) {
-          echo $line;
-        }else {
-          $returnValue .= $line;
-        }
+        $returnValue .= $line;
       }
       $firstLinePassed = true;
       $offset += $limit;
     }while(!$queryContainsLimit && $query->num_rows === $limit);
 
     if(!$returnResultByFunction) {
+      if($xls)
+      {
+        header('Content-Type: application/excel');
+        header('Content-Disposition: attachment; filename="export.csv"');
+      }else{
+        header('Content-Type: text/plain;');
+        header('Content-Disposition: attachment; filename=export.csv');
+      }
+      echo($returnValue);
       $this->app->ExitXentral();
     }
     return $returnValue;
@@ -837,7 +830,7 @@ ean;';
       'VAR:INVENTUREK' => 'inventurek',
       'VAR:ARTIKELBESCHREIBUNG_DE' => 'anabregs_text',
       'VAR:ARTIKELBESCHREIBUNG_EN' => 'anabregs_text_en',
-      'VAR:ARTIKELKATEGORIE' => 'artikelkategorie',
+      'VAR:ARTIKELKATEGORIE_NUMMER' => 'artikelkategorie',
       'VAR:ARTIKELKATEGORIE_NAME' => 'artikelkategorie_name',
       'VAR:STANDARDLAGERPLATZ' => 'standardlagerplatz',
       'VAR:VARIANTE_VON' => 'variante_von'
@@ -1058,7 +1051,6 @@ ean;';
       foreach($replaces as $k => $v) {
         $value = str_replace($k, $params[$v], $value);
       }
-
       $value = $this->app->erp->ParseDecimalForCSV($value);
       if($xls) {
         $value = iconv('UTF-8','ISO-8859-1//TRANSLIT', $value);
