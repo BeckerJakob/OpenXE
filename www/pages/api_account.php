@@ -33,6 +33,7 @@ class Api_account
   /** @var string[] $javascript */
   public $javascript = [
     './classes/Modules/ApiAccount/www/js/api_account.js',
+    './classes/Modules/ApiAccount/www/js/api_account_v3.js',
   ];
 
   /**
@@ -163,6 +164,22 @@ class Api_account
     }
 
     return new JsonResponse(['error'=>'Account nicht gefunden'], JsonResponse::HTTP_BAD_REQUEST);
+  }
+
+  /**
+   * @return JsonResponse
+   */
+  public function HandleListAccountsAjaxAction()
+  {
+    if(!$this->app->erp->RechteVorhanden('api_account', 'list')) {
+      return new JsonResponse(['error' => 'Fehlende Rechte'], JsonResponse::HTTP_BAD_REQUEST);
+    }
+
+    $rows = $this->app->DB->SelectArr(
+      'SELECT `id`, `bezeichnung`, `aktiv` FROM `api_account` ORDER BY `bezeichnung` ASC'
+    );
+
+    return new JsonResponse(is_array($rows) ? $rows : []);
   }
 
   /**
@@ -338,13 +355,38 @@ class Api_account
     return json_encode($cleanedPermissions);
   }
 
+  private function renderApiAccountNavigation(): void
+  {
+    $this->app->erp->MenuEintrag('index.php?module=api_account&action=list', '&Uuml;bersicht');
+    $this->app->erp->MenuEintrag(
+      'index.php?module=api_account&action=list&cmd=v3-page',
+      'API v3 Tokens'
+    );
+    $this->app->erp->MenuEintrag('#', 'Neuer API Account (klassisch)');
+  }
+
   public function Api_AccountList(){
     $cmd = $this->app->Secure->GetGET('cmd');
+    if($cmd === 'v3-page') {
+      if(!$this->app->erp->RechteVorhanden('api_account', 'list')) {
+        $this->app->Location->execute('index.php');
+
+        return;
+      }
+      $this->renderApiAccountNavigation();
+      $this->app->erp->Headlines('API v3 Tokens');
+      $this->app->Tpl->Parse('PAGE', 'api_account_v3.tpl');
+
+      return;
+    }
     if($cmd === 'get') {
       return $this->HandleGetAjaxAction();
     }
     if($cmd === 'save') {
       return $this->HandleSaveAjaxAction();
+    }
+    if($cmd === 'list-accounts') {
+      return $this->HandleListAccountsAjaxAction();
     }
     if($cmd === 'create-v3-token') {
       return $this->HandleCreateV3TokenAjaxAction();
@@ -378,8 +420,7 @@ class Api_account
     }
 
     $this->app->YUI->TableSearch('TAB1','api_account_list', 'show','','',basename(__FILE__), __CLASS__);
-    $this->app->erp->MenuEintrag('#', 'Neu');
-    $this->app->erp->MenuEintrag('index.php?module=api_account&action=list', '&Uuml;bersicht');
+    $this->renderApiAccountNavigation();
     $this->app->erp->Headlines('API Account');
     $this->app->Tpl->Set('API_PERMISSIONS_HTML', $apiPermissionsHtml);
     $this->app->YUI->Autocomplete('projekt', 'projektname', 1);
