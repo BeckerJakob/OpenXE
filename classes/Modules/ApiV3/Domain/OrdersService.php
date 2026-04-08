@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Xentral\Modules\ApiV3\Domain;
 
+use Xentral\Modules\Api\LegacyBridge\LegacyApplication;
 use Xentral\Modules\ApiV3\Http\ApiV3Exception;
 use Xentral\Modules\ApiV3\Repository\SalesOrderRepository;
 
@@ -12,9 +13,13 @@ final class OrdersService
     /** @var SalesOrderRepository */
     private $orders;
 
-    public function __construct(SalesOrderRepository $orders)
+    /** @var LegacyApplication */
+    private $legacy;
+
+    public function __construct(SalesOrderRepository $orders, LegacyApplication $legacy)
     {
         $this->orders = $orders;
+        $this->legacy = $legacy;
     }
 
     /**
@@ -76,6 +81,51 @@ final class OrdersService
         $orderId = $this->orders->createSalesOrder($orderAttributes, $positions);
 
         return $this->getSalesOrder($orderId);
+    }
+
+    /**
+     * @return array{invoice_id:int,sales_order_id:int,document_number:string}
+     */
+    public function createInvoiceFromSalesOrder(int $orderId): array
+    {
+        $order = $this->orders->findSalesOrderById($orderId);
+        if ($order === null) {
+            throw new ApiV3Exception(404, 'sales_order_not_found', 'The sales order was not found.');
+        }
+        if (empty($order['positions'])) {
+            throw new ApiV3Exception(
+                422,
+                'sales_order_without_positions',
+                'The sales order has no line items; cannot create an invoice.'
+            );
+        }
+
+        $app = $this->legacy;
+        class_exists('FormHandler', true);
+        if (empty($app->FormHandler)) {
+            $app->FormHandler = new \FormHandler($app);
+        }
+
+        $invoiceId = (int)$app->erp->WeiterfuehrenAuftragZuRechnung($orderId);
+        if ($invoiceId <= 0) {
+            throw new ApiV3Exception(
+                422,
+                'invoice_creation_failed',
+                'Could not create invoice from sales order.'
+            );
+        }
+
+        $app->erp->AuftragProtokoll($orderId, 'Auftrag manuell als Rechnung weitergeführt');
+
+        $belegnr = (string)$app->DB->Select(
+            sprintf('SELECT belegnr FROM rechnung WHERE id = %d LIMIT 1', $invoiceId)
+        );
+
+        return [
+            'invoice_id'      => $invoiceId,
+            'sales_order_id'  => $orderId,
+            'document_number' => $belegnr,
+        ];
     }
 
     /**

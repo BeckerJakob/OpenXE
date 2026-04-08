@@ -48,6 +48,7 @@ final class RouteCollectionFactory
 
         $routes->addRoute('GET', '/sales-orders', [OrdersController::class, 'listSalesOrders', ScopeRegistry::SALES_ORDERS_READ]);
         $routes->addRoute('GET', '/sales-orders/{id:\d+}', [OrdersController::class, 'getSalesOrder', ScopeRegistry::SALES_ORDERS_READ]);
+        $routes->addRoute('POST', '/sales-orders/{id:\d+}/invoices', [OrdersController::class, 'createInvoiceFromSalesOrder', ScopeRegistry::SALES_ORDERS_WRITE]);
         $routes->addRoute('POST', '/sales-orders', [OrdersController::class, 'createSalesOrder', ScopeRegistry::SALES_ORDERS_WRITE]);
 
         $routes->addRoute('GET', '/bank-transactions', [BankingController::class, 'listBankTransactions', ScopeRegistry::BANKING_READ]);

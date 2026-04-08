@@ -45,4 +45,11 @@ final class OrdersController extends AbstractController
 
         return $this->created($order, '/api/v3/sales-orders/' . $order['id']);
     }
+
+    public function createInvoiceFromSalesOrder(ApiV3Request $request, array $principal, array $vars = []): JsonResponse
+    {
+        $payload = $this->orders->createInvoiceFromSalesOrder((int)$vars['id']);
+
+        return $this->created($payload);
+    }
 }

@@ -351,6 +351,22 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/SalesOrderSingle'
+  /sales-orders/{id}/invoices:
+    post:
+      tags: [Sales Orders]
+      summary: Create invoice from sales order
+      description: |
+        Triggers the same ERP flow as choosing "Rechnung erstellen" on a sales order (WeiterfuehrenAuftragZuRechnung).
+        The order must have at least one line item. Each call creates a new invoice.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '201':
+          $ref: '#/components/responses/SalesOrderInvoiceCreated'
+        '404':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
 
   /bank-transactions:
     get:
@@ -594,6 +610,17 @@ components:
                 properties:
                   data:
                     $ref: '#/components/schemas/SalesOrder'
+    SalesOrderInvoiceCreated:
+      description: Invoice created from sales order
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/SuccessEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SalesOrderInvoiceCreateResult'
     BankTransactionCollection:
       description: Bank transaction collection
       content:
@@ -703,6 +730,17 @@ components:
     SalesOrder:
       type: object
       additionalProperties: true
+    SalesOrderInvoiceCreateResult:
+      type: object
+      required: [invoice_id, sales_order_id, document_number]
+      properties:
+        invoice_id:
+          type: integer
+        sales_order_id:
+          type: integer
+        document_number:
+          type: string
+          description: Rechnungs-Belegnummer (may be empty while still in draft)
     BankTransaction:
       type: object
       additionalProperties: true

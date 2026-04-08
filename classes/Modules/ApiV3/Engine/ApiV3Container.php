@@ -129,7 +129,10 @@ final class ApiV3Container
                 $service = new ProductService($this->get(ProductRepository::class));
                 break;
             case OrdersService::class:
-                $service = new OrdersService($this->get(SalesOrderRepository::class));
+                $service = new OrdersService(
+                    $this->get(SalesOrderRepository::class),
+                    $this->get(LegacyApplication::class)
+                );
                 break;
             case BankingService::class:
                 $service = new BankingService($this->get(BankingRepository::class));

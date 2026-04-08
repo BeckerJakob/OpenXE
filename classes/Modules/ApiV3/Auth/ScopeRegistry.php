@@ -37,7 +37,7 @@ final class ScopeRegistry
             self::PRODUCTS_WRITE     => ['group' => 'Products', 'label' => 'Write products', 'description' => 'Create and update products and supplier prices.'],
             self::INVENTORY_WRITE    => ['group' => 'Products', 'label' => 'Write inventory', 'description' => 'Update inventory levels by warehouse location and SKU.'],
             self::SALES_ORDERS_READ  => ['group' => 'Sales Orders', 'label' => 'Read sales orders', 'description' => 'Search and read sales orders.'],
-            self::SALES_ORDERS_WRITE => ['group' => 'Sales Orders', 'label' => 'Write sales orders', 'description' => 'Create sales orders with line items.'],
+            self::SALES_ORDERS_WRITE => ['group' => 'Sales Orders', 'label' => 'Write sales orders', 'description' => 'Create sales orders with line items and create invoices from sales orders (same as "Rechnung erstellen" in the UI).'],
             self::BANKING_READ       => ['group' => 'Banking', 'label' => 'Read bank transactions', 'description' => 'Read bank transactions and delta windows.'],
             self::BANKING_WRITE      => ['group' => 'Banking', 'label' => 'Import bank transactions', 'description' => 'Import bank transactions with idempotency support.'],
             self::PAYABLES_READ      => ['group' => 'Payables', 'label' => 'Read payables', 'description' => 'Read suppliers, payables and payable lookup results.'],
