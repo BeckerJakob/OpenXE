@@ -2204,6 +2204,191 @@ class Rechnung extends GenRechnung
     }
 
     parent::RechnungEdit();
+    $savePosted = $speichern!='';
+    $saveEvent = $savePosted;
+    if(!$saveEvent) {
+      $tmpMessageOut = (string)$this->app->erp->GetTmpMessageOut();
+      $saveEvent = strpos($tmpMessageOut, 'Die Daten wurden gespeichert!') !== false;
+    }
+    if($id > 0 && $saveEvent) {
+      $invoiceLinkData = $this->app->DB->SelectRow(
+        sprintf(
+          "SELECT auftragid, auftrag, ustid, ust_befreit
+          FROM rechnung
+          WHERE id = %d
+          LIMIT 1",
+          (int)$id
+        )
+      );
+      if(!empty($invoiceLinkData)) {
+        $invoiceUstId = trim((string)$invoiceLinkData['ustid']);
+        $invoiceTaxExempt = isset($invoiceLinkData['ust_befreit']) ? trim((string)$invoiceLinkData['ust_befreit']) : '';
+        $linkedOrderIds = [];
+        $linkedOrderId = (int)$invoiceLinkData['auftragid'];
+        if($linkedOrderId > 0) {
+          $linkedOrderIds[$linkedOrderId] = $linkedOrderId;
+        }
+
+        $linkedOrderNumber = trim((string)$invoiceLinkData['auftrag']);
+        if($linkedOrderNumber !== '') {
+          $linkedOrderByNumber = (int)$this->app->DB->Select(
+            sprintf(
+              "SELECT id
+              FROM auftrag
+              WHERE belegnr = '%s'
+              LIMIT 1",
+              $this->app->DB->real_escape_string($linkedOrderNumber)
+            )
+          );
+          if($linkedOrderByNumber > 0) {
+            $linkedOrderIds[$linkedOrderByNumber] = $linkedOrderByNumber;
+          }
+        }
+
+        $fallbackOrders = $this->app->DB->SelectArr(
+          sprintf(
+            'SELECT id FROM auftrag WHERE rechnungid = %d',
+            (int)$id
+          )
+        );
+        if(!empty($fallbackOrders)) {
+          foreach($fallbackOrders as $fallbackOrder) {
+            $fallbackOrderId = (int)$fallbackOrder['id'];
+            if($fallbackOrderId > 0) {
+              $linkedOrderIds[$fallbackOrderId] = $fallbackOrderId;
+            }
+          }
+        }
+
+        if($this->app->DB->Select("SELECT * FROM sammelrechnung_position LIMIT 1")) {
+          $linkedCollectiveOrders = $this->app->DB->SelectArr(
+            sprintf(
+              "SELECT DISTINCT p.auftrag AS id
+              FROM sammelrechnung_position s
+              INNER JOIN auftrag_position p ON s.auftrag_position_id = p.id
+              WHERE s.rechnung = %d
+              UNION
+              SELECT DISTINCT p.auftrag AS id
+              FROM sammelrechnung_position s
+              INNER JOIN lieferschein_position lp ON lp.id = s.lieferschein_position_id
+              INNER JOIN auftrag_position p ON p.id = lp.auftrag_position_id
+              WHERE s.rechnung = %d",
+              (int)$id,
+              (int)$id
+            )
+          );
+          if(!empty($linkedCollectiveOrders)) {
+            foreach($linkedCollectiveOrders as $linkedCollectiveOrder) {
+              $linkedCollectiveOrderId = (int)$linkedCollectiveOrder['id'];
+              if($linkedCollectiveOrderId > 0) {
+                $linkedOrderIds[$linkedCollectiveOrderId] = $linkedCollectiveOrderId;
+              }
+            }
+          }
+        }
+
+        $linkedInvoiceIds = [(int)$id => (int)$id];
+
+        if($linkedOrderNumber !== '') {
+          $sameOrderNumberInvoices = $this->app->DB->SelectArr(
+            sprintf(
+              "SELECT id
+              FROM rechnung
+              WHERE auftrag = '%s'",
+              $this->app->DB->real_escape_string($linkedOrderNumber)
+            )
+          );
+          if(!empty($sameOrderNumberInvoices)) {
+            foreach($sameOrderNumberInvoices as $sameOrderNumberInvoice) {
+              $sameOrderNumberInvoiceId = (int)$sameOrderNumberInvoice['id'];
+              if($sameOrderNumberInvoiceId > 0) {
+                $linkedInvoiceIds[$sameOrderNumberInvoiceId] = $sameOrderNumberInvoiceId;
+              }
+            }
+          }
+        }
+
+        if(!empty($linkedOrderIds)) {
+          $linkedOrderIdList = implode(',', array_map('intval', array_values($linkedOrderIds)));
+          $escapedInvoiceUstId = $this->app->DB->real_escape_string($invoiceUstId);
+          $escapedInvoiceTaxExempt = $this->app->DB->real_escape_string($invoiceTaxExempt);
+
+          $this->app->DB->Update(
+            sprintf(
+              "UPDATE auftrag
+              SET ustid = '%s', ust_befreit = '%s'
+              WHERE id IN (%s)",
+              $escapedInvoiceUstId,
+              $escapedInvoiceTaxExempt,
+              $linkedOrderIdList
+            )
+          );
+
+          $linkedOrderInvoices = $this->app->DB->SelectArr(
+            sprintf(
+              'SELECT id FROM rechnung WHERE auftragid IN (%s)',
+              $linkedOrderIdList
+            )
+          );
+          if(!empty($linkedOrderInvoices)) {
+            foreach($linkedOrderInvoices as $linkedOrderInvoice) {
+              $linkedOrderInvoiceId = (int)$linkedOrderInvoice['id'];
+              if($linkedOrderInvoiceId > 0) {
+                $linkedInvoiceIds[$linkedOrderInvoiceId] = $linkedOrderInvoiceId;
+              }
+            }
+          }
+
+          $linkedOrderNumbers = $this->app->DB->SelectArr(
+            sprintf(
+              'SELECT belegnr FROM auftrag WHERE id IN (%s)',
+              $linkedOrderIdList
+            )
+          );
+          if(!empty($linkedOrderNumbers)) {
+            $escapedOrderNumbers = [];
+            foreach($linkedOrderNumbers as $linkedOrderNumberRow) {
+              $orderNumber = trim((string)$linkedOrderNumberRow['belegnr']);
+              if($orderNumber !== '') {
+                $escapedOrderNumbers[] = $this->app->DB->real_escape_string($orderNumber);
+              }
+            }
+            if(!empty($escapedOrderNumbers)) {
+              $linkedOrderNumberInvoices = $this->app->DB->SelectArr(
+                sprintf(
+                  "SELECT id
+                  FROM rechnung
+                  WHERE auftrag IN ('%s')",
+                  implode("','", array_unique($escapedOrderNumbers))
+                )
+              );
+              if(!empty($linkedOrderNumberInvoices)) {
+                foreach($linkedOrderNumberInvoices as $linkedOrderNumberInvoice) {
+                  $linkedOrderNumberInvoiceId = (int)$linkedOrderNumberInvoice['id'];
+                  if($linkedOrderNumberInvoiceId > 0) {
+                    $linkedInvoiceIds[$linkedOrderNumberInvoiceId] = $linkedOrderNumberInvoiceId;
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        if(!empty($linkedInvoiceIds)) {
+          $linkedInvoiceIdList = implode(',', array_map('intval', array_values($linkedInvoiceIds)));
+          $this->app->DB->Update(
+            sprintf(
+              "UPDATE rechnung
+              SET ustid = '%s', ust_befreit = '%s'
+              WHERE id IN (%s)",
+              $this->app->DB->real_escape_string($invoiceUstId),
+              $this->app->DB->real_escape_string($invoiceTaxExempt),
+              $linkedInvoiceIdList
+            )
+          );
+        }
+      }
+    }
     if($id > 0 && $this->app->DB->Select(
       sprintf(
         'SELECT id FROM rechnung WHERE schreibschutz =1  AND zuarchivieren = 1 AND id = %d',

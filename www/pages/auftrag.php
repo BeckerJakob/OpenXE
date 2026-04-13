@@ -4781,6 +4781,22 @@ class Auftrag extends GenAuftrag
       // stornierungen loeschen
       $this->app->DB->Delete("DELETE FROM lager_reserviert WHERE objekt='auftrag' AND parameter='$id'");
 
+      // verknuepfte Entwurfsrechnungen beim Auftragsstorno automatisch entfernen
+      $draftInvoiceIds = $this->app->DB->SelectArr(
+        "SELECT id
+        FROM rechnung
+        WHERE auftragid='$id'
+          AND (status='angelegt' OR status='')"
+      );
+      if(!empty($draftInvoiceIds)) {
+        foreach($draftInvoiceIds as $draftInvoice) {
+          $draftInvoiceId = (int)$draftInvoice['id'];
+          if($draftInvoiceId > 0) {
+            $this->app->erp->DeleteRechnung($draftInvoiceId);
+          }
+        }
+      }
+
       // ausfuellen automatisch stornofelder
       //stornobetrag // summe des zahlungseingangs!!!!
       //stornogutschrift
@@ -5920,8 +5936,109 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
     parent::AuftragEdit();
     $this->app->erp->CheckBearbeiter($id,'auftrag');
     $this->app->erp->CheckVertrieb($id,'auftrag');
+    $savePosted = $this->app->Secure->GetPOST('speichern') != '';
+    $saveEvent = $savePosted;
+    if(!$saveEvent) {
+      $tmpMessageOut = (string)$this->app->erp->GetTmpMessageOut();
+      $saveEvent = strpos($tmpMessageOut, 'Die Daten wurden gespeichert!') !== false;
+    }
 
-    if($this->app->Secure->GetPOST('speichern')!='' && $storno==''){
+    if($saveEvent && $storno==''){
+      $orderSyncData = $this->app->DB->SelectRow(
+        sprintf(
+          'SELECT ustid, ust_befreit, belegnr, rechnungid FROM auftrag WHERE id = %d LIMIT 1',
+          (int)$id
+        )
+      );
+      $orderUstId = trim((string)$orderSyncData['ustid']);
+      $orderTaxExempt = isset($orderSyncData['ust_befreit']) ? trim((string)$orderSyncData['ust_befreit']) : '';
+      $linkedInvoiceIds = [];
+      $orderNumber = trim((string)$orderSyncData['belegnr']);
+      $invoiceOrderCondition = sprintf('auftragid = %d', (int)$id);
+      if($orderNumber !== '') {
+        $invoiceOrderCondition .= sprintf(
+          " OR auftrag = '%s'",
+          $this->app->DB->real_escape_string($orderNumber)
+        );
+      }
+      $linkedInvoices = $this->app->DB->SelectArr(
+        sprintf(
+          "SELECT id
+          FROM rechnung
+          WHERE (%s)",
+          $invoiceOrderCondition
+        )
+      );
+      if(!empty($linkedInvoices)) {
+        foreach($linkedInvoices as $linkedInvoice) {
+          $linkedInvoiceId = (int)$linkedInvoice['id'];
+          if($linkedInvoiceId > 0) {
+            $linkedInvoiceIds[$linkedInvoiceId] = $linkedInvoiceId;
+          }
+        }
+      }
+
+      $fallbackInvoiceId = (int)$orderSyncData['rechnungid'];
+      if($fallbackInvoiceId > 0) {
+        $fallbackLinkedInvoiceId = (int)$this->app->DB->Select(
+          sprintf(
+            "SELECT id
+            FROM rechnung
+            WHERE id = %d
+            LIMIT 1",
+            $fallbackInvoiceId
+          )
+        );
+        if($fallbackLinkedInvoiceId > 0) {
+          $linkedInvoiceIds[$fallbackLinkedInvoiceId] = $fallbackLinkedInvoiceId;
+        }
+      }
+
+      if($this->app->DB->Select("SELECT * FROM sammelrechnung_position LIMIT 1")) {
+        $linkedCollectiveInvoices = $this->app->DB->SelectArr(
+          sprintf(
+            "SELECT DISTINCT r.id
+            FROM rechnung r
+            INNER JOIN sammelrechnung_position s ON r.id = s.rechnung
+            INNER JOIN auftrag_position p ON s.auftrag_position_id = p.id
+            WHERE p.auftrag = %d
+            UNION
+            SELECT DISTINCT r.id
+            FROM rechnung r
+            INNER JOIN sammelrechnung_position s ON r.id = s.rechnung
+            INNER JOIN lieferschein_position lp ON lp.id = s.lieferschein_position_id
+            INNER JOIN auftrag_position p ON p.id = lp.auftrag_position_id
+            WHERE p.auftrag = %d",
+            (int)$id,
+            (int)$id
+          )
+        );
+        if(!empty($linkedCollectiveInvoices)) {
+          foreach($linkedCollectiveInvoices as $linkedCollectiveInvoice) {
+            $linkedCollectiveInvoiceId = (int)$linkedCollectiveInvoice['id'];
+            if($linkedCollectiveInvoiceId > 0) {
+              $linkedInvoiceIds[$linkedCollectiveInvoiceId] = $linkedCollectiveInvoiceId;
+            }
+          }
+        }
+      }
+
+      if(!empty($linkedInvoiceIds)) {
+        $linkedInvoiceIdList = implode(',', array_map('intval', array_values($linkedInvoiceIds)));
+        $this->app->DB->Update(
+          sprintf(
+            "UPDATE rechnung
+            SET ustid = '%s', ust_befreit = '%s'
+            WHERE id IN (%s)",
+            $this->app->DB->real_escape_string($orderUstId),
+            $this->app->DB->real_escape_string($orderTaxExempt),
+            $linkedInvoiceIdList
+          )
+        );
+      }
+    }
+
+    if($savePosted && $storno==''){
       $msg = $this->app->Secure->GetGET('msg');
       if($this->app->Secure->GetGET('msg')==''){
         $msg .= $this->app->Tpl->Get('MESSAGE').' ';
@@ -5933,7 +6050,7 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
         .($this->app->Secure->GetGET('msgid')?'&msgid='.(int)$this->app->Secure->GetGET('msgid'):'')
       );
     }
-    if ($this->app->Secure->GetPOST('speichern')!='' && $storno==='abschluss'){
+    if ($savePosted && $storno==='abschluss'){
       //header("Location: index.php?module=stornierungen&action=list");
       $this->app->ExitXentral();
     }
