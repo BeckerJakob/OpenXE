@@ -660,7 +660,8 @@ class Exportbuchhaltung
                             sachkonto_missing: $sachkontofehlend_kennung,
                             format: $format,
                             zusaetzliche_buchungen: $zusaetzliche_buchungen,
-                            includeTestbuchung: ((int)$this->app->erp->Firmendaten('neuesdatevformattestbuchung') === 1)
+                            includeTestbuchung: ((int)$this->app->erp->Firmendaten('neuesdatevformattestbuchung') === 1),
+                            ursprung_ustid: (string)$this->app->erp->Firmendaten('steuernummer')
                         );
                     }
 

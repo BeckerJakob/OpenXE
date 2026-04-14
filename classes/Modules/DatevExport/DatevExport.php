@@ -46,7 +46,7 @@ final class DatevExport
     * format: "ISO-8859-1", "UTF-8", "UTF-8-BOM"
     * @throws ConsistencyException with string (list of items) if consistency check fails and no sachkonto for differences is given
     */
-    static function createBuchungsstapelCSV($beleg_data, string $berater, string $mandant, string $bearbeiter, datetime $wj_beginn, int $sachkontenlaenge, datetime $von, datetime $bis, string $filename = 'EXTF_Buchungsstapel_DATEV_export.csv', $diffignore = false, $sachkonto_differences = null, $sachkonto_missing = null, string $format = "ISO-8859-1", array $zusaetzliche_buchungen = array(), bool $includeTestbuchung = false) : string {
+    static function createBuchungsstapelCSV($beleg_data, string $berater, string $mandant, string $bearbeiter, datetime $wj_beginn, int $sachkontenlaenge, datetime $von, datetime $bis, string $filename = 'EXTF_Buchungsstapel_DATEV_export.csv', $diffignore = false, $sachkonto_differences = null, $sachkonto_missing = null, string $format = "ISO-8859-1", array $zusaetzliche_buchungen = array(), bool $includeTestbuchung = false, string $ursprung_ustid = '') : string {
 
         $datev_header_definition = array (
             '1' => 'Kennzeichen',
@@ -302,10 +302,12 @@ final class DatevExport
                         $data['Gegenkonto (ohne BU-Schlüssel)'] = $row['erloes']; // obligatory
                     }
 
+                    list($euBestimmungsfeld, $land) = self::getDatevDestinationFields($beleg, $sourceType);
                     $data['Belegdatum'] = date_format(date_create($beleg['datum']),"dm"); // obligatory
                     $data['Buchungstext'] = mb_strimwidth($beleg['name'],0,60);
-                    $data['EU-Mitgliedstaat u. UStID (Bestimmung)'] = $beleg['ustid'];
-                    $data['Land'] = $beleg['land'];
+                    $data['EU-Mitgliedstaat u. UStID (Bestimmung)'] = $euBestimmungsfeld;
+                    $data['EU-Mitgliedstaat u. UStID (Ursprung)'] = self::getDatevOriginUstId($euBestimmungsfeld, $ursprung_ustid);
+                    $data['Land'] = $land;
                     $auftragsnummer = ($beleg['auftrag'] != 0) ? $beleg['auftrag'] : '';
                     if ($auftragsnummer !== '' && !empty($belege_zu_typ['Buchungstyp'])) {
                         $data['Auftragsnummer'] = $auftragsnummer;
@@ -342,6 +344,7 @@ final class DatevExport
                         $data['Konto'] = $beleg['kundennummer'];
                         $data['Soll-/Haben-Kennzeichen'] = ($difference < 0)?'S':'H'; // obligatory
 
+                        list($euBestimmungsfeld, $land) = self::getDatevDestinationFields($beleg, $sourceType);
                         $data['Belegdatum'] = date_format(date_create($beleg['datum']),"dm"); // obligatory
                         if (empty($sum_pos)) {
                             $data['Beleginfo -Art 1'] = "Hinweis";
@@ -358,8 +361,9 @@ final class DatevExport
                                 $throw_exception = true;
                             }
                         }
-                        $data['EU-Mitgliedstaat u. UStID (Bestimmung)'] = $beleg['ustid'];
-                        $data['Land'] = $beleg['land'];
+                        $data['EU-Mitgliedstaat u. UStID (Bestimmung)'] = $euBestimmungsfeld;
+                        $data['EU-Mitgliedstaat u. UStID (Ursprung)'] = self::getDatevOriginUstId($euBestimmungsfeld, $ursprung_ustid);
+                        $data['Land'] = $land;
                         $auftragsnummer = ($beleg['auftrag'] != 0) ? $beleg['auftrag'] : '';
                         if ($auftragsnummer !== '' && !empty($belege_zu_typ['Buchungstyp'])) {
                             $data['Auftragsnummer'] = $auftragsnummer;
@@ -647,6 +651,50 @@ final class DatevExport
         $konto = preg_replace('/[^0-9]/', '', (string)$konto);
 
         return mb_substr($konto, 0, 9);
+    }
+
+    private static function getDatevDestinationFields(array $beleg, string $sourceType) : array
+    {
+        $ustid = trim((string)($beleg['ustid'] ?? ''));
+        $land = (string)($beleg['land'] ?? '');
+
+        if ($sourceType === 'rechnung') {
+            return array(
+                $ustid !== '' ? $ustid : self::normalizeDatevCountryCode($land),
+                '',
+            );
+        }
+
+        return array($ustid, $land);
+    }
+
+    private static function normalizeDatevCountryCode($land) : string
+    {
+        return mb_strimwidth(strtoupper(trim((string)$land)), 0, 2);
+    }
+
+    private static function getDatevOriginUstId(string $euBestimmungsfeld, string $ursprungUstId) : string
+    {
+        if (!self::hasDatevUstId($euBestimmungsfeld)) {
+            return '';
+        }
+
+        $ursprungUstId = self::normalizeDatevUstId($ursprungUstId);
+        if (!self::hasDatevUstId($ursprungUstId)) {
+            return '';
+        }
+
+        return $ursprungUstId;
+    }
+
+    private static function hasDatevUstId($ustid) : bool
+    {
+        return preg_match('/^[A-Z]{2}[A-Z0-9]+$/', self::normalizeDatevUstId($ustid)) === 1;
+    }
+
+    private static function normalizeDatevUstId($ustid) : string
+    {
+        return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', trim((string)$ustid)));
     }
 
     private static function splitDatevUstId($ustid) : array

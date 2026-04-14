@@ -112,6 +112,66 @@ final class DatevExportTest extends TestCase
         self::assertSame('9999', $buchungszeilen[1]['Gegenkonto (ohne BU-Schlüssel)']);
     }
 
+    public function testCreateBuchungsstapelCsvUsesUstIdInEuDestinationFieldForInvoices(): void
+    {
+        $csv = DatevExport::createBuchungsstapelCSV(
+            $this->createRechnungBelegData(
+                '2026-01-09',
+                109.00,
+                109.00,
+                '2026-400010',
+                'Marion Kripfgans',
+                'FR12345678901',
+                'FR'
+            ),
+            '1234',
+            '5678',
+            'JK',
+            new DateTime('2026-01-01'),
+            4,
+            new DateTime('2026-01-01'),
+            new DateTime('2026-01-31'),
+            format: 'UTF-8',
+            ursprung_ustid: 'DE123456789'
+        );
+
+        $buchungszeilen = $this->getBuchungszeilen($csv);
+
+        self::assertSame('FR12345678901', $buchungszeilen[0]['EU-Mitgliedstaat u. UStID (Bestimmung)']);
+        self::assertSame('DE123456789', $buchungszeilen[0]['EU-Mitgliedstaat u. UStID (Ursprung)']);
+        self::assertSame('', $buchungszeilen[0]['Land']);
+    }
+
+    public function testCreateBuchungsstapelCsvUsesCountryInEuDestinationFieldWhenInvoiceHasNoUstId(): void
+    {
+        $csv = DatevExport::createBuchungsstapelCSV(
+            $this->createRechnungBelegData(
+                '2026-01-09',
+                109.00,
+                109.00,
+                '2026-400010',
+                'Marion Kripfgans',
+                '',
+                'FR'
+            ),
+            '1234',
+            '5678',
+            'JK',
+            new DateTime('2026-01-01'),
+            4,
+            new DateTime('2026-01-01'),
+            new DateTime('2026-01-31'),
+            format: 'UTF-8',
+            ursprung_ustid: 'DE123456789'
+        );
+
+        $buchungszeilen = $this->getBuchungszeilen($csv);
+
+        self::assertSame('FR', $buchungszeilen[0]['EU-Mitgliedstaat u. UStID (Bestimmung)']);
+        self::assertSame('', $buchungszeilen[0]['EU-Mitgliedstaat u. UStID (Ursprung)']);
+        self::assertSame('', $buchungszeilen[0]['Land']);
+    }
+
     /**
      * @return array<string, array<string, mixed>>
      */
@@ -120,7 +180,9 @@ final class DatevExportTest extends TestCase
         float $betragGesamt,
         float $positionsbetrag,
         string $belegnr,
-        string $name
+        string $name,
+        string $ustid = '',
+        string $land = 'DE'
     ): array {
         return array(
             'rechnung' => array(
@@ -136,11 +198,11 @@ final class DatevExportTest extends TestCase
                         'auftrag' => 0,
                         'kundennummer' => '10025',
                         'name' => $name,
-                        'ustid' => '',
+                        'ustid' => $ustid,
                         'datum' => $datum,
                         'betrag_gesamt' => $betragGesamt,
                         'waehrung' => 'EUR',
-                        'land' => 'DE',
+                        'land' => $land,
                         'positionen' => array(
                             array(
                                 'pos_id' => 1,
