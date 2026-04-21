@@ -51,7 +51,7 @@ class Verbindlichkeit {
 
                 $allowed['verbindlichkeit_list'] = array('list');
 
-                $heading = array('','','Belegnr','Adresse', 'Lieferant', 'RE-Nr', 'RE-Datum', 'Betrag (brutto)', 'W&auml;hrung','Zahlungsweise','Zahlstatus', 'Ziel','Skontoziel','Skonto','Status','Monitor', 'Men&uuml;');
+                $heading = array('','','Belegnr','Adresse', 'Lieferant', 'RE-Nr', 'RE-Datum', 'Betrag (brutto)', 'W&auml;hrung','Skonto','Sachkonto','Zahlstatus','Status','Monitor', 'Men&uuml;');
                 $width = array('1%','1%','10%'); // Fill out manually later
 
                 // columns that are aligned right (numbers etc)
@@ -67,11 +67,9 @@ class Verbindlichkeit {
                     'v.rechnungsdatum',
                     'v.betrag',
                     'v.waehrung',
-                    'v.zahlungsweise',
-                    'v.bezahlt',
-                    'v.zahlbarbis',
-                    'v.skontobis',
                     'v.skonto',
+                    'v.sachkonto',
+                    'v.bezahlt',
                     'v.status',
                     'v.status_beleg',
                     'v.id'
@@ -99,6 +97,53 @@ class Verbindlichkeit {
 
                 $fibu_fully_booked = $this->verbindlichkeit_fully_paid_sql('v.id');
 
+                $sachkonto_list_sql = 'IF(
+                            COALESCE(vpc.pos_cnt,0) <= 1 AND (IFNULL(v.freigabe,0) = 0 OR COALESCE(vpc.pos_cnt,0) = 1),
+                            IF(
+                              COALESCE(NULLIF(TRIM(sk_head.sachkonto),\'\'), NULLIF(TRIM(v.sachkonto),\'\'), NULL) IS NULL,
+                              \'\',
+                              IF(
+                                IFNULL(NULLIF(TRIM(sk_head.beschriftung),\'\'), \'\') = \'\',
+                                COALESCE(NULLIF(TRIM(sk_head.sachkonto),\'\'), NULLIF(TRIM(v.sachkonto),\'\')),
+                                CONCAT(
+                                  \'<span title="\',
+                                  REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(IFNULL(sk_head.beschriftung,\'\'),\'&\',\'&amp;\'),\'"\',\'&quot;\'),\'<\',\'&lt;\'),\'>\',\'&gt;\'),CHAR(10),\' \'),CHAR(13),\' \'),
+                                  \'">\',
+                                  CONCAT(
+                                    COALESCE(NULLIF(TRIM(sk_head.sachkonto),\'\'), NULLIF(TRIM(v.sachkonto),\'\')),
+                                    \' (\',
+                                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LEFT(TRIM(IFNULL(sk_head.beschriftung,\'\')),7),\'&\',\'&amp;\'),\'"\',\'&quot;\'),\'<\',\'&lt;\'),\'>\',\'&gt;\'),CHAR(10),\' \'),CHAR(13),\' \'),
+                                    \')\'
+                                  ),
+                                  \'</span>\'
+                                )
+                              )
+                            ),
+                            IF(
+                              COALESCE(vpc.pos_cnt,0) > 1
+                              AND IFNULL(vpc.dist_kontorahmen,0) = 1
+                              AND IFNULL(vpc.unified_kontorahmen_id,0) > 0
+                              AND COALESCE(NULLIF(TRIM(sk_unified.sachkonto),\'\'), NULL) IS NOT NULL,
+                              IF(
+                                IFNULL(NULLIF(TRIM(sk_unified.beschriftung),\'\'), \'\') = \'\',
+                                NULLIF(TRIM(sk_unified.sachkonto),\'\'),
+                                CONCAT(
+                                  \'<span title="\',
+                                  REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(IFNULL(sk_unified.beschriftung,\'\'),\'&\',\'&amp;\'),\'"\',\'&quot;\'),\'<\',\'&lt;\'),\'>\',\'&gt;\'),CHAR(10),\' \'),CHAR(13),\' \'),
+                                  \'">\',
+                                  CONCAT(
+                                    NULLIF(TRIM(sk_unified.sachkonto),\'\'),
+                                    \' (\',
+                                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LEFT(TRIM(IFNULL(sk_unified.beschriftung,\'\')),7),\'&\',\'&amp;\'),\'"\',\'&quot;\'),\'<\',\'&lt;\'),\'>\',\'&gt;\'),CHAR(10),\' \'),CHAR(13),\' \'),
+                                    \')\'
+                                  ),
+                                  \'</span>\'
+                                )
+                              ),
+                              \'\'
+                            )
+                            )';
+
                 $sql = "SELECT SQL_CALC_FOUND_ROWS
                             v.id,
                             $dropnbox,
@@ -109,15 +154,26 @@ class Verbindlichkeit {
                             ".$app->erp->FormatDate("v.rechnungsdatum").",
                             ".$app->erp->FormatMenge('v.betrag',2).",
                             v.waehrung,
-                            v.zahlungsweise,
-                            if(v.bezahlt OR COALESCE(".$fibu_fully_booked.",0) = 1,'bezahlt','offen'),
-                            ".$app->erp->FormatDate("v.zahlbarbis").",
-                            IF(v.skonto <> 0,".$app->erp->FormatDate("v.skontobis").",''),
                             IF(v.skonto <> 0,CONCAT(".$app->erp->FormatMenge('v.skonto',0).",'%'),''),
+                            ".$sachkonto_list_sql.",
+                            if(v.bezahlt OR COALESCE(".$fibu_fully_booked.",0) = 1,'bezahlt','offen'),
                             v.status,
                             ".$app->YUI->IconsSQLVerbindlichkeit().",
                             v.id FROM verbindlichkeit v
                         LEFT JOIN adresse a ON v.adresse = a.id
+                        LEFT JOIN (
+                            SELECT verbindlichkeit,
+                                   COUNT(*) AS pos_cnt,
+                                   COUNT(DISTINCT kontorahmen) AS dist_kontorahmen,
+                                   MAX(kontorahmen) AS unified_kontorahmen_id
+                            FROM verbindlichkeit_position
+                            GROUP BY verbindlichkeit
+                        ) vpc ON vpc.verbindlichkeit = v.id
+                        LEFT JOIN kontorahmen sk_head ON sk_head.sachkonto = v.sachkonto
+                        LEFT JOIN kontorahmen sk_unified ON sk_unified.id = vpc.unified_kontorahmen_id
+                            AND COALESCE(vpc.pos_cnt,0) > 1
+                            AND IFNULL(vpc.dist_kontorahmen,0) = 1
+                            AND IFNULL(vpc.unified_kontorahmen_id,0) > 0
                         LEFT JOIN (
                             SELECT ds.parameter, COUNT(ds.objekt) datei_anzahl FROM datei_stichwoerter ds INNER JOIN datei d ON d.id = ds.datei WHERE ds.objekt='verbindlichkeit' AND d.geloescht <> 1 GROUP BY ds.parameter
                         ) d ON d.parameter = v.id
