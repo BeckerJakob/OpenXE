@@ -142,7 +142,7 @@ final class DatevExportTest extends TestCase
         self::assertSame('', $buchungszeilen[0]['Land']);
     }
 
-    public function testCreateBuchungsstapelCsvUsesCountryInEuDestinationFieldWhenInvoiceHasNoUstId(): void
+    public function testCreateBuchungsstapelCsvKeepsOriginUstIdEmptyWhenInvoiceHasNoUstIdAndIsNotMarkedAsEuDestination(): void
     {
         $csv = DatevExport::createBuchungsstapelCSV(
             $this->createRechnungBelegData(
@@ -172,6 +172,37 @@ final class DatevExportTest extends TestCase
         self::assertSame('', $buchungszeilen[0]['Land']);
     }
 
+    public function testCreateBuchungsstapelCsvUsesOriginUstIdForEuInvoicesWithoutDestinationUstId(): void
+    {
+        $csv = DatevExport::createBuchungsstapelCSV(
+            $this->createRechnungBelegData(
+                '2026-01-09',
+                109.00,
+                109.00,
+                '2026-400011',
+                'Marion Kripfgans',
+                '',
+                'FR',
+                true
+            ),
+            '1234',
+            '5678',
+            'JK',
+            new DateTime('2026-01-01'),
+            4,
+            new DateTime('2026-01-01'),
+            new DateTime('2026-01-31'),
+            format: 'UTF-8',
+            ursprung_ustid: 'DE123456789'
+        );
+
+        $buchungszeilen = $this->getBuchungszeilen($csv);
+
+        self::assertSame('FR', $buchungszeilen[0]['EU-Mitgliedstaat u. UStID (Bestimmung)']);
+        self::assertSame('DE123456789', $buchungszeilen[0]['EU-Mitgliedstaat u. UStID (Ursprung)']);
+        self::assertSame('', $buchungszeilen[0]['Land']);
+    }
+
     /**
      * @return array<string, array<string, mixed>>
      */
@@ -182,7 +213,8 @@ final class DatevExportTest extends TestCase
         string $belegnr,
         string $name,
         string $ustid = '',
-        string $land = 'DE'
+        string $land = 'DE',
+        bool $isEuDestination = false
     ): array {
         return array(
             'rechnung' => array(
@@ -203,6 +235,7 @@ final class DatevExportTest extends TestCase
                         'betrag_gesamt' => $betragGesamt,
                         'waehrung' => 'EUR',
                         'land' => $land,
+                        'is_eu_destination' => $isEuDestination,
                         'positionen' => array(
                             array(
                                 'pos_id' => 1,

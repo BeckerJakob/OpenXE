@@ -495,6 +495,10 @@ class Exportbuchhaltung
                                 if (empty($value['ustid'])) {
                                     $value['ustid'] = $value['ustid_adresse'];
                                 }
+                                $value['is_eu_destination'] = $typvalue['typ'] === 'rechnung'
+                                    && $this->app->erp->IstEU(
+                                        mb_strimwidth(strtoupper(trim((string)$value['land'])), 0, 2)
+                                    );
                                 $belege[$typkey]['belege'][$value['id']] = $value;
                                 $belege[$typkey]['belege'][$value['id']]['typ'] = $typvalue['typ'];
                             }

@@ -306,7 +306,11 @@ final class DatevExport
                     $data['Belegdatum'] = date_format(date_create($beleg['datum']),"dm"); // obligatory
                     $data['Buchungstext'] = mb_strimwidth($beleg['name'],0,60);
                     $data['EU-Mitgliedstaat u. UStID (Bestimmung)'] = $euBestimmungsfeld;
-                    $data['EU-Mitgliedstaat u. UStID (Ursprung)'] = self::getDatevOriginUstId($euBestimmungsfeld, $ursprung_ustid);
+                    $data['EU-Mitgliedstaat u. UStID (Ursprung)'] = self::getDatevOriginUstId(
+                        $euBestimmungsfeld,
+                        $ursprung_ustid,
+                        (bool)($beleg['is_eu_destination'] ?? false)
+                    );
                     $data['Land'] = $land;
                     $auftragsnummer = ($beleg['auftrag'] != 0) ? $beleg['auftrag'] : '';
                     if ($auftragsnummer !== '' && !empty($belege_zu_typ['Buchungstyp'])) {
@@ -362,7 +366,11 @@ final class DatevExport
                             }
                         }
                         $data['EU-Mitgliedstaat u. UStID (Bestimmung)'] = $euBestimmungsfeld;
-                        $data['EU-Mitgliedstaat u. UStID (Ursprung)'] = self::getDatevOriginUstId($euBestimmungsfeld, $ursprung_ustid);
+                        $data['EU-Mitgliedstaat u. UStID (Ursprung)'] = self::getDatevOriginUstId(
+                            $euBestimmungsfeld,
+                            $ursprung_ustid,
+                            (bool)($beleg['is_eu_destination'] ?? false)
+                        );
                         $data['Land'] = $land;
                         $auftragsnummer = ($beleg['auftrag'] != 0) ? $beleg['auftrag'] : '';
                         if ($auftragsnummer !== '' && !empty($belege_zu_typ['Buchungstyp'])) {
@@ -673,9 +681,16 @@ final class DatevExport
         return mb_strimwidth(strtoupper(trim((string)$land)), 0, 2);
     }
 
-    private static function getDatevOriginUstId(string $euBestimmungsfeld, string $ursprungUstId) : string
+    private static function hasDatevCountryCode($land) : bool
     {
-        if (!self::hasDatevUstId($euBestimmungsfeld)) {
+        return preg_match('/^[A-Z]{2}$/', strtoupper(trim((string)$land))) === 1;
+    }
+
+    private static function getDatevOriginUstId(string $euBestimmungsfeld, string $ursprungUstId, bool $isEuDestination = false) : string
+    {
+        if (!self::hasDatevUstId($euBestimmungsfeld)
+            && !($isEuDestination && self::hasDatevCountryCode($euBestimmungsfeld))
+        ) {
             return '';
         }
 
