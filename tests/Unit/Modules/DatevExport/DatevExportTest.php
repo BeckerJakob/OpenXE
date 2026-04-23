@@ -203,6 +203,115 @@ final class DatevExportTest extends TestCase
         self::assertSame('', $buchungszeilen[0]['Land']);
     }
 
+    public function testCreateBuchungsstapelCsvUsesUstIdInEuDestinationFieldForCreditNotes(): void
+    {
+        $csv = DatevExport::createBuchungsstapelCSV(
+            $this->createGutschriftBelegData(
+                '2026-01-09',
+                109.00,
+                109.00,
+                '2026-900010',
+                'Marion Kripfgans',
+                'FR12345678901',
+                'FR'
+            ),
+            '1234',
+            '5678',
+            'JK',
+            new DateTime('2026-01-01'),
+            4,
+            new DateTime('2026-01-01'),
+            new DateTime('2026-01-31'),
+            format: 'UTF-8',
+            ursprung_ustid: 'DE123456789'
+        );
+
+        $buchungszeilen = $this->getBuchungszeilen($csv);
+
+        self::assertSame('FR12345678901', $buchungszeilen[0]['EU-Mitgliedstaat u. UStID (Bestimmung)']);
+        self::assertSame('DE123456789', $buchungszeilen[0]['EU-Mitgliedstaat u. UStID (Ursprung)']);
+        self::assertSame('', $buchungszeilen[0]['Land']);
+    }
+
+    public function testCreateBuchungsstapelCsvUsesOriginUstIdForEuCreditNotesWithoutDestinationUstId(): void
+    {
+        $csv = DatevExport::createBuchungsstapelCSV(
+            $this->createGutschriftBelegData(
+                '2026-01-09',
+                109.00,
+                109.00,
+                '2026-900011',
+                'Marion Kripfgans',
+                '',
+                'AT',
+                true
+            ),
+            '1234',
+            '5678',
+            'JK',
+            new DateTime('2026-01-01'),
+            4,
+            new DateTime('2026-01-01'),
+            new DateTime('2026-01-31'),
+            format: 'UTF-8',
+            ursprung_ustid: 'DE204161186'
+        );
+
+        $buchungszeilen = $this->getBuchungszeilen($csv);
+
+        self::assertSame('AT', $buchungszeilen[0]['EU-Mitgliedstaat u. UStID (Bestimmung)']);
+        self::assertSame('DE204161186', $buchungszeilen[0]['EU-Mitgliedstaat u. UStID (Ursprung)']);
+        self::assertSame('', $buchungszeilen[0]['Land']);
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function createGutschriftBelegData(
+        string $datum,
+        float $betragGesamt,
+        float $positionsbetrag,
+        string $belegnr,
+        string $name,
+        string $ustid = '',
+        string $land = 'DE',
+        bool $isEuDestination = false
+    ): array {
+        return array(
+            'gutschrift' => array(
+                'typ' => 'gutschrift',
+                'kennzeichen' => 'H',
+                'kennzeichen_negativ' => 'S',
+                'field_gegenkonto' => null,
+                'Buchungstyp' => '',
+                'belege' => array(
+                    36 => array(
+                        'id' => 36,
+                        'belegnr' => $belegnr,
+                        'auftrag' => 0,
+                        'kundennummer' => '10025',
+                        'name' => $name,
+                        'ustid' => $ustid,
+                        'datum' => $datum,
+                        'betrag_gesamt' => $betragGesamt,
+                        'waehrung' => 'EUR',
+                        'land' => $land,
+                        'is_eu_destination' => $isEuDestination,
+                        'positionen' => array(
+                            array(
+                                'pos_id' => 1,
+                                'betrag' => $positionsbetrag,
+                                'erloes' => '8400',
+                                'steuersatz' => 19.0,
+                                'pos_waehrung' => 'EUR',
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        );
+    }
+
     /**
      * @return array<string, array<string, mixed>>
      */

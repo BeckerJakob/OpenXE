@@ -495,7 +495,7 @@ class Exportbuchhaltung
                                 if (empty($value['ustid'])) {
                                     $value['ustid'] = $value['ustid_adresse'];
                                 }
-                                $value['is_eu_destination'] = $typvalue['typ'] === 'rechnung'
+                                $value['is_eu_destination'] = in_array($typvalue['typ'], array('rechnung', 'gutschrift'), true)
                                     && $this->app->erp->IstEU(
                                         mb_strimwidth(strtoupper(trim((string)$value['land'])), 0, 2)
                                     );

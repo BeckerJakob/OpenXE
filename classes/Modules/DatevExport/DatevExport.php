@@ -666,7 +666,7 @@ final class DatevExport
         $ustid = trim((string)($beleg['ustid'] ?? ''));
         $land = (string)($beleg['land'] ?? '');
 
-        if ($sourceType === 'rechnung') {
+        if (in_array($sourceType, array('rechnung', 'gutschrift'), true)) {
             return array(
                 $ustid !== '' ? $ustid : self::normalizeDatevCountryCode($land),
                 '',
