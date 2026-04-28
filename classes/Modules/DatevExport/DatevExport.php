@@ -291,7 +291,6 @@ final class DatevExport
 
                     $sum_pos += round($row['betrag'],2);
 
-                    $data['EU-Steuersatz (Bestimmung)'] = number_format($row['steuersatz'], 2, ',', '');
                     $data['WKZ Umsatz'] = $row['pos_waehrung'];
                     $data['Belegfeld 1'] = mb_strimwidth($beleg['belegnr'],0,36);
                     $data['Konto'] = $beleg['kundennummer']; // obligatory
@@ -303,6 +302,13 @@ final class DatevExport
                     }
 
                     list($euBestimmungsfeld, $land) = self::getDatevDestinationFields($beleg, $sourceType);
+                    if (self::isDatevEuDestination($euBestimmungsfeld, $land)) {
+                        $data['EU-Steuersatz (Bestimmung)'] = number_format($row['steuersatz'], 2, ',', '');
+                    }
+                    $buchungsschluessel = self::getDatevInputTaxBuchungsschluessel($beleg, $row, $sourceType);
+                    if ($buchungsschluessel !== '') {
+                        $data['BU-Schlüssel'] = $buchungsschluessel;
+                    }
                     $data['Belegdatum'] = date_format(date_create($beleg['datum']),"dm"); // obligatory
                     $data['Buchungstext'] = mb_strimwidth($beleg['name'],0,60);
                     $data['EU-Mitgliedstaat u. UStID (Bestimmung)'] = $euBestimmungsfeld;
@@ -659,6 +665,58 @@ final class DatevExport
         $konto = preg_replace('/[^0-9]/', '', (string)$konto);
 
         return mb_substr($konto, 0, 9);
+    }
+
+    private static function getDatevInputTaxBuchungsschluessel(array $beleg, array $position, string $sourceType) : string
+    {
+        if (!in_array($sourceType, array('verbindlichkeit', 'lieferantengutschrift'), true)) {
+            return '';
+        }
+
+        if (self::normalizeDatevCountryCode($beleg['land'] ?? '') !== 'DE') {
+            return '';
+        }
+
+        $steuersatz = round((float)($position['steuersatz'] ?? 0), 2);
+        if (abs($steuersatz - 19.0) < 0.005) {
+            return '9';
+        }
+        if (abs($steuersatz - 7.0) < 0.005) {
+            return '8';
+        }
+
+        return '';
+    }
+
+    private static function isDatevEuDestination(string $euBestimmungsfeld, string $land) : bool
+    {
+        foreach (array($euBestimmungsfeld, $land) as $value) {
+            $countryCode = self::extractDatevCountryCode($value);
+            if ($countryCode !== '' && $countryCode !== 'DE' && self::isDatevEuCountry($countryCode)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function extractDatevCountryCode($value) : string
+    {
+        $value = strtoupper(trim((string)$value));
+        if (preg_match('/^[A-Z]{2}/', $value, $matches) !== 1) {
+            return '';
+        }
+
+        return $matches[0];
+    }
+
+    private static function isDatevEuCountry(string $countryCode) : bool
+    {
+        return in_array(
+            $countryCode,
+            array('AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'HU', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK'),
+            true
+        );
     }
 
     private static function getDatevDestinationFields(array $beleg, string $sourceType) : array

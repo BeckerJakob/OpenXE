@@ -197,6 +197,94 @@ final class ExportbuchhaltungTest extends TestCase
         self::assertSame(array(), $buchungen);
     }
 
+    public function testCollectDatevZahlungsverkehrBuchungenNormalizesLegacyRegularInputTaxKeyOnCostAccount(): void
+    {
+        $database = new ExportbuchhaltungDatabaseStub(array(
+            $this->createZahlungsverkehrRow(array(
+                'id' => 787,
+                'betrag' => '-351.00',
+                'nach_typ' => 'kontoauszuege',
+                'sachkonto' => '4240',
+                'bank_datev' => '1210',
+                'intern' => 'Zahlung VATTENFALL EUROPE SALES',
+                'buchungsschluessel' => '90',
+            )),
+        ));
+
+        $exportbuchhaltung = $this->createExportbuchhaltung($database);
+
+        $buchungen = $this->invokePrivateMethod(
+            $exportbuchhaltung,
+            'collectDatevZahlungsverkehrBuchungen',
+            new DateTime('2026-01-01'),
+            new DateTime('2026-01-31'),
+            0
+        );
+
+        self::assertCount(1, $buchungen);
+        self::assertSame('4240', $buchungen[0]['Gegenkonto (ohne BU-Schlüssel)']);
+        self::assertSame('9', $buchungen[0]['BU-Schlüssel']);
+    }
+
+    public function testCollectDatevZahlungsverkehrBuchungenSuppressesInputTaxKeyOnRevenueAccount(): void
+    {
+        $database = new ExportbuchhaltungDatabaseStub(array(
+            $this->createZahlungsverkehrRow(array(
+                'id' => 840,
+                'betrag' => '-79.00',
+                'nach_typ' => 'kontoauszuege',
+                'sachkonto' => '8400',
+                'bank_datev' => '1230',
+                'intern' => 'Zahlung 647114 - GS.2026-04956',
+                'buchungsschluessel' => '90',
+            )),
+        ));
+
+        $exportbuchhaltung = $this->createExportbuchhaltung($database);
+
+        $buchungen = $this->invokePrivateMethod(
+            $exportbuchhaltung,
+            'collectDatevZahlungsverkehrBuchungen',
+            new DateTime('2026-01-01'),
+            new DateTime('2026-01-31'),
+            0
+        );
+
+        self::assertCount(1, $buchungen);
+        self::assertSame('8400', $buchungen[0]['Gegenkonto (ohne BU-Schlüssel)']);
+        self::assertSame('', $buchungen[0]['BU-Schlüssel']);
+    }
+
+    public function testCollectDatevZahlungsverkehrBuchungenKeepsRegularInputTaxKeyOnTankReceipt(): void
+    {
+        $database = new ExportbuchhaltungDatabaseStub(array(
+            $this->createZahlungsverkehrRow(array(
+                'id' => 858,
+                'betrag' => '111.87',
+                'von_typ' => 'kontoauszuege',
+                'nach_typ' => 'kontorahmen',
+                'sachkonto' => '4530',
+                'bank_datev' => '1890',
+                'intern' => 'Beleg 375/033/00002 | Aral Tankstelle',
+                'buchungsschluessel' => '9',
+            )),
+        ));
+
+        $exportbuchhaltung = $this->createExportbuchhaltung($database);
+
+        $buchungen = $this->invokePrivateMethod(
+            $exportbuchhaltung,
+            'collectDatevZahlungsverkehrBuchungen',
+            new DateTime('2026-01-01'),
+            new DateTime('2026-01-31'),
+            0
+        );
+
+        self::assertCount(1, $buchungen);
+        self::assertSame('4530', $buchungen[0]['Gegenkonto (ohne BU-Schlüssel)']);
+        self::assertSame('9', $buchungen[0]['BU-Schlüssel']);
+    }
+
     public function testSortDatevZusatzbuchungenOrdersByDateGroupAndId(): void
     {
         $exportbuchhaltung = $this->createExportbuchhaltung(new ExportbuchhaltungDatabaseStub(array()));
@@ -255,6 +343,41 @@ final class ExportbuchhaltungTest extends TestCase
         $method->setAccessible(true);
 
         return $method->invoke($object, ...$arguments);
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     * @return array<string, mixed>
+     */
+    private function createZahlungsverkehrRow(array $overrides = array()): array
+    {
+        return array_merge(
+            array(
+                'id' => 1,
+                'fibu_datum' => '2026-01-08',
+                'export_datum' => '2026-01-08',
+                'betrag' => '-10.00',
+                'waehrung' => 'EUR',
+                'von_typ' => 'kontorahmen',
+                'von_id' => 1,
+                'nach_typ' => 'kontoauszuege',
+                'nach_id' => 2,
+                'belegnr' => '',
+                'debitor' => '',
+                'debitor_beleg' => '',
+                'debitor_fallback' => '',
+                'kreditor' => '',
+                'kreditor_beleg' => '',
+                'kreditor_fallback' => '',
+                'sachkonto' => '4970',
+                'bank_datev' => '1210',
+                'kasse_datev' => '',
+                'intern' => '',
+                'kontoauszug_buchungstext' => '',
+                'buchungsschluessel' => '',
+            ),
+            $overrides
+        );
     }
 }
 

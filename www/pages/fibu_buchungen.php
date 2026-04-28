@@ -647,8 +647,8 @@ class Fibu_buchungen {
     private function getBuchungsschluesselOptions(string $selected = ''): array {
         $options = array(
             ''  => 'ohne Buchungsschluessel',
-            '9' => '9 - 19% Vorsteuer',
-            '8' => '8 - 7% Vorsteuer',
+            '9' => '9 - 19% Vorsteuer (Kosten/Eingangsrechnungen)',
+            '8' => '8 - 7% Vorsteuer (Kosten/Eingangsrechnungen)',
         );
 
         // Legacy values are still accepted and shown only when already selected.
@@ -660,6 +660,18 @@ class Fibu_buchungen {
         }
 
         return $options;
+    }
+
+    private function normalizeBuchungsschluesselInput(string $buchungsschluessel): string {
+        $buchungsschluessel = trim($buchungsschluessel);
+        if ($buchungsschluessel === '80') {
+            return '8';
+        }
+        if ($buchungsschluessel === '90') {
+            return '9';
+        }
+
+        return in_array($buchungsschluessel, array('', '8', '9'), true) ? $buchungsschluessel : '';
     }
 
     private function fibu_get_kontorahmen_id(string $kontoInput): int {
@@ -690,9 +702,7 @@ class Fibu_buchungen {
         if ($input['waehrung'] === '' || !preg_match('/^[A-Z0-9_-]{1,10}$/', $input['waehrung'])) {
             $input['waehrung'] = 'EUR';
         }
-        if (!in_array($input['buchungsschluessel'], array('', '8', '9', '80', '90'), true)) {
-            $input['buchungsschluessel'] = '';
-        }
+        $input['buchungsschluessel'] = $this->normalizeBuchungsschluesselInput($input['buchungsschluessel']);
 
         $errors = array();
 
@@ -1017,7 +1027,7 @@ class Fibu_buchungen {
     }
 
     function fibu_buchungen_buchen(string $von_typ, int $von_id, string $nach_typ, int $nach_id, $betrag, string $waehrung, $datum, string $internebemerkung, string $buchungsschluessel = '') {
-        $validBuchungsschluessel = in_array($buchungsschluessel, array('8', '9', '80', '90'), true) ? $buchungsschluessel : '';
+        $validBuchungsschluessel = $this->normalizeBuchungsschluesselInput($buchungsschluessel);
         $internebemerkung = trim($internebemerkung);
 
         if ($internebemerkung === '') {
@@ -1034,10 +1044,7 @@ class Fibu_buchungen {
     function fibu_buchungen_zuordnen() {
 
         $submit = $this->app->Secure->GetPOST('submit');
-        $buchungsschluessel = trim((string)$this->app->Secure->GetPOST('buchungsschluessel'));
-        if (!in_array($buchungsschluessel, array('', '8', '9', '80', '90'), true)) {
-            $buchungsschluessel = '';
-        }
+        $buchungsschluessel = $this->normalizeBuchungsschluesselInput((string)$this->app->Secure->GetPOST('buchungsschluessel'));
 
         if ($submit == 'neuberechnen') {
             $this->fibu_rebuild_tables();

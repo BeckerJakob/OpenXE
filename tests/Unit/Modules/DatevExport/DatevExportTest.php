@@ -264,6 +264,87 @@ final class DatevExportTest extends TestCase
         self::assertSame('', $buchungszeilen[0]['Land']);
     }
 
+    public function testCreateBuchungsstapelCsvUsesInputTaxKeyNineForDomesticLiabilityWithRegularTax(): void
+    {
+        $csv = DatevExport::createBuchungsstapelCSV(
+            $this->createVerbindlichkeitBelegData('2026-01-19', 749.70, 749.70, '2026000064', 'Stahl & Partner Steuerberater', 19.0),
+            '1234',
+            '5678',
+            'JK',
+            new DateTime('2026-01-01'),
+            4,
+            new DateTime('2026-01-01'),
+            new DateTime('2026-01-31'),
+            format: 'UTF-8'
+        );
+
+        $buchungszeilen = $this->getBuchungszeilen($csv);
+
+        self::assertSame('9', $buchungszeilen[0]['BU-Schlüssel']);
+        self::assertSame('', $buchungszeilen[0]['EU-Steuersatz (Bestimmung)']);
+        self::assertSame('', $buchungszeilen[0]['Steuersatz']);
+    }
+
+    public function testCreateBuchungsstapelCsvUsesInputTaxKeyEightForDomesticLiabilityWithReducedTax(): void
+    {
+        $csv = DatevExport::createBuchungsstapelCSV(
+            $this->createVerbindlichkeitBelegData('2026-01-19', 107.00, 107.00, 'V-7', 'Lieferant 7 Prozent', 7.0),
+            '1234',
+            '5678',
+            'JK',
+            new DateTime('2026-01-01'),
+            4,
+            new DateTime('2026-01-01'),
+            new DateTime('2026-01-31'),
+            format: 'UTF-8'
+        );
+
+        $buchungszeilen = $this->getBuchungszeilen($csv);
+
+        self::assertSame('8', $buchungszeilen[0]['BU-Schlüssel']);
+        self::assertSame('', $buchungszeilen[0]['EU-Steuersatz (Bestimmung)']);
+    }
+
+    public function testCreateBuchungsstapelCsvKeepsDomesticLiabilityWithoutTaxKeyWhenTaxFree(): void
+    {
+        $csv = DatevExport::createBuchungsstapelCSV(
+            $this->createVerbindlichkeitBelegData('2026-01-19', 100.00, 100.00, 'V-0', 'Lieferant ohne Vorsteuer', 0.0),
+            '1234',
+            '5678',
+            'JK',
+            new DateTime('2026-01-01'),
+            4,
+            new DateTime('2026-01-01'),
+            new DateTime('2026-01-31'),
+            format: 'UTF-8'
+        );
+
+        $buchungszeilen = $this->getBuchungszeilen($csv);
+
+        self::assertSame('', $buchungszeilen[0]['BU-Schlüssel']);
+        self::assertSame('', $buchungszeilen[0]['EU-Steuersatz (Bestimmung)']);
+    }
+
+    public function testCreateBuchungsstapelCsvDoesNotUseInputTaxKeyForRevenueInvoice(): void
+    {
+        $csv = DatevExport::createBuchungsstapelCSV(
+            $this->createRechnungBelegData('2026-01-09', 109.00, 109.00, '2026-400010', 'Marion Kripfgans'),
+            '1234',
+            '5678',
+            'JK',
+            new DateTime('2026-01-01'),
+            4,
+            new DateTime('2026-01-01'),
+            new DateTime('2026-01-31'),
+            format: 'UTF-8'
+        );
+
+        $buchungszeilen = $this->getBuchungszeilen($csv);
+
+        self::assertSame('8400', $buchungszeilen[0]['Gegenkonto (ohne BU-Schlüssel)']);
+        self::assertSame('', $buchungszeilen[0]['BU-Schlüssel']);
+    }
+
     /**
      * @return array<string, array<string, mixed>>
      */
@@ -303,6 +384,52 @@ final class DatevExportTest extends TestCase
                                 'betrag' => $positionsbetrag,
                                 'erloes' => '8400',
                                 'steuersatz' => 19.0,
+                                'pos_waehrung' => 'EUR',
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        );
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function createVerbindlichkeitBelegData(
+        string $datum,
+        float $betragGesamt,
+        float $positionsbetrag,
+        string $belegnr,
+        string $name,
+        float $steuersatz,
+        string $land = 'DE'
+    ): array {
+        return array(
+            'verbindlichkeit' => array(
+                'typ' => 'verbindlichkeit',
+                'kennzeichen' => 'H',
+                'kennzeichen_negativ' => 'S',
+                'field_gegenkonto' => 'kontorahmen',
+                'Buchungstyp' => '',
+                'belege' => array(
+                    64 => array(
+                        'id' => 64,
+                        'belegnr' => $belegnr,
+                        'auftrag' => 0,
+                        'kundennummer' => '70040',
+                        'name' => $name,
+                        'ustid' => '',
+                        'datum' => $datum,
+                        'betrag_gesamt' => $betragGesamt,
+                        'waehrung' => 'EUR',
+                        'land' => $land,
+                        'positionen' => array(
+                            array(
+                                'pos_id' => 1,
+                                'betrag' => $positionsbetrag,
+                                'gegenkonto' => '4955',
+                                'steuersatz' => $steuersatz,
                                 'pos_waehrung' => 'EUR',
                             ),
                         ),

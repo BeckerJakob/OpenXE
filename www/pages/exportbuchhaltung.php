@@ -251,6 +251,43 @@ class Exportbuchhaltung
         return '';
     }
 
+    private function normalizeDatevExportBuchungsschluessel($buchungsschluessel, string $konto, string $gegenkonto): string
+    {
+        $buchungsschluessel = trim((string)$buchungsschluessel);
+        if (!in_array($buchungsschluessel, array('', '8', '9', '80', '90'), true)) {
+            return '';
+        }
+
+        if ($buchungsschluessel === '') {
+            return '';
+        }
+
+        if ($this->hasDatevRevenueAccount(array($konto, $gegenkonto))) {
+            return '';
+        }
+
+        if ($buchungsschluessel === '90') {
+            return '9';
+        }
+        if ($buchungsschluessel === '80') {
+            return '8';
+        }
+
+        return $buchungsschluessel;
+    }
+
+    private function hasDatevRevenueAccount(array $konten): bool
+    {
+        foreach ($konten as $konto) {
+            $konto = $this->normalizeDatevExportAccount($konto);
+            if ($konto !== '' && preg_match('/^8\d{3,8}$/', $konto) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function formatDatevBelegdatum($datum): string
     {
         if (empty($datum)) {
@@ -1041,7 +1078,7 @@ class Exportbuchhaltung
                 'Gegenkonto (ohne BU-Schlüssel)' => $gegenkonto,
                 '_debitor' => $debitor,
                 '_kreditor' => $kreditor,
-                'BU-Schlüssel' => $row['buchungsschluessel'],
+                'BU-Schlüssel' => $this->normalizeDatevExportBuchungsschluessel($row['buchungsschluessel'], $geldkonto, $gegenkonto),
                 'Belegdatum' => $belegdatum,
                 'Belegfeld 1' => mb_strimwidth($belegfeld1, 0, 36),
                 'Belegfeld 2' => 'FB'.$row['id'],
@@ -1180,7 +1217,7 @@ class Exportbuchhaltung
                 'Gegenkonto (ohne BU-Schlüssel)' => $gegenkonto,
                 '_debitor' => $debitor,
                 '_kreditor' => $kreditor,
-                'BU-Schlüssel' => $row['buchungsschluessel'],
+                'BU-Schlüssel' => $this->normalizeDatevExportBuchungsschluessel($row['buchungsschluessel'], $konto, $gegenkonto),
                 'Belegdatum' => $belegdatum,
                 'Belegfeld 1' => mb_strimwidth($belegnr !== '' ? $belegnr : ('FB'.$row['id']), 0, 36),
                 'Belegfeld 2' => 'FB'.$row['id'],
@@ -1261,7 +1298,7 @@ class Exportbuchhaltung
                 'WKZ Umsatz' => $row['waehrung'],
                 'Konto' => $konto,
                 'Gegenkonto (ohne BU-Schlüssel)' => $gegenkonto,
-                'BU-Schlüssel' => $row['buchungsschluessel'],
+                'BU-Schlüssel' => $this->normalizeDatevExportBuchungsschluessel($row['buchungsschluessel'], $konto, $gegenkonto),
                 'Belegdatum' => $belegdatum,
                 'Belegfeld 1' => mb_strimwidth($belegfeld1, 0, 36),
                 'Belegfeld 2' => 'FB'.$row['id'],
