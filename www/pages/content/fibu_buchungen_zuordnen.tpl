@@ -88,7 +88,6 @@
       var show = isKontoauszuege && isSachkontoAktion;
 
       $('#buchungsschluessel_wrapper').toggle(show);
-      $('#buchungsschluessel').prop('disabled', !show);
 
       if (!show) {
         $('#buchungsschluessel').val('');

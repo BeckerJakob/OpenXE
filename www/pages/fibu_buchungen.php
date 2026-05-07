@@ -1172,6 +1172,7 @@ class Fibu_buchungen {
     function fibu_buchungen_einzelzuordnen() {
 
         $submit = $this->app->Secure->GetPOST('submit');
+        $buchungsschluessel = $this->normalizeBuchungsschluesselInput((string)$this->app->Secure->GetPOST('buchungsschluessel'));
         if ($submit == 'neuberechnen') {
             $this->fibu_rebuild_tables();
 
@@ -1250,6 +1251,7 @@ class Fibu_buchungen {
                             $doc_id = (int) $doc[1];                     
 
                             $betrag = $werte[$key_ids];                 
+                            $usesKontorahmen = $von_typ === 'kontorahmen' || $doc_typ === 'kontorahmen';
 
                             switch ($aktion) {
                                 case 'buchen':
@@ -1257,7 +1259,7 @@ class Fibu_buchungen {
 //                                        $sql = "INSERT INTO `fibu_buchungen` (`von_typ`, `von_id`, `nach_typ`, `nach_id`, `datum`,  `betrag`, `waehrung`, `benutzer`, `zeit`, `internebemerkung`) VALUES ('".$von_typ."','".$von_id."','".$doc_typ."', '".$doc_id."', '".$datum."', '".-$betrag."', '".$von_waehrung."', '".$this->app->User->GetID()."','".date("Y-m-d H:i")."', '')";    
 //                                        echo($sql."\n");
 //                                        $this->app->DB->Insert($sql);  
-                                        $this->fibu_buchungen_buchen($von_typ, $von_id, $doc_typ, $doc_id, -$betrag, $von_waehrung, $datum, '');
+                                        $this->fibu_buchungen_buchen($von_typ, $von_id, $doc_typ, $doc_id, -$betrag, $von_waehrung, $datum, '', $usesKontorahmen ? $buchungsschluessel : '');
                                         $count_success++;                    
                                     }
                                 break;
@@ -1267,7 +1269,7 @@ class Fibu_buchungen {
 //                                        $sql = "INSERT INTO `fibu_buchungen` (`von_typ`, `von_id`, `nach_typ`, `nach_id`, `datum`,  `betrag`, `waehrung`, `benutzer`, `zeit`, `internebemerkung`) VALUES ('".$von_typ."','".$von_id."','".$doc_typ."', '".$doc_id."', '".$datum."', '".-$betrag."', '".$von_waehrung."', '".$this->app->User->GetID()."','".date("Y-m-d H:i")."', '')";    
 //                                          echo($sql."\n");
 //                                        $this->app->DB->Insert($sql);  
-                                        $this->fibu_buchungen_buchen($von_typ, $von_id, $doc_typ, $doc_id, -$betrag, $von_waehrung, $datum, '');
+                                        $this->fibu_buchungen_buchen($von_typ, $von_id, $doc_typ, $doc_id, -$betrag, $von_waehrung, $datum, '', $usesKontorahmen ? $buchungsschluessel : '');
                                         $count_success++;                    
                                     }
 
@@ -1305,6 +1307,14 @@ class Fibu_buchungen {
         $this->app->Tpl->Set('DOC_ZUORDNUNG', ucfirst($von_typ)." ".$info);
         $this->app->Tpl->Set('DOC_SALDO',$saldo." ".$waehrung);
         $this->app->Tpl->Set('ABSCHLAG',$abschlag);
+        $this->app->Tpl->Set('IS_KONTORAHMEN', $von_typ === 'kontorahmen' ? '1' : '0');
+        $this->app->Tpl->Set(
+            'BUCHUNGSSCHLUESSEL_OPTIONS',
+            $this->app->erp->getSelectAsso(
+                $this->getBuchungsschluesselOptions($buchungsschluessel),
+                $buchungsschluessel
+            )
+        );
 
         $this->app->Tpl->Set('MULTIFILTER',str_replace(array('\r\n', '\r', '\n'), ", ", $multifilter));
 

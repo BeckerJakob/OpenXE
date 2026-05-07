@@ -68,6 +68,12 @@
                                             <option value="buchen_diff_sachkonto">{|auf Ausgew&auml;hlte buchen, Gegenbeleg auf Sachkonto ausgleichen|}</option>
                                         </select>&nbsp;Sachkonto:
                                         <input type="text" id="sachkonto" name="sachkonto" value="">
+                                        <input type="hidden" id="is_kontorahmen" value="[IS_KONTORAHMEN]">
+                                        <span id="buchungsschluessel_wrapper" style="display:none;">&nbsp;Buchungsschl&uuml;ssel:
+                                            <select id="buchungsschluessel" name="buchungsschluessel">
+                                                [BUCHUNGSSCHLUESSEL_OPTIONS]
+                                            </select>
+                                        </span>
                                         <button name="submit" value="BUCHEN" class="ui-button-icon">{|BUCHEN|}</button>
                                     </td>
                                 </tr>                             
@@ -100,6 +106,27 @@
       var wert = $(this).prop('checked');
       $('#fibu_buchungen_einzelzuordnen').find('input[type="checkbox"]').prop('checked',wert);
       $('#fibu_buchungen_einzelzuordnen').find('input[type="checkbox"]').first().trigger('change');
+      toggleBuchungsschluessel();
     });
+
+    function toggleBuchungsschluessel() {
+      var show = $('#is_kontorahmen').val() === '1';
+
+      $('#fibu_buchungen_einzelzuordnen').find('input[name="auswahl[]"]:checked').each(function(){
+        if ($(this).val().indexOf('kontorahmen_') === 0) {
+          show = true;
+          return false;
+        }
+      });
+
+      $('#buchungsschluessel_wrapper').toggle(show);
+
+      if (!show) {
+        $('#buchungsschluessel').val('');
+      }
+    }
+
+    $(document).on('change', '#fibu_buchungen_einzelzuordnen input[name="auswahl[]"]', toggleBuchungsschluessel);
+    toggleBuchungsschluessel();
   
 </script>
