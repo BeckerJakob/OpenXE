@@ -45,7 +45,7 @@ class Exportbuchhaltung
                     'field_kundennummer' => 'b.kundennummer',
                     'field_betrag_gesamt' => 'b.soll',
                     'field_betrag' => 'p.umsatz_brutto_gesamt',
-                    'field_land' => 'b.land',
+                    'field_land' => "COALESCE(NULLIF((SELECT o.lieferland FROM auftrag o WHERE o.id = b.auftragid AND o.abweichendelieferadresse = 1 LIMIT 1), ''), b.land)",
                     'field_gegenkonto' => null,
                     'condition_where' => ' AND b.status IN (\'freigegeben\',\'versendet\',\'storniert\')',
                     'Buchungstyp' => 'SR',
