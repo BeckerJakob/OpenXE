@@ -116,6 +116,7 @@ final class OrdersService
         }
 
         $app->erp->AuftragProtokoll($orderId, 'Auftrag manuell als Rechnung weitergeführt');
+        $app->erp->BelegFreigabe('rechnung', $invoiceId);
 
         $belegnr = (string)$app->DB->Select(
             sprintf('SELECT belegnr FROM rechnung WHERE id = %d LIMIT 1', $invoiceId)
