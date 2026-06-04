@@ -12,12 +12,10 @@
 class Config
 {
     /** @var string  */
-    public $updateHost;
+    public $updateHost = 'removed.upgrade.host';
 
     public function __construct()
     {
-        $this->updateHost = getenv('XENTRAL_UPDATE_HOST') ?: 'removed.upgrade.host';
-
         include("user.inc.php");
 
         if (!isset($this->WFdbport) || empty($this->WFdbport)) {

@@ -26,5 +26,11 @@ RUN apt-get update && apt-get install -y ${DEB_PKG} ${DEB_PKG_TMP} && \
     mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 
 COPY docker/php "$PHP_INI_DIR/conf.d/"
+COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
 COPY --chown=www-data:www-data . /var/www/html
 COPY --chown=www-data:www-data --from=frontend /app/www/dist /var/www/html/www/dist
+RUN mkdir -p /var/www/html/www/cache && chown -R www-data:www-data /var/www/html/www/cache
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["apache2-foreground"]

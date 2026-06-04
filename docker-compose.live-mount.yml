@@ -1,0 +1,10 @@
+# Override for live PHP editing – remounts the full repository (slow on Windows).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.live-mount.yml up -d
+
+services:
+  app_init:
+    volumes: &live_volumes
+      - .:/var/www/html:cached
+
+  app:
+    volumes: *live_volumes

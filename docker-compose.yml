@@ -1,5 +1,22 @@
+# OpenXE local Docker (performance-tuned for Windows/macOS/Linux)
+#
+# Default: FAST mode – PHP code runs from the image; only conf/userdata/cache are mounted.
+#   Rebuild after PHP changes:  docker compose build app && docker compose up -d
+#
+# Live-edit mode (slow on Windows – full repo bind mount):
+#   docker compose -f docker-compose.yml -f docker-compose.live-mount.yml up -d
+#
+# Optional Vite dev server:  docker compose --profile frontend up -d
+#
+# Tune via .env (see .env.docker.example): OPENXE_APP_CPUS, OPENXE_DB_BUFFER_POOL_SIZE, ...
+#
+# After importing a prod DB dump:  powershell -File docker/upgrade-db.ps1
+# (Do not use upgrade.sh in Docker - it is interactive; app_init uses php data/upgrade.php)
+
 services:
   vite:
+    profiles:
+      - frontend
     build:
       context: .
       dockerfile: docker/Dockerfile
@@ -10,10 +27,13 @@ services:
       - .:/app:delegated
     ports:
       - "5173:5173"
+
   app_init:
     image: openxe:test
-    volumes:
-      - .:/var/www/html:delegated
+    volumes: &app_volumes
+      - ./conf:/var/www/html/conf
+      - ./userdata:/var/www/html/userdata
+      - ./www/cache:/var/www/html/www/cache
     working_dir: /var/www/html/upgrade
     entrypoint:
       - /bin/sh
@@ -27,15 +47,18 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+
   app:
     build:
       context: .
       dockerfile: docker/Dockerfile
     image: openxe:test
-    volumes:
-      - .:/var/www/html:delegated
-    cpus: 2.0
-    mem_limit: 1536m
+    volumes: *app_volumes
+    tmpfs:
+      - /tmp:size=512m
+      - /var/tmp:size=256m
+    cpus: ${OPENXE_APP_CPUS:-4.0}
+    mem_limit: ${OPENXE_APP_MEM_LIMIT:-4g}
     ports:
       - "8081:80"
     depends_on:
@@ -43,27 +66,45 @@ services:
         condition: service_completed_successfully
       mysql:
         condition: service_healthy
+
   mysql:
     image: mariadb:10.6
     command:
       - --innodb-page-size=32k
-      - --innodb-buffer-pool-size=1024M
+      - --innodb-buffer-pool-size=${OPENXE_DB_BUFFER_POOL_SIZE:-2048M}
+      - --innodb-buffer-pool-instances=${OPENXE_DB_BUFFER_POOL_INSTANCES:-4}
       - --innodb-log-file-size=256M
+      - --innodb-log-buffer-size=128M
       - --innodb-flush-log-at-trx-commit=2
+      - --innodb-flush-method=O_DIRECT
       - --sync-binlog=0
       - --skip-name-resolve
-    cpus: 2.0
-    mem_limit: 2048m
+      - --tmp-table-size=256M
+      - --max-heap-table-size=256M
+      - --thread-cache-size=128
+      - --table-open-cache=4096
+      - --table-definition-cache=4096
+      - --open-files-limit=65535
+      - --performance-schema=OFF
+      - --log-bin-trust-function-creators=1
+    cpus: ${OPENXE_DB_CPUS:-4.0}
+    mem_limit: ${OPENXE_DB_MEM_LIMIT:-4g}
     environment:
       MYSQL_ROOT_PASSWORD: "rootpw"
       MYSQL_USER: "openxe"
       MYSQL_PASSWORD: "openxe"
       MYSQL_DATABASE: "openxe"
       MARIADB_AUTO_UPGRADE: "1"
+      MARIADB_ROOT_HOST: "%"
     volumes:
       - mysqldata:/var/lib/mysql
+      - ./docker/mariadb/01-dev-grants.sql:/docker-entrypoint-initdb.d/01-dev-grants.sql:ro
     ports:
       - "3306:3306"
+    networks:
+      default:
+        aliases:
+          - openxe
     healthcheck:
       interval: 5s
       retries: 3
