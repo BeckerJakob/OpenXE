@@ -1002,6 +1002,9 @@ class Rechnung extends GenRechnung
       WHERE r.id='$id' 
       LIMIT 1"
     );
+    $ustid = trim((string)$data[0]['ustid']);
+    $documentLanguage = isset($data[0]['sprache']) ? strtolower(trim((string)$data[0]['sprache'])) : '';
+    $ustIdLabel = $documentLanguage !== '' && $documentLanguage !== 'deutsch' ? 'VAT ID' : 'USt-IdNr.';
 
     foreach($data[0] as $key=>$value)
     {
@@ -1013,6 +1016,9 @@ class Rechnung extends GenRechnung
 
     $rechnungsadresse = $data[0]['name']."".$data[0]['ansprechpartner']."".$data[0]['abteilung']."".$data[0]['unterabteilung'].
       "".$data[0]['strasse']."".$data[0]['adresszusatz']."".$data[0]['land']."-".$data[0]['plz']." ".$data[0]['ort'];
+    if($ustid !== '') {
+      $rechnungsadresse .= '<br>'.$ustIdLabel.': '.$ustid;
+    }
 
     $isAbweichend = false;
     if($data[0]['abweichende_rechnungsadresse']==1){

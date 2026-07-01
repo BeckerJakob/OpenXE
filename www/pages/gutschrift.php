@@ -632,6 +632,9 @@ class Gutschrift extends GenGutschrift
   function Gutschriftadresse($id)
   {
     $data = $this->app->DB->SelectArr("SELECT * FROM gutschrift WHERE id='$id' LIMIT 1");
+    $ustid = trim((string)$data[0]['ustid']);
+    $documentLanguage = isset($data[0]['sprache']) ? strtolower(trim((string)$data[0]['sprache'])) : '';
+    $ustIdLabel = $documentLanguage !== '' && $documentLanguage !== 'deutsch' ? 'VAT ID' : 'USt-IdNr.';
 
     foreach($data[0] as $key=>$value)
     {
@@ -644,6 +647,9 @@ class Gutschrift extends GenGutschrift
 
     $rechnungsadresse = $data[0]['name']."".$data[0]['ansprechpartner']."".$data[0]['abteilung']."".$data[0]['unterabteilung'].
       "".$data[0]['strasse']."".$data[0]['adresszusatz']."".$data[0]['land']."-".$data[0]['plz']." ".$data[0]['ort'];
+    if($ustid !== '') {
+      $rechnungsadresse .= '<br>'.$ustIdLabel.': '.$ustid;
+    }
     return "<table width=\"100%\">
       <tr valign=\"top\"><td width=\"50%\"><b>Gutschrift:</b><br><br>$rechnungsadresse</td></tr>";
   }

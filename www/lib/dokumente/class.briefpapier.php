@@ -809,6 +809,12 @@ class Briefpapier extends SuperFPDF {
     $this->recipient['city']         = $this->app->erp->ReadyForPDF($tmp[0]['ort']);
     //if($this->recipient['city']!="")
     $this->recipient['country']      = $this->app->erp->ReadyForPDF($tmp[0]['land']);
+    if(in_array($table, array('rechnung', 'auftrag', 'gutschrift'), true)
+      && isset($tmp[0]['ustid']) && trim((string)$tmp[0]['ustid']) !== '') {
+      $documentLanguage = isset($tmp[0]['sprache']) ? strtolower(trim((string)$tmp[0]['sprache'])) : '';
+      $ustIdLabel = $documentLanguage !== '' && $documentLanguage !== 'deutsch' ? 'VAT ID' : 'USt-IdNr.';
+      $this->recipient['ustid'] = $this->app->erp->ReadyForPDF($ustIdLabel.': '.trim((string)$tmp[0]['ustid']));
+    }
   }
 
 
@@ -2056,6 +2062,11 @@ class Briefpapier extends SuperFPDF {
     }
     else {
       $this->Cell_typed(80,5,$this->recipient['areacode']." ".$this->recipient['city'],0,1);
+    }
+    if(!empty($this->recipient['ustid']))
+    {
+      $this->SetX($this->getStyleElement("abstand_adresszeilelinks"));
+      $this->Cell_typed(80,5,$this->recipient['ustid'],0,1);
     }
     //$this->SetFont($this->GetFont(),'',9);
     //if(isset($this->recipient['country'])) $this->Cell_typed(80,5,$this->recipient['country'],0,1);

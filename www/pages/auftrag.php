@@ -3954,6 +3954,9 @@ class Auftrag extends GenAuftrag
   function AuftragRechnungsLieferadresse($auftragid)
   {
     $data = $this->app->DB->SelectArr("SELECT * FROM auftrag WHERE id='$auftragid' LIMIT 1");
+    $ustid = trim((string)$data[0]['ustid']);
+    $documentLanguage = isset($data[0]['sprache']) ? strtolower(trim((string)$data[0]['sprache'])) : '';
+    $ustIdLabel = $documentLanguage !== '' && $documentLanguage !== 'deutsch' ? 'VAT ID' : 'USt-IdNr.';
 
     foreach($data[0] as $key=>$value)
     {
@@ -3983,6 +3986,9 @@ class Auftrag extends GenAuftrag
 
       $rechnungsadresse = $adresse_data[0]['rechnung_name']."".$adresse_data[0]['rechnung_ansprechpartner']."".$adresse_data[0]['rechnung_abteilung']."".$adresse_data[0]['rechnung_unterabteilung'].
       "".$adresse_data[0]['rechnung_strasse']."".$adresse_data[0]['rechnung_adresszusatz']."".$adresse_data[0]['rechnung_land']."-".$adresse_data[0]['rechnung_plz']." ".$adresse_data[0]['rechnung_ort'];
+    }
+    if($ustid !== '') {
+      $rechnungsadresse .= '<br>'.$ustIdLabel.': '.$ustid;
     }
 
     if($data[0]['abweichendelieferadresse']!=0){
