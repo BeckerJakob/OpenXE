@@ -2672,10 +2672,21 @@ class Briefpapier extends SuperFPDF {
     $priceWidth = 20;
     $sumWidth   = 20;
     $rabattWidth   = 15;
+    $bestellungOhnePreisSpalten = $this->doctype === 'bestellung';
+    if($bestellungOhnePreisSpalten) {
+      $descWidth += $taxWidth + $priceWidth + $sumWidth;
+      if($this->rabatt=='1') {
+        $descWidth += $rabattWidth;
+      }
+      $taxWidth = 0;
+      $priceWidth = 0;
+      $sumWidth = 0;
+      $rabattWidth = 0;
+    }
     // $lineLength = $amWidth + $itemNoWidth + $descWidth + $taxWidth + $priceWidth + $sumWidth;
 
     // zwischenloesung um platz zu sparen
-    if($this->ust_spalteausblende)
+    if($this->ust_spalteausblende && !$bestellungOhnePreisSpalten)
     {
       $taxWidth--;
       $descWidth += $taxWidth;
@@ -2735,7 +2746,7 @@ class Briefpapier extends SuperFPDF {
       $this->Cell_typed($amWidth,6,'Stunden',0,0,'R');
     }
 
-    if($this->doctype!='lieferschein' && $this->doctype!='arbeitsnachweis' && $this->doctype!='produktion' && $this->doctype!='zahlungsavis' && $this->doctype!='preisanfrage'){
+    if(!$bestellungOhnePreisSpalten && $this->doctype!='lieferschein' && $this->doctype!='arbeitsnachweis' && $this->doctype!='produktion' && $this->doctype!='zahlungsavis' && $this->doctype!='preisanfrage'){
       if($this->getStyleElement('artikeleinheit')=='1'){
         $this->Cell_typed($einheitWidth, 6, $this->app->erp->ReadyForPDF($this->app->erp->Beschriftung('dokument_einheit')), 0, 0, 'R');
       }
@@ -2982,7 +2993,7 @@ class Briefpapier extends SuperFPDF {
         }
       }
 
-      if($this->doctype!=='lieferschein' && $this->doctype!=='arbeitsnachweis' && $this->doctype!=='produktion' && $this->doctype!=='preisanfrage') {
+      if(!$bestellungOhnePreisSpalten && $this->doctype!=='lieferschein' && $this->doctype!=='arbeitsnachweis' && $this->doctype!=='produktion' && $this->doctype!=='preisanfrage') {
         if($this->getStyleElement('artikeleinheit')=='1')
         {
           if($item['unit']!='')
