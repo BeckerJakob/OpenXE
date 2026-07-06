@@ -7150,6 +7150,54 @@ r.land as land, p.abkuerzung as projekt, r.zahlungsweise as zahlungsweise,
         $count = "SELECT COUNT(b.id) FROM `bestellung` AS `b` WHERE ( b.status='angelegt') ";
         $moreinfo = true;
         break;
+
+      case "positionen_teileinlagern_bestellung":
+        $id = (int)$this->app->Secure->GetGET('id');
+        $allowed['bestellung'] = array('einlagern');
+
+        $heading = array('Position', 'Artikel', 'Nr.', 'Bestellt', 'Geliefert', 'Offen', 'Ziellagerplatz', 'Menge jetzt einlagern', '');
+        $width = array('1%', '30%', '10%', '8%', '8%', '8%', '15%', '10%', '1%');
+        $findcols = array('bp.sort', 'a.name_de', 'a.nummer', 'bp.menge', 'bp.geliefert', 'offen', 'ziellagerplatz', 'teilmenge');
+        $searchsql = array('bp.sort', 'a.name_de', 'a.nummer', 'bp.menge', 'bp.geliefert');
+        $defaultorder = 1;
+        $defaultorderdesc = 0;
+
+        $offeneMengeSql = "(bp.menge - bp.geliefert)";
+        $standardlagerSql = "(SELECT kurzbezeichnung FROM lager_platz WHERE geloescht <> 1 AND sperrlager <> 1 AND poslager <> 1 ORDER BY id LIMIT 1)";
+        $ziellagerplatzSql = "IFNULL(lp.kurzbezeichnung, IFNULL($standardlagerSql, '-'))";
+        $teilmengeInput = "CONCAT(
+          '<input type=\"number\" step=\"any\" min=\"0\" max=\"',
+          TRIM($offeneMengeSql)+0,
+          '\" name=\"teilmenge_',
+          bp.id,
+          '\" value=\"',
+          0,
+          '\">'
+        )";
+
+        $sql = "SELECT SQL_CALC_FOUND_ROWS
+          bp.sort,
+          bp.sort,
+          a.name_de,
+          a.nummer,
+          " . $this->app->erp->FormatMenge('bp.menge') . " AS menge,
+          " . $this->app->erp->FormatMenge('bp.geliefert') . " AS geliefert,
+          TRIM($offeneMengeSql)+0 AS offen,
+          $ziellagerplatzSql AS ziellagerplatz,
+          $teilmengeInput AS teilmenge,
+          bp.id
+          FROM bestellung_position bp
+          INNER JOIN artikel a ON a.id = bp.artikel
+          LEFT JOIN lager_platz lp ON lp.id = a.lager_platz AND lp.geloescht <> 1";
+
+        $where = "bp.bestellung = '$id' AND bp.geliefert < bp.menge AND a.lagerartikel = 1 AND a.porto <> 1 AND a.stueckliste <> 1";
+        $count = "SELECT COUNT(bp.id)
+          FROM bestellung_position bp
+          INNER JOIN artikel a ON a.id = bp.artikel
+          LEFT JOIN lager_platz lp ON lp.id = a.lager_platz AND lp.geloescht <> 1
+          WHERE $where";
+        $moreinfo = false;
+        break;
  
       case "bestellung_offenepositionen":
         $allowed['bestellung'] = array('offenepositionen');

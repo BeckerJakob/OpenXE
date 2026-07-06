@@ -69,6 +69,7 @@ class Bestellung extends GenBestellung
     $this->app->ActionHandler("pdffromarchive","BestellungPDFfromArchiv");
     $this->app->ActionHandler("archivierepdf","BestellungArchivierePDF");
     $this->app->ActionHandler("einlagern","BestellungEinlagern");
+    $this->app->ActionHandler("teileinlagern","BestellungTeilEinlagern");
     $this->app->ActionHandler("offenepositionen","BestellungOffenePositionen");
     $this->app->ActionHandler("steuer","BestellungSteuer");
     $this->app->ActionHandler("adressebestellungcopy", "AdresseBestellungCopy");
@@ -158,7 +159,16 @@ class Bestellung extends GenBestellung
         $status = $arr['status'];
         if(($status === 'versendet' || $status === 'freigegeben')){
           $standardlager = $this->app->DB->Select("SELECT id FROM lager_platz WHERE geloescht <> 1 AND sperrlager <> 1 AND poslager <> 1 ORDER BY id LIMIT 1");
-          $positionen = $this->app->DB->SelectArr("SELECT id,artikel,menge,geliefert FROM bestellung_position WHERE geliefert < menge AND bestellung='$id'");
+          $positionen = $this->app->DB->SelectArr(
+            "SELECT bp.id,bp.artikel,bp.menge,bp.geliefert
+             FROM bestellung_position bp
+             INNER JOIN artikel art ON bp.artikel = art.id
+             WHERE bp.geliefert < bp.menge
+             AND bp.bestellung = '$id'
+             AND art.lagerartikel = 1
+             AND art.porto <> 1
+             AND art.stueckliste <> 1"
+          );
           if($positionen){
             foreach ($positionen as $position) {
               if($lagerplatz){
@@ -203,6 +213,155 @@ class Bestellung extends GenBestellung
       return false;
     }
     $this->app->Location->execute('index.php?module=bestellung&action=list');
+  }
+
+  function BestellungTeilEinlagern()
+  {
+    $id = (int)$this->app->Secure->GetGET('id');
+    $this->BestellungMenu();
+
+    if($id <= 0) {
+      $this->app->Location->execute('index.php?module=bestellung&action=list');
+    }
+
+    $submit = $this->app->Secure->GetPOST('submit');
+    if($submit === 'abbrechen') {
+      $this->app->Location->execute('index.php?module=bestellung&action=edit&id=' . $id);
+    }
+
+    $bestellung = $this->app->DB->SelectRow("SELECT projekt,belegnr,status FROM bestellung WHERE id = '$id' LIMIT 1");
+    $msg = 'W&auml;hlen Sie die Positionen und Mengen f&uuml;r die Teileinlagerung.';
+    if(empty($bestellung) || ($bestellung['status'] !== 'versendet' && $bestellung['status'] !== 'freigegeben')) {
+      $msg = '<div class="error">Aktion in diesem Status nicht m&ouml;glich.</div>';
+    }
+    elseif(!$this->app->erp->RechteVorhanden('bestellung', 'einlagern')) {
+      $msg = '<div class="error">Keine Berechtigung zum Einlagern vorhanden.</div>';
+    }
+    elseif($submit === 'speichern') {
+      $teilmengeInput = $this->app->Secure->GetPOSTArray();
+      $qtyMap = [];
+
+      foreach($teilmengeInput as $key => $value) {
+        if(strpos($key, 'teilmenge_') !== 0) {
+          continue;
+        }
+        $posId = (int)substr($key, 10);
+        $qty = round((float)str_replace(',', '.', $value), 4);
+        if($posId > 0 && $qty > 0) {
+          $qtyMap[$posId] = $qty;
+        }
+      }
+
+      if(empty($qtyMap)) {
+        $msg = '<div class="error">Keine Mengen zum Einlagern ausgew&auml;hlt.</div>';
+      }
+      else {
+        $lockName = $this->app->DB->real_escape_string('bestellung_teileinlagern_' . $id);
+        $lockAcquired = (int)$this->app->DB->Select("SELECT GET_LOCK('$lockName', 10)");
+        if($lockAcquired !== 1) {
+          $msg = '<div class="error">Die Bestellung wird gerade von einem anderen Vorgang eingelagert. Bitte versuchen Sie es gleich erneut.</div>';
+        }
+        else {
+          $standardlager = $this->app->DB->Select("SELECT id FROM lager_platz WHERE geloescht <> 1 AND sperrlager <> 1 AND poslager <> 1 ORDER BY id LIMIT 1");
+          $buchungen = [];
+          $errors = [];
+
+          foreach($qtyMap as $posId => $qty) {
+            $position = $this->app->DB->SelectRow(
+              "SELECT bp.id,bp.artikel,bp.menge,bp.geliefert,a.nummer,a.name_de,a.lager_platz,a.lagerartikel,a.porto,a.stueckliste
+               FROM bestellung_position bp
+               INNER JOIN artikel a ON a.id = bp.artikel
+               WHERE bp.id = '$posId' AND bp.bestellung = '$id'
+               LIMIT 1"
+            );
+
+            if(empty($position)) {
+              $errors[] = 'Position ' . $posId . ' geh&ouml;rt nicht zu dieser Bestellung.';
+              continue;
+            }
+
+            if(empty($position['lagerartikel']) || !empty($position['porto']) || !empty($position['stueckliste'])) {
+              $errors[] = 'Artikel ' . $position['nummer'] . ' ist kein einlagerbarer Lagerartikel.';
+              continue;
+            }
+
+            $offen = round((float)$position['menge'] - (float)$position['geliefert'], 4);
+            if($offen <= 0) {
+              continue;
+            }
+            if($qty > $offen) {
+              $errors[] = 'Die Menge f&uuml;r Artikel ' . $position['nummer'] . ' ist gr&ouml;&szlig;er als die offene Menge.';
+              continue;
+            }
+
+            $lager = $position['lager_platz'];
+            if(!$this->app->DB->Select("SELECT id FROM lager_platz WHERE id = '$lager' AND geloescht <> 1 LIMIT 1")) {
+              $lager = $standardlager;
+            }
+            if(!$lager) {
+              $errors[] = 'F&uuml;r Artikel "' . $position['nummer'] . ' ' . $position['name_de'] . '" wurde kein g&uuml;ltiger Lagerplatz gefunden.';
+              continue;
+            }
+
+            $buchungen[] = [
+              'position' => $position['id'],
+              'artikel' => $position['artikel'],
+              'menge' => $qty,
+              'lager' => $lager,
+            ];
+          }
+
+          if(!empty($errors)) {
+            $msg = '<div class="error">' . implode('<br>', $errors) . '</div>';
+          }
+          elseif(empty($buchungen)) {
+            $msg = '<div class="error">Keine offenen Mengen zum Einlagern gefunden.</div>';
+          }
+          else {
+            $gebuchtePositionen = 0;
+            foreach($buchungen as $buchung) {
+              $menge = (float)$buchung['menge'];
+              $this->app->DB->Update(
+                "UPDATE bestellung_position
+                 SET geliefert = geliefert + '$menge'
+                 WHERE id = '" . $buchung['position'] . "'
+                 AND bestellung = '$id'
+                 AND geliefert + '$menge' <= menge
+                 LIMIT 1"
+              );
+              if((int)$this->app->DB->affected_rows() !== 1) {
+                $errors[] = 'Die offene Menge einer Position hat sich ge&auml;ndert. Bitte laden Sie die Teileinlagerung neu.';
+                continue;
+              }
+              $this->app->erp->LagerEinlagern(
+                $buchung['artikel'], $menge, $buchung['lager'], $bestellung['projekt'],
+                'Wareneingang von Bestellung ' . $bestellung['belegnr'], '', '', 'bestellung', $id
+              );
+              $gebuchtePositionen++;
+            }
+
+            if($gebuchtePositionen > 0) {
+              $this->app->erp->BestellungProtokoll($id, 'Bestellung teilweise eingelagert (' . $gebuchtePositionen . ' Positionen)');
+              $this->checkAbschliessen($id);
+            }
+            if(!empty($errors)) {
+              $msg = '<div class="error">' . implode('<br>', $errors) . '</div>';
+            }
+            else {
+              $this->app->DB->Select("SELECT RELEASE_LOCK('$lockName')");
+              $msg = $this->app->erp->base64_url_encode('<div class="info">Die ausgew&auml;hlten Positionen wurden eingelagert.</div>');
+              $this->app->Location->execute('index.php?module=bestellung&action=edit&id=' . $id . '&msg=' . $msg);
+            }
+          }
+          $this->app->DB->Select("SELECT RELEASE_LOCK('$lockName')");
+        }
+      }
+    }
+
+    $this->app->Tpl->Set('TABTEXT', 'Teileinlagerung');
+    $this->app->Tpl->Add('INFOTEXT', $msg);
+    $this->app->YUI->TableSearch('TABLE', 'positionen_teileinlagern_bestellung');
+    $this->app->Tpl->Parse('PAGE', 'bestellung_teileinlagern.tpl');
   }
 
   function checkAbschliessen($id = 0)
@@ -1264,7 +1423,15 @@ GROUP BY
     $supplierOrder = $this->app->DB->SelectRow("SELECT status, belegnr FROM bestellung WHERE id='$id' LIMIT 1");
     $status = $supplierOrder['status'];
     $belegnr = $supplierOrder['belegnr'];
+    $freigabe = '';
     $freigegeben = '';
+    $abschliessen = '';
+    $alsversendet = '';
+    $storno = '';
+    $teileinlagern = '';
+    $standardlager = '';
+    $casebelegeimport = '';
+    $optionbelegeimport = '';
     if($status=="angelegt" || $status=="")
       $freigabe = "<option value=\"freigabe\">Bestellung freigeben</option>";
 
@@ -1273,15 +1440,24 @@ GROUP BY
 
     $einlagern = '';
 
-    if(($status === 'versendet' || $status === 'freigegeben')
+    $canEinlagern = ($status === 'versendet' || $status === 'freigegeben')
       && $this->app->erp->RechteVorhanden("bestellung", "einlagern")
-      && $this->app->DB->Select("SELECT id FROM bestellung_position WHERE bestellung = '$id' AND geliefert < menge LIMIT 1")) {
+      && $this->app->DB->Select("SELECT bp.id FROM bestellung_position bp INNER JOIN artikel art ON bp.artikel = art.id WHERE bp.bestellung = '$id' AND bp.geliefert < bp.menge AND art.lagerartikel = 1 AND art.porto <> 1 AND art.stueckliste <> 1 LIMIT 1");
+    if($canEinlagern) {
       $standardlager = $this->app->DB->Select("SELECT kurzbezeichnung FROM lager_platz WHERE geloescht <> 1 AND sperrlager <> 1 AND poslager <> 1 ORDER BY id LIMIT 1");
       $nichtlager = $this->app->DB->Select("SELECT art.id FROM bestellung_position bp INNER JOIN artikel art ON bp.artikel = art.id WHERE bp.bestellung = '$id' AND art.porto <> 1 AND lagerartikel <> 1 AND stueckliste <> 1 LIMIT 1");
       if($nichtlager) {
         $standardlager .= ' (Achtung Es gibt Positionen die keine Lagerartikel sind, diese werden nicht eingelagert)';
       }
-      $einlagern = '<option value="einlagern">Bestellung einlagern</option>';
+      $positionsCount = (int)$this->app->DB->Select("SELECT COUNT(bp.id) FROM bestellung_position bp INNER JOIN artikel art ON bp.artikel = art.id WHERE bp.bestellung = '$id' AND art.lagerartikel = 1 AND art.porto <> 1 AND art.stueckliste <> 1");
+      $teilweiseEingelagert = (bool)$this->app->DB->Select("SELECT bp.id FROM bestellung_position bp INNER JOIN artikel art ON bp.artikel = art.id WHERE bp.bestellung = '$id' AND bp.geliefert > 0 AND art.lagerartikel = 1 AND art.porto <> 1 AND art.stueckliste <> 1 LIMIT 1");
+      $mehrfachMengeOffen = (bool)$this->app->DB->Select("SELECT bp.id FROM bestellung_position bp INNER JOIN artikel art ON bp.artikel = art.id WHERE bp.bestellung = '$id' AND (bp.menge - bp.geliefert) > 1 AND art.lagerartikel = 1 AND art.porto <> 1 AND art.stueckliste <> 1 LIMIT 1");
+      if(!$teilweiseEingelagert) {
+        $einlagern = '<option value="einlagern">Bestellung einlagern</option>';
+      }
+      if($positionsCount > 1 || $mehrfachMengeOffen || $teilweiseEingelagert) {
+        $teileinlagern = '<option value="teileinlagern">Bestellung teilweise einlagern</option>';
+      }
     }
 
     if($status === 'abgeschlossen') {
@@ -1308,6 +1484,14 @@ GROUP BY
     $hookcase = '';
     $this->app->erp->RunHook("Bestellung_Aktion_option",3, $id, $status, $hookoption);
     $this->app->erp->RunHook("Bestellung_Aktion_case",3, $id, $status, $hookcase);
+    $lagermenu = '';
+    if($einlagern !== '' || $teileinlagern !== '') {
+      $lagermenu = "<optgroup label=\"Lager & Logistik\">$einlagern $teileinlagern</optgroup>";
+    }
+    $exportmenu = '';
+    if($optionbelegeimport !== '') {
+      $exportmenu = "<optgroup label=\"Export\">$optionbelegeimport</optgroup>";
+    }
     $abschliessentext = '{|Wirklich abschliessen?|}';
     if($this->app->DB->Select("SELECT id FROM bestellung_position WHERE bestellung = '$id' AND mengemanuellgeliefertaktiviert = 0 AND geliefert < menge LIMIT 1"))
       $abschliessentext = "{|Zu dieser Bestellung gibt es noch offene Postitionen, möchten Sie diese wirklich als abgeschlossen markieren? Eine Warenannahme ist dann nicht mehr möglich für diese Bestellung.|}";
@@ -1328,6 +1512,7 @@ GROUP BY
           case 'freigegeben': if(!confirm('Wirklich auf freigegeben setzen?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=bestellung&action=freigegeben&id=%value%'; break;
           case 'abschliessen': if(!confirm('$abschliessentext')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=bestellung&action=abschliessen&id=%value%'; break;
           case 'einlagern': if(!confirm('Wirklich einlagern? Die Artikel werden in den voreingestellten Lagerplätzen eingelagert andersfalls in das Lager $standardlager')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=bestellung&action=einlagern&id=%value%'; break;
+          case 'teileinlagern': window.location.href='index.php?module=bestellung&action=teileinlagern&id=%value%'; break;
           $hookcase
           $casebelegeimport
         }
@@ -1337,17 +1522,25 @@ GROUP BY
 
       &nbsp;Aktion:&nbsp;<select id=\"aktion$prefix\" onchange=\"onchangebestellung(this.value);\">
       <option>bitte w&auml;hlen ...</option>
-      $storno
-      <option value=\"copy\">Bestellung kopieren</option>
-      <option value=\"abschicken\">Bestellung abschicken</option>
-      $freigabe
-      $alsversendet
-      $freigegeben
-      $abschliessen
-      $einlagern
+
+      $lagermenu
+
+      <optgroup label=\"Bestellung\">
+        $freigabe
+        $alsversendet
+        $freigegeben
+        $abschliessen
+        <option value=\"copy\">Bestellung kopieren</option>
+        $storno
+      </optgroup>
+
+      <optgroup label=\"Dokument\">
+        <option value=\"pdf\">PDF herunterladen</option>
+        <option value=\"abschicken\">Dokument versenden</option>
+      </optgroup>
+
+      $exportmenu
       $hookoption
-      $optionbelegeimport
-      <option value=\"pdf\">PDF &ouml;ffnen</option>
       </select>&nbsp;
 
     <a href=\"index.php?module=bestellung&action=pdf&id=%value%\"><img border=\"0\" src=\"./themes/new/images/pdf.svg\"></a>
