@@ -7198,6 +7198,96 @@ r.land as land, p.abkuerzung as projekt, r.zahlungsweise as zahlungsweise,
           WHERE $where";
         $moreinfo = false;
         break;
+
+      case "positionen_teilstorno_rechnung":
+        $id = (int)$this->app->Secure->GetGET('id');
+        $allowed['rechnung'] = array('gutschrift');
+        $projectRightSql = $this->app->erp->ProjektRechte(
+          'r.projekt',
+          true,
+          'a.vertrieb',
+          false,
+          " OR r.usereditid = '".(int)$this->app->User->GetID()."'"
+        );
+
+        $heading = array('Position', 'Artikel', 'Nr.', 'Menge auf Rechnung', 'Bereits gutgeschrieben', 'Max. stornierbar', 'Menge zu stornieren', 'Gutschriftsbetrag netto', '');
+        $width = array('1%', '26%', '10%', '9%', '9%', '9%', '10%', '10%', '1%');
+        $findcols = array('rp.sort', 'rp.bezeichnung', 'rp.nummer', 'rp.menge', 'gutgeschrieben', 'maxmenge', 'stornomenge', 'gutschriftsbetrag');
+        $searchsql = array('rp.sort', 'rp.bezeichnung', 'rp.nummer', 'rp.menge');
+        $defaultorder = 1;
+        $defaultorderdesc = 0;
+
+        $creditedQtySql = "IFNULL((
+          SELECT SUM(gp.menge)
+          FROM gutschrift_position gp
+          INNER JOIN gutschrift g ON g.id = gp.gutschrift
+          WHERE g.rechnungid = '$id'
+          AND g.status <> 'angelegt'
+          AND g.status <> 'storniert'
+          AND (
+            (rp.auftrag_position_id > 0 AND gp.auftrag_position_id = rp.auftrag_position_id)
+            OR (
+              rp.auftrag_position_id = 0
+              AND gp.artikel = rp.artikel
+              AND gp.nummer = rp.nummer
+              AND gp.bezeichnung = rp.bezeichnung
+              AND gp.sort = rp.sort
+            )
+          )
+        ), 0)";
+        $maxQtySql = "GREATEST(rp.menge - $creditedQtySql, 0)";
+        $nettoEinzelSql = "(rp.preis * IF(rp.rabatt > 0, (100 - rp.rabatt) / 100, 1))";
+        $stornoMengeInput = "CONCAT(
+          '<input type=\"number\" step=\"any\" min=\"0\" class=\"rechnung-teilstorno-menge\" data-netto-einzel=\"',
+          ROUND($nettoEinzelSql, 8),
+          '\" max=\"',
+          TRIM($maxQtySql)+0,
+          '\" name=\"stornomenge_',
+          rp.id,
+          '\" value=\"',
+          TRIM($maxQtySql)+0,
+          '\">'
+        )";
+        $gutschriftsbetrag = "CONCAT(
+          '<span class=\"rechnung-teilstorno-betrag\">',
+          FORMAT(ROUND((TRIM($maxQtySql)+0) * $nettoEinzelSql, 2), 2, 'de_DE'),
+          '</span> ',
+          rp.waehrung
+        )";
+        $escapedDesignationSql = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(rp.bezeichnung, '&', '&amp;'), '<', '&lt;'), '>', '&gt;'), '\"', '&quot;'), '''', '&#039;')";
+        $escapedDescriptionSql = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(rp.beschreibung, '&', '&amp;'), '<', '&lt;'), '>', '&gt;'), '\"', '&quot;'), '''', '&#039;')";
+        $artikelText = "CONCAT(
+          $escapedDesignationSql,
+          IF(rp.beschreibung <> '', CONCAT('<br><small>', $escapedDescriptionSql, '</small>'), '')
+        )";
+
+        $sql = "SELECT SQL_CALC_FOUND_ROWS
+          rp.sort,
+          rp.sort,
+          $artikelText AS bezeichnung,
+          rp.nummer,
+          " . $this->app->erp->FormatMenge('rp.menge') . " AS menge,
+          TRIM($creditedQtySql)+0 AS gutgeschrieben,
+          TRIM($maxQtySql)+0 AS maxmenge,
+          $stornoMengeInput AS stornomenge,
+          $gutschriftsbetrag AS gutschriftsbetrag,
+          rp.id
+          FROM rechnung_position rp
+          INNER JOIN rechnung r ON r.id = rp.rechnung
+          LEFT JOIN adresse a ON a.id = r.adresse";
+
+        $where = "rp.rechnung = '$id'
+          AND r.status <> 'angelegt'
+          AND r.status <> ''
+          AND r.status <> 'storniert'
+          $projectRightSql";
+        $count = "SELECT COUNT(rp.id)
+          FROM rechnung_position rp
+          INNER JOIN rechnung r ON r.id = rp.rechnung
+          LEFT JOIN adresse a ON a.id = r.adresse
+          WHERE $where";
+        $moreinfo = false;
+        break;
  
       case "bestellung_offenepositionen":
         $allowed['bestellung'] = array('offenepositionen');

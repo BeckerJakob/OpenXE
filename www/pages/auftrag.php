@@ -5999,7 +5999,6 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
       $this->app->ExitXentral();
     }
 
-
     if($this->app->Secure->GetPOST('weiter')!='') {
       $this->app->Location->execute("index.php?module=auftrag&action=positionen&id=$id");
     }

@@ -183,6 +183,7 @@ class Acl
         if(
           $action === 'edit' || $action === 'delete' || $action === 'copy' || $action === 'dateien'
           || ($action === 'rollen' && $module === 'adresse')
+          || ($action === 'teilstorno' && $module === 'rechnung')
           || $action === 'inlinepdf' || $action === 'pdf' || $action === 'send'
         ) {
           switch($module)

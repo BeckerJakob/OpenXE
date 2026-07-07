@@ -32740,6 +32740,9 @@ function Firmendaten($field,$projekt="")
           $articles[] = (int)$row['artikel'];
         }
       }
+      if(empty($articles)) {
+        return;
+      }
       $freifelderLangs = [];
       $freifelderLangQuery = $this->app->DB->Query('SELECT artikel, nummer, wert FROM artikel_freifelder WHERE artikel IN ('.implode(', ', $articles).") AND sprache='$language'");
       if(!empty($freifelderLangQuery)) {

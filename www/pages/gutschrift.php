@@ -1189,7 +1189,7 @@ class Gutschrift extends GenGutschrift
         $this->app->Tpl->Add('MESSAGE',"<div class=\"warning\">Die Gutschrift wurde noch nicht versendet! <input type=\"button\" onclick=\"if(!confirm('Soll das Dokument archiviert werden?')) return false;else window.location.href='index.php?module=gutschrift&action=archivierepdf&id=$id';\" value=\"Manuell archivieren\" /> <input type=\"button\" value=\"Dokument versenden\" onclick=\"DokumentAbschicken('gutschrift',$id)\"></div>");
       }
     }
-    
+
     if($schreibschutz!='1' && $this->app->erp->RechteVorhanden('gutschrift','schreibschutz')){
       $this->app->erp->AnsprechpartnerButton($adresse);
     }
@@ -1391,7 +1391,6 @@ class Gutschrift extends GenGutschrift
       $this->app->erp->PDFArchivieren('gutschrift', $id, true);
     }
     $this->app->erp->MessageHandlerStandardForm();
-
 
     if($this->app->Secure->GetPOST('weiter')!='') {
       $this->app->Location->execute('index.php?module=gutschrift&action=positionen&id='.$id);

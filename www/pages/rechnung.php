@@ -51,6 +51,7 @@ class Rechnung extends GenRechnung
     $this->app->ActionHandler("edit","RechnungEdit");
     $this->app->ActionHandler("delete","RechnungDelete");
     $this->app->ActionHandler("gutschrift","RechnungGutschrift");
+    $this->app->ActionHandler("teilstorno","RechnungTeilStorno");
     $this->app->ActionHandler("copy","RechnungCopy");
     $this->app->ActionHandler("zertifikate","RechnungZertifikate");
     $this->app->ActionHandler("freigabe","RechnungFreigabe");
@@ -462,6 +463,11 @@ class Rechnung extends GenRechnung
     $bezahlt="";
     $weiterfuehren="";
     $optionteilstorno = "";
+    $undostorno = "";
+    $casebelegeimport = "";
+    $optionbelegeimport = "";
+    $RechnungzuVerbindlichkeitOption = "";
+    $RechnungzuVerbindlichkeitCase = "";
 
     $checkifgsexists = $this->app->DB->Select("SELECT id FROM gutschrift WHERE rechnungid='$id' LIMIT 1");
 
@@ -469,15 +475,16 @@ class Rechnung extends GenRechnung
     {
       $freigabe = "<option value=\"freigabe\">Rechnung freigeben</option>";
       $storno = "<option value=\"storno\">Rechnung (ENTWURF) löschen</option>";
-    } else {
-      $weiterfuehren = "<option value=\"gutschrift\">als Gutschrift / ".$this->app->erp->Firmendaten("bezeichnungstornorechnung")."</option>";
+    } elseif($status !== '' && $status !== 'storniert' && $this->app->erp->RechteVorhanden('rechnung', 'gutschrift')) {
+      $weiterfuehren = "<option value=\"teilstorno\">Rechnung stornieren</option>";
     }
     $casehook = '';
     $optionhook = '';
     $this->app->erp->RunHook('rechnungiconmenu_option', 5, $id, $casehook, $optionhook, $status, $prefix);
     
-    if($this->app->erp->RechteVorhanden("rechnung","undostorno") && !$checkifgsexists)
-      $undostorno = "<option value=\"undostorno\">Rechnung Storno rückgängig</option>";
+    if($status === 'storniert' && $this->app->erp->RechteVorhanden("rechnung","undostorno") && !$checkifgsexists) {
+      // $undostorno = "<option value=\"undostorno\">Rechnung Storno rückgängig</option>";
+    }
 
     if($this->app->erp->RechteVorhanden("rechnung","manuellbezahltmarkiert") && $zahlungsstatus=="offen")
       $bezahlt = "<option value=\"manuellbezahltmarkiert\">manuell als bezahlt markieren</option>";
@@ -529,6 +536,41 @@ class Rechnung extends GenRechnung
       $optionbelegeimport = "<option value=\"belegeimport\">Export als CSV</option>";
     }
 
+    $rechnungmenu = "
+      <optgroup label=\"Rechnung\">
+        $freigabe
+        <option value=\"copy\">Rechnung kopieren</option>
+        $storno
+        $weiterfuehren
+        $undostorno
+        $RechnungzuVerbindlichkeitOption
+      </optgroup>";
+    $zahlungmenu = '';
+    if($bezahlt !== '') {
+      $zahlungmenu = "<optgroup label=\"Zahlung\">$bezahlt</optgroup>";
+    }
+    $dokumentmenu = "
+      <optgroup label=\"Dokument\">
+        <option value=\"pdf\">PDF &ouml;ffnen</option>
+        <option value=\"abschicken\">Rechnung abschicken</option>
+      </optgroup>";
+    $exportmenu = '';
+    if($optionbelegeimport !== '') {
+      $exportmenu = "<optgroup label=\"Export\">$optionbelegeimport</optgroup>";
+    }
+    $anhaengemenu = '';
+    if($zertifikatoption !== '') {
+      $anhaengemenu = "<optgroup label=\"Anh&auml;nge\">$zertifikatoption</optgroup>";
+    }
+    $erweiterungenmenu = '';
+    if($optioncustom !== '' || $optionhook !== '' || $hookoption !== '') {
+      $erweiterungenmenu = "
+      <optgroup label=\"Erweiterungen\">
+        $optioncustom
+        $optionhook
+        $hookoption
+      </optgroup>";
+    }
 
     
     if($checkifgsexists>0) $extendtext = "HINWEIS: Es existiert bereits eine Gutschrift zu dieser Rechnung! "; else $extendtext="";
@@ -542,6 +584,7 @@ class Rechnung extends GenRechnung
           case 'undostorno': if(!confirm('Wirklich die Stornierung rückgängig machen?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=rechnung&action=undostorno&id=%value%'; break;
           case 'copy': if(!confirm('Wirklich kopieren?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=rechnung&action=copy&id=%value%'; break;
           case 'gutschrift': if(!confirm('".$extendtext."Wirklich als Gutschrift / ".$this->app->erp->Firmendaten("bezeichnungstornorechnung")." weiterführen?')) return document.getElementById('aktion$prefix').selectedIndex = 0; else window.location.href='index.php?module=rechnung&action=gutschrift&id=%value%'; break;
+          case 'teilstorno': window.location.href='index.php?module=rechnung&action=teilstorno&id=%value%'; break;
           $optionteilstorno
           $RechnungzuVerbindlichkeitCase
           case 'pdf': window.location.href='index.php?module=rechnung&action=pdf&id=%value%'; document.getElementById('aktion$prefix').selectedIndex = 0; break;
@@ -562,20 +605,12 @@ class Rechnung extends GenRechnung
 
       &nbsp;Aktion:&nbsp;<select id=\"aktion$prefix\" onchange=\"onchangerechnung(this.value)\"> 
       <option>bitte w&auml;hlen ...</option>
-      <option value=\"copy\">Rechnung kopieren</option>
-      $freigabe
-      <option value=\"abschicken\">Rechnung abschicken</option>
-      $RechnungzuVerbindlichkeitOption
-      $storno
-      $weiterfuehren
-      $undostorno
-      $optionbelegeimport
-      <option value=\"pdf\">PDF &ouml;ffnen</option>
-      $bezahlt
-      $zertifikatoption
-      $optioncustom
-      $optionhook
-      $hookoption
+      $rechnungmenu
+      $zahlungmenu
+      $dokumentmenu
+      $exportmenu
+      $anhaengemenu
+      $erweiterungenmenu
       </select>&nbsp;
       ";
       
@@ -1120,6 +1155,630 @@ class Rechnung extends GenRechnung
     }
 
     $this->app->Location->execute("index.php?module=gutschrift&action=edit&id=$newid&msg=$msg");
+  }
+
+  public function RechnungTeilStorno()
+  {
+    $id = (int)$this->app->Secure->GetGET('id');
+    $this->RechnungMenu();
+
+    if($id <= 0) {
+      $this->app->Location->execute('index.php?module=rechnung&action=list');
+    }
+
+    $submit = $this->app->Secure->GetPOST('submit');
+    if($submit === 'abbrechen') {
+      $this->app->Location->execute('index.php?module=rechnung&action=edit&id=' . $id);
+    }
+
+    $rechnung = $this->app->DB->SelectRow(
+      "SELECT id,status,belegnr,projekt FROM rechnung WHERE id = '$id' LIMIT 1"
+    );
+    $msg = 'W&auml;hlen Sie Positionen und Mengen f&uuml;r die Stornierung.';
+    $canUseTeilStorno = false;
+    $betragStornoBetrag = trim((string)$this->app->Secure->GetPOST('betragstorno_betrag'));
+    $betragStornoModus = $this->app->Secure->GetPOST('betragstorno_modus') === 'netto' ? 'netto' : 'brutto';
+    $betragStornoSteuersatzRaw = trim((string)$this->app->Secure->GetPOST('betragstorno_steuersatz'));
+    $betragStornoSteuersatz = $betragStornoSteuersatzRaw === '' ? '' : $this->NormalizeRechnungSteuersatz($betragStornoSteuersatzRaw);
+    $betragStornoGrund = trim((string)$this->app->Secure->GetPOST('betragstorno_grund'));
+    if($betragStornoGrund === '' && !empty($rechnung)) {
+      $betragStornoGrund = 'Kulanzgutschrift zu Rechnung ' . (!empty($rechnung['belegnr']) ? $rechnung['belegnr'] : 'ENTWURF');
+    }
+
+    if(empty($rechnung) || $rechnung['status'] === 'angelegt' || $rechnung['status'] === '' || $rechnung['status'] === 'storniert') {
+      $msg = '<div class="error">Aktion in diesem Status nicht m&ouml;glich.</div>';
+    }
+    elseif(!$this->CanViewRechnungForCurrentUser($rechnung)) {
+      $msg = '<div class="error">Keine Berechtigung f&uuml;r das Projekt dieser Rechnung vorhanden.</div>';
+    }
+    elseif(!$this->app->erp->RechteVorhanden('rechnung', 'gutschrift')) {
+      $msg = '<div class="error">Keine Berechtigung zum Stornieren der Rechnung vorhanden.</div>';
+    }
+    else {
+      $canUseTeilStorno = true;
+      if($submit === 'betrag_speichern') {
+        $normalizedAmountInput = str_replace(',', '.', $betragStornoBetrag);
+        $amountInput = round((float)$normalizedAmountInput, 2);
+        $taxRates = $this->GetRechnungSteuersaetze($id);
+        $kulanzArtikel = $this->GetRechnungBetragStornoArtikel($id);
+        $errors = [];
+        if(!preg_match('/^[0-9]+(\.[0-9]{1,2})?$/', $normalizedAmountInput) || $amountInput <= 0) {
+          $errors[] = 'Der Gutschriftbetrag muss gr&ouml;&szlig;er als 0 sein.';
+        }
+        if(empty($taxRates[$betragStornoSteuersatz])) {
+          $errors[] = 'Bitte einen g&uuml;ltigen Steuersatz dieser Rechnung ausw&auml;hlen.';
+        }
+        if($betragStornoGrund === '') {
+          $errors[] = 'Bitte einen Grund f&uuml;r die Betragsgutschrift angeben.';
+        }
+        if(empty($kulanzArtikel)) {
+          $errors[] = 'Der Artikel KULANZ wurde nicht gefunden. Bitte legen Sie den Artikel KULANZ an, bevor eine Betragsgutschrift erstellt wird.';
+        }
+
+        if(!empty($errors)) {
+          $msg = '<div class="error">' . implode('<br>', $errors) . '</div>';
+        }
+        else {
+          $lockName = $this->app->DB->real_escape_string('rechnung_teilstorno_' . $id);
+          $lockAcquired = (int)$this->app->DB->Select("SELECT GET_LOCK('$lockName', 10)");
+          if($lockAcquired !== 1) {
+            $msg = '<div class="error">Die Rechnung wird gerade von einem anderen Vorgang storniert. Bitte versuchen Sie es gleich erneut.</div>';
+          }
+          else {
+            $lockReleased = false;
+            $rechnungLocked = $this->app->DB->SelectRow(
+              "SELECT id,status,belegnr,projekt FROM rechnung WHERE id = '$id' LIMIT 1"
+            );
+            if(empty($rechnungLocked) || $rechnungLocked['status'] === 'angelegt' || $rechnungLocked['status'] === '' || $rechnungLocked['status'] === 'storniert') {
+              $errors[] = 'Aktion in diesem Status nicht m&ouml;glich.';
+            }
+            elseif(!$this->CanViewRechnungForCurrentUser($rechnungLocked)) {
+              $errors[] = 'Keine Berechtigung f&uuml;r das Projekt dieser Rechnung vorhanden.';
+            }
+            elseif(!$this->app->erp->RechteVorhanden('rechnung', 'gutschrift')) {
+              $errors[] = 'Keine Berechtigung zum Stornieren der Rechnung vorhanden.';
+            }
+
+            $taxRatesLocked = $this->GetRechnungSteuersaetze($id);
+            if(empty($taxRatesLocked[$betragStornoSteuersatz])) {
+              $errors[] = 'Bitte einen g&uuml;ltigen Steuersatz dieser Rechnung ausw&auml;hlen.';
+            }
+            $kulanzArtikelLocked = $this->GetRechnungBetragStornoArtikel($id);
+            if(empty($kulanzArtikelLocked)) {
+              $errors[] = 'Der Artikel KULANZ wurde nicht gefunden. Bitte legen Sie den Artikel KULANZ an, bevor eine Betragsgutschrift erstellt wird.';
+            }
+
+            if(empty($errors)) {
+              $amounts = $this->CalculateCreditAmount($amountInput, $betragStornoModus, (float)$betragStornoSteuersatz);
+              $newid = $this->CreateRechnungBetragStornoGutschrift(
+                $id,
+                [
+                  'grund' => $betragStornoGrund,
+                  'tax' => $taxRatesLocked[$betragStornoSteuersatz],
+                  'amounts' => $amounts,
+                  'artikel' => $kulanzArtikelLocked,
+                ]
+              );
+              $this->app->erp->RechnungProtokoll($id, 'Betragsgutschrift zur Rechnung erstellt');
+              $this->app->DB->Select("SELECT RELEASE_LOCK('$lockName')");
+              $lockReleased = true;
+              $msg = $this->app->erp->base64_url_encode('<div class="info">Die Betragsgutschrift wurde erstellt.</div>');
+              $this->app->Location->execute('index.php?module=gutschrift&action=edit&id=' . $newid . '&msg=' . $msg);
+            }
+
+            if(!$lockReleased) {
+              $this->app->DB->Select("SELECT RELEASE_LOCK('$lockName')");
+            }
+            if(!empty($errors)) {
+              $msg = '<div class="error">' . implode('<br>', $errors) . '</div>';
+            }
+          }
+        }
+      }
+      elseif($submit === 'speichern') {
+        $post = $this->app->Secure->GetPOSTArray();
+        $selection = [];
+
+        foreach($post as $key => $value) {
+          if(strpos($key, 'stornomenge_') !== 0) {
+            continue;
+          }
+          $posId = (int)substr($key, 12);
+          $qty = round((float)str_replace(',', '.', $value), 4);
+          if($posId > 0 && $qty > 0) {
+            $selection[$posId] = [
+              'menge' => $qty,
+            ];
+          }
+        }
+
+        if(empty($selection)) {
+          $msg = '<div class="error">Keine Positionen zum Stornieren ausgew&auml;hlt.</div>';
+        }
+        else {
+          $lockName = $this->app->DB->real_escape_string('rechnung_teilstorno_' . $id);
+          $lockAcquired = (int)$this->app->DB->Select("SELECT GET_LOCK('$lockName', 10)");
+          if($lockAcquired !== 1) {
+            $msg = '<div class="error">Die Rechnung wird gerade von einem anderen Vorgang storniert. Bitte versuchen Sie es gleich erneut.</div>';
+          }
+          else {
+            $lockReleased = false;
+            $errors = [];
+            $positions = [];
+            $rechnungLocked = $this->app->DB->SelectRow(
+              "SELECT id,status,belegnr,projekt FROM rechnung WHERE id = '$id' LIMIT 1"
+            );
+            if(empty($rechnungLocked) || $rechnungLocked['status'] === 'angelegt' || $rechnungLocked['status'] === '' || $rechnungLocked['status'] === 'storniert') {
+              $errors[] = 'Aktion in diesem Status nicht m&ouml;glich.';
+            }
+            elseif(!$this->CanViewRechnungForCurrentUser($rechnungLocked)) {
+              $errors[] = 'Keine Berechtigung f&uuml;r das Projekt dieser Rechnung vorhanden.';
+            }
+
+            if(empty($errors)) {
+              foreach($selection as $posId => $selected) {
+                $position = $this->GetRechnungStornoPosition($id, $posId);
+                if(empty($position)) {
+                  $errors[] = 'Position ' . $posId . ' geh&ouml;rt nicht zu dieser Rechnung.';
+                  continue;
+                }
+                if($selected['menge'] <= 0) {
+                  $errors[] = 'Die Menge f&uuml;r Position ' . $position['nummer'] . ' muss gr&ouml;&szlig;er als 0 sein.';
+                  continue;
+                }
+                if($selected['menge'] > (float)$position['maxmenge'] + 0.0001) {
+                  $errors[] = 'Die Menge f&uuml;r Position ' . $position['nummer'] . ' ist gr&ouml;&szlig;er als die maximal stornierbare Menge.';
+                  continue;
+                }
+
+                $positions[$posId] = [
+                  'position' => $position,
+                  'menge' => $selected['menge'],
+                ];
+              }
+            }
+
+            if(!empty($errors)) {
+              $msg = '<div class="error">' . implode('<br>', $errors) . '</div>';
+            }
+            elseif(empty($positions)) {
+              $msg = '<div class="error">Keine stornierbaren Positionen gefunden.</div>';
+            }
+            else {
+              if($this->IsRechnungVollstorno($id, $positions)) {
+                $newid = $this->app->erp->WeiterfuehrenRechnungZuGutschrift($id);
+                $this->FreigabeRechnungStornoGutschrift($newid);
+                $this->app->erp->RechnungProtokoll($id, 'Rechnung vollst&auml;ndig storniert');
+              }
+              else {
+                $newid = $this->CreateRechnungTeilStornoGutschrift($id, $positions);
+                $this->app->erp->RechnungProtokoll($id, 'Teilgutschrift zur Rechnung erstellt');
+                if($this->IsRechnungVollstaendigGutgeschrieben($id)) {
+                  $this->MarkRechnungNachTeilStornoStorniert($id);
+                }
+              }
+
+              $this->app->DB->Select("SELECT RELEASE_LOCK('$lockName')");
+              $lockReleased = true;
+              $msg = $this->app->erp->base64_url_encode('<div class="info">Die Gutschrift wurde erstellt.</div>');
+              $this->app->Location->execute('index.php?module=gutschrift&action=edit&id=' . $newid . '&msg=' . $msg);
+            }
+
+            if(!$lockReleased) {
+              $this->app->DB->Select("SELECT RELEASE_LOCK('$lockName')");
+            }
+          }
+        }
+      }
+    }
+
+    $this->app->Tpl->Set('TABTEXT', 'Rechnung stornieren');
+    $this->app->Tpl->Add('INFOTEXT', $msg);
+    $rechnungStornoMode = $submit === 'betrag_speichern' ? 'betrag' : 'positionen';
+    $taxRates = $this->GetRechnungSteuersaetze($id);
+    if($betragStornoSteuersatz === '' && count($taxRates) === 1) {
+      $betragStornoSteuersatz = (string)key($taxRates);
+    }
+    $this->app->Tpl->Set('RECHNUNG_STORNO_MODE_BETRAG_CHECKED', $rechnungStornoMode === 'betrag' ? 'checked' : '');
+    $this->app->Tpl->Set('RECHNUNG_STORNO_MODE_POSITIONEN_CHECKED', $rechnungStornoMode === 'positionen' ? 'checked' : '');
+    $this->app->Tpl->Set('BETRAGSTORNO_BETRAG', htmlspecialchars($betragStornoBetrag, ENT_QUOTES, 'UTF-8'));
+    $this->app->Tpl->Set('BETRAGSTORNO_BRUTTO_CHECKED', $betragStornoModus === 'brutto' ? 'checked' : '');
+    $this->app->Tpl->Set('BETRAGSTORNO_NETTO_CHECKED', $betragStornoModus === 'netto' ? 'checked' : '');
+    $this->app->Tpl->Set('BETRAGSTORNO_STEUERSATZ_OPTIONS', $this->RenderRechnungSteuersaetzeOptions($taxRates, $betragStornoSteuersatz));
+    $this->app->Tpl->Set('BETRAGSTORNO_GRUND', htmlspecialchars($betragStornoGrund, ENT_QUOTES, 'UTF-8'));
+    if($canUseTeilStorno) {
+      $this->app->YUI->TableSearch('TABLE', 'positionen_teilstorno_rechnung');
+    }
+    else {
+      $this->app->Tpl->Set('TABLE', '');
+    }
+    $this->app->Tpl->Parse('PAGE', 'rechnung_teilstorno.tpl');
+  }
+
+  protected function CanViewRechnungForCurrentUser($rechnung)
+  {
+    if(empty($rechnung)) {
+      return false;
+    }
+
+    if($this->app->erp->UserProjektRecht((int)$rechnung['projekt'])) {
+      return true;
+    }
+
+    if(!$this->app->erp->ModulVorhanden('vertriebscockpit')) {
+      return false;
+    }
+
+    $rechnungId = (int)$rechnung['id'];
+    $currentAddress = (int)$this->app->User->GetAdresse();
+    $currentUser = (int)$this->app->User->GetID();
+
+    return $this->app->DB->Select(
+      "SELECT a.id
+      FROM adresse a
+      INNER JOIN rechnung r ON a.id = r.adresse
+      WHERE r.id = '$rechnungId' AND a.vertrieb = '$currentAddress'
+      LIMIT 1"
+    ) > 0
+      || $this->app->DB->Select(
+        "SELECT usereditid
+        FROM rechnung
+        WHERE id = '$rechnungId' AND usereditid = '$currentUser'
+        LIMIT 1"
+      ) > 0;
+  }
+
+  protected function NormalizeRechnungSteuersatz($steuersatz)
+  {
+    return number_format(round((float)str_replace(',', '.', (string)$steuersatz), 4), 4, '.', '');
+  }
+
+  protected function GetRechnungSteuersaetze($rechnung)
+  {
+    $rechnung = (int)$rechnung;
+    $rows = $this->app->DB->SelectArr(
+      "SELECT rp.id,rp.steuersatz,rp.umsatzsteuer,rp.steuertext,rp.erloese,r.steuersatz_normal,r.steuersatz_ermaessigt
+      FROM rechnung_position rp
+      INNER JOIN rechnung r ON r.id = rp.rechnung
+      WHERE rp.rechnung = '$rechnung'
+      ORDER BY rp.sort, rp.id"
+    );
+    $taxRates = [];
+    if(empty($rows)) {
+      return $taxRates;
+    }
+
+    foreach($rows as $row) {
+      $taxRate = $this->ResolveRechnungPositionsSteuersatz($row);
+      $key = $this->NormalizeRechnungSteuersatz($taxRate);
+      if(isset($taxRates[$key])) {
+        continue;
+      }
+
+      $taxRates[$key] = [
+        'rate' => (float)$key,
+        'umsatzsteuer' => $this->NormalizeRechnungUmsatzsteuer($row['umsatzsteuer'], (float)$key),
+        'steuertext' => $row['steuertext'],
+        'erloese' => $row['erloese'],
+      ];
+    }
+
+    return $taxRates;
+  }
+
+  protected function ResolveRechnungPositionsSteuersatz($row)
+  {
+    if(isset($row['steuersatz']) && $row['steuersatz'] !== '' && (float)$row['steuersatz'] >= 0) {
+      return (float)$row['steuersatz'];
+    }
+
+    if($row['umsatzsteuer'] === 'befreit') {
+      return 0.0;
+    }
+
+    if($row['umsatzsteuer'] === 'ermaessigt') {
+      if(isset($row['steuersatz_ermaessigt']) && $row['steuersatz_ermaessigt'] !== '') {
+        return (float)$row['steuersatz_ermaessigt'];
+      }
+      return (float)$this->app->erp->Firmendaten('steuersatz_ermaessigt');
+    }
+
+    if(isset($row['steuersatz_normal']) && $row['steuersatz_normal'] !== '') {
+      return (float)$row['steuersatz_normal'];
+    }
+
+    return (float)$this->app->erp->Firmendaten('steuersatz_normal');
+  }
+
+  protected function NormalizeRechnungUmsatzsteuer($umsatzsteuer, $steuersatz)
+  {
+    if($umsatzsteuer === 'befreit' || $umsatzsteuer === 'ermaessigt' || $umsatzsteuer === 'normal') {
+      return $umsatzsteuer;
+    }
+
+    return $steuersatz == 0.0 ? 'befreit' : 'normal';
+  }
+
+  protected function RenderRechnungSteuersaetzeOptions($taxRates, $selectedTaxRate)
+  {
+    if(empty($taxRates)) {
+      return '<option value="">Keine Steuers&auml;tze gefunden</option>';
+    }
+
+    $html = '';
+    if(count($taxRates) > 1 || $selectedTaxRate === '') {
+      $html .= '<option value=""' . ($selectedTaxRate === '' ? ' selected' : '') . '>Bitte ausw&auml;hlen</option>';
+    }
+    foreach($taxRates as $key => $taxRate) {
+      $label = number_format((float)$taxRate['rate'], 2, ',', '.') . '%';
+      if($taxRate['umsatzsteuer'] !== '') {
+        $label .= ' (' . $taxRate['umsatzsteuer'] . ')';
+      }
+      $html .= '<option value="' . htmlspecialchars($key, ENT_QUOTES, 'UTF-8') . '"'
+        . ($key === $selectedTaxRate ? ' selected' : '')
+        . '>' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</option>';
+    }
+
+    return $html;
+  }
+
+  protected function CalculateCreditAmount($amount, $mode, $taxRate)
+  {
+    $amount = round((float)$amount, 2);
+    $taxRate = (float)$taxRate;
+
+    if($mode === 'netto') {
+      $net = $amount;
+      $tax = round($net * $taxRate / 100, 2);
+      $gross = round($net + $tax, 2);
+    }
+    else {
+      $gross = $amount;
+      $net = round($taxRate > -100 ? $gross / (1 + ($taxRate / 100)) : 0, 2);
+      $tax = round($gross - $net, 2);
+    }
+
+    return [
+      'netto' => $net,
+      'steuer' => $tax,
+      'brutto' => $gross,
+    ];
+  }
+
+  protected function GetRechnungBetragStornoArtikel($rechnung)
+  {
+    $rechnung = (int)$rechnung;
+    return $this->app->DB->SelectRow(
+      "SELECT a.id,a.nummer,a.projekt
+      FROM artikel a
+      LEFT JOIN rechnung r ON r.id = '$rechnung'
+      WHERE a.nummer = 'KULANZ'
+        AND IFNULL(a.geloescht, 0) = 0
+      ORDER BY IF(a.projekt = r.projekt, 0, 1), IF(a.projekt = 0, 0, 1), a.id
+      LIMIT 1"
+    );
+  }
+
+  protected function GetRechnungStornoPosition($rechnung, $position)
+  {
+    $rechnung = (int)$rechnung;
+    $position = (int)$position;
+    $creditedQtySql = "IFNULL((
+      SELECT SUM(gp.menge)
+      FROM gutschrift_position gp
+      INNER JOIN gutschrift g ON g.id = gp.gutschrift
+      WHERE g.rechnungid = '$rechnung'
+      AND g.status <> 'angelegt'
+      AND g.status <> 'storniert'
+      AND (
+        (rp.auftrag_position_id > 0 AND gp.auftrag_position_id = rp.auftrag_position_id)
+        OR (
+          rp.auftrag_position_id = 0
+          AND gp.artikel = rp.artikel
+          AND gp.nummer = rp.nummer
+          AND gp.bezeichnung = rp.bezeichnung
+          AND gp.sort = rp.sort
+        )
+      )
+    ), 0)";
+    $lineAmountSql = "(rp.menge * rp.preis * IF(rp.rabatt > 0, (100 - rp.rabatt) / 100, 1))";
+    $positionArr = $this->app->DB->SelectRow(
+      "SELECT rp.*,
+        $creditedQtySql AS gutgeschrieben,
+        GREATEST(rp.menge - $creditedQtySql, 0) AS maxmenge
+      FROM rechnung_position rp
+      WHERE rp.id = '$position' AND rp.rechnung = '$rechnung'
+      LIMIT 1"
+    );
+
+    return $positionArr;
+  }
+
+  protected function IsRechnungVollstorno($rechnung, $positions)
+  {
+    $rechnung = (int)$rechnung;
+    $allPositions = $this->app->DB->SelectArr(
+      "SELECT id FROM rechnung_position WHERE rechnung = '$rechnung'"
+    );
+    if(empty($allPositions) || count($allPositions) !== count($positions)) {
+      return false;
+    }
+
+    foreach($allPositions as $row) {
+      $posId = (int)$row['id'];
+      if(empty($positions[$posId])) {
+        return false;
+      }
+      $position = $positions[$posId]['position'];
+      if((float)$position['gutgeschrieben'] > 0.0001) {
+        return false;
+      }
+      if(abs((float)$positions[$posId]['menge'] - (float)$position['menge']) > 0.0001) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  protected function IsRechnungVollstaendigGutgeschrieben($rechnung)
+  {
+    $rechnung = (int)$rechnung;
+    $allPositions = $this->app->DB->SelectArr(
+      "SELECT id FROM rechnung_position WHERE rechnung = '$rechnung'"
+    );
+    if(empty($allPositions)) {
+      return false;
+    }
+
+    foreach($allPositions as $row) {
+      $position = $this->GetRechnungStornoPosition($rechnung, (int)$row['id']);
+      if(empty($position) || (float)$position['maxmenge'] > 0.0001) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  protected function MarkRechnungNachTeilStornoStorniert($rechnung)
+  {
+    $rechnung = (int)$rechnung;
+    if($rechnung <= 0) {
+      return;
+    }
+
+    $this->app->DB->Update(
+      "UPDATE rechnung SET schreibschutz = '1', status = 'storniert' WHERE id = '$rechnung' LIMIT 1"
+    );
+    $this->app->erp->RechnungProtokoll($rechnung, 'Rechnung durch Teilgutschriften vollst&auml;ndig storniert');
+  }
+
+  protected function CreateRechnungTeilStornoGutschrift($rechnung, $positions)
+  {
+    $rechnung = (int)$rechnung;
+    $adresse = $this->app->DB->Select("SELECT adresse FROM rechnung WHERE id='$rechnung' LIMIT 1");
+    $newid = $this->app->erp->CreateGutschrift($adresse);
+
+    if($this->app->erp->Firmendaten('dateienweiterfuehren')) {
+      $this->app->erp->WeiterfuehrenDateianhang('Rechnung', $rechnung, 'Gutschrift', $newid);
+    }
+
+    $arr = $this->app->DB->SelectRow("SELECT NOW() as datum,ihrebestellnummer,projekt, belegnr as rechnung,anschreiben,aktion,ansprechpartner,titel,lieferbedingung,bodyzusatz,
+      freitext,adresse,name,abteilung,unterabteilung,strasse,adresszusatz,plz,ort,land,ustid,email,telefon,telefax,betreff,kundennummer,versandart,zahlungsweise,zahlungszieltage,ust_befreit, keinsteuersatz, id as rechnungid,rabatt,rabatt1,rabatt2,rabatt3,rabatt4,rabatt5,gruppe,vertriebid,bearbeiterid,provision,provision_summe,bearbeiter,projektfiliale,typ,internebezeichnung,ohne_artikeltext,kurs,
+      `kundennummer_buchhaltung`,
+      zahlungszieltageskonto,zahlungszielskonto,firma,waehrung,steuersatz_normal,steuersatz_zwischen,steuersatz_ermaessigt,steuersatz_starkermaessigt,steuersatz_dienstleistung,'angelegt' as status,gln,kostenstelle, sprache FROM rechnung WHERE id='$rechnung' LIMIT 1");
+
+    $checkMail = $this->app->DB->Select("SELECT gutschrift_email FROM adresse WHERE id='$adresse'");
+    if($checkMail !== '') {
+      $arr['email'] = $checkMail;
+    }
+    $arr['deliverythresholdvatid'] = $this->app->DB->Select("SELECT deliverythresholdvatid FROM rechnung WHERE id='$rechnung' LIMIT 1");
+    $this->app->DB->UpdateArr('gutschrift', $newid, 'id', $arr, true);
+    $this->app->erp->LoadKurs($newid, 'gutschrift', $arr['projekt'], true);
+
+    $idtoid = [];
+    uasort($positions, function($a, $b) {
+      return (int)$a['position']['sort'] - (int)$b['position']['sort'];
+    });
+
+    foreach($positions as $data) {
+      $pos = $data['position'];
+      $oldPosId = (int)$pos['id'];
+      $this->app->DB->Insert("INSERT INTO gutschrift_position (id) VALUES('')");
+      $newposid = $this->app->DB->GetInsertID();
+      $idtoid[$oldPosId] = $newposid;
+      if(!empty($pos['explodiert_parent'])) {
+        $pos['explodiert_parent'] = isset($idtoid[$pos['explodiert_parent']]) ? $idtoid[$pos['explodiert_parent']] : 0;
+      }
+
+      $pos['gutschrift'] = $newid;
+      $pos['menge'] = $data['menge'];
+      $this->app->DB->UpdateArr('gutschrift_position', $newposid, 'id', $pos, true);
+      if(is_null($pos['steuersatz'])) {
+        $this->app->DB->Update("UPDATE gutschrift_position SET steuersatz = null WHERE id = '$newposid' LIMIT 1");
+      }
+    }
+
+    $ohnebriefpapier = $this->app->erp->Firmendaten('gutschrift_ohnebriefpapier');
+    $stornorechnung = $this->app->erp->Firmendaten('stornorechnung_standard');
+    $this->app->DB->Update("UPDATE gutschrift SET stornorechnung='$stornorechnung', ohne_briefpapier='$ohnebriefpapier' WHERE id='$newid' LIMIT 1");
+    $this->app->erp->GutschriftNeuberechnen($newid);
+    $this->app->erp->GutschriftProtokoll($newid, 'Teilgutschrift aus Rechnung erstellt');
+    $this->FreigabeRechnungStornoGutschrift($newid);
+
+    return $newid;
+  }
+
+  protected function CreateRechnungBetragStornoGutschrift($rechnung, $input)
+  {
+    $rechnung = (int)$rechnung;
+    $adresse = $this->app->DB->Select("SELECT adresse FROM rechnung WHERE id='$rechnung' LIMIT 1");
+    $newid = $this->app->erp->CreateGutschrift($adresse);
+
+    if($this->app->erp->Firmendaten('dateienweiterfuehren')) {
+      $this->app->erp->WeiterfuehrenDateianhang('Rechnung', $rechnung, 'Gutschrift', $newid);
+    }
+
+    $arr = $this->app->DB->SelectRow("SELECT NOW() as datum,ihrebestellnummer,projekt, belegnr as rechnung,anschreiben,aktion,ansprechpartner,titel,lieferbedingung,bodyzusatz,
+      freitext,adresse,name,abteilung,unterabteilung,strasse,adresszusatz,plz,ort,land,ustid,email,telefon,telefax,betreff,kundennummer,versandart,zahlungsweise,zahlungszieltage,ust_befreit, keinsteuersatz, id as rechnungid,rabatt,rabatt1,rabatt2,rabatt3,rabatt4,rabatt5,gruppe,vertriebid,bearbeiterid,provision,provision_summe,bearbeiter,projektfiliale,typ,internebezeichnung,ohne_artikeltext,kurs,
+      `kundennummer_buchhaltung`,
+      zahlungszieltageskonto,zahlungszielskonto,firma,waehrung,steuersatz_normal,steuersatz_zwischen,steuersatz_ermaessigt,steuersatz_starkermaessigt,steuersatz_dienstleistung,'angelegt' as status,gln,kostenstelle, sprache FROM rechnung WHERE id='$rechnung' LIMIT 1");
+
+    $checkMail = $this->app->DB->Select("SELECT gutschrift_email FROM adresse WHERE id='$adresse'");
+    if($checkMail !== '') {
+      $arr['email'] = $checkMail;
+    }
+    $arr['deliverythresholdvatid'] = $this->app->DB->Select("SELECT deliverythresholdvatid FROM rechnung WHERE id='$rechnung' LIMIT 1");
+    $this->app->DB->UpdateArr('gutschrift', $newid, 'id', $arr, true);
+    $this->app->erp->LoadKurs($newid, 'gutschrift', $arr['projekt'], true);
+
+    $tax = $input['tax'];
+    $amounts = $input['amounts'];
+    $artikel = $input['artikel'];
+    $sort = 1 + (int)$this->app->DB->Select("SELECT MAX(sort) FROM gutschrift_position WHERE gutschrift = '$newid' LIMIT 1");
+    $this->app->DB->Insert("INSERT INTO gutschrift_position (id) VALUES('')");
+    $newposid = $this->app->DB->GetInsertID();
+    $position = [
+      'gutschrift' => $newid,
+      'artikel' => (int)$artikel['id'],
+      'projekt' => (int)$arr['projekt'],
+      'bezeichnung' => $input['grund'],
+      'beschreibung' => '',
+      'nummer' => $artikel['nummer'],
+      'menge' => 1,
+      'preis' => $amounts['netto'],
+      'waehrung' => $arr['waehrung'],
+      'sort' => $sort,
+      'lieferdatum' => date('Y-m-d'),
+      'vpe' => '',
+      'umsatzsteuer' => $tax['umsatzsteuer'],
+      'status' => 'angelegt',
+      'steuersatz' => $tax['rate'],
+      'steuertext' => $tax['steuertext'],
+      'erloese' => $tax['erloese'],
+      'rabatt' => 0,
+      'keinrabatterlaubt' => 1,
+    ];
+    $this->app->DB->UpdateArr('gutschrift_position', $newposid, 'id', $position, true);
+
+    $ohnebriefpapier = $this->app->erp->Firmendaten('gutschrift_ohnebriefpapier');
+    $stornorechnung = $this->app->erp->Firmendaten('stornorechnung_standard');
+    $this->app->DB->Update("UPDATE gutschrift SET stornorechnung='$stornorechnung', ohne_briefpapier='$ohnebriefpapier' WHERE id='$newid' LIMIT 1");
+    $this->app->erp->GutschriftNeuberechnen($newid);
+    $this->app->erp->GutschriftProtokoll($newid, 'Betragsgutschrift aus Rechnung erstellt');
+    $this->FreigabeRechnungStornoGutschrift($newid);
+
+    return $newid;
+  }
+
+  protected function FreigabeRechnungStornoGutschrift($gutschrift)
+  {
+    $gutschrift = (int)$gutschrift;
+    $status = $this->app->DB->Select("SELECT status FROM gutschrift WHERE id='$gutschrift' LIMIT 1");
+    if($gutschrift > 0 && $status !== 'freigegeben') {
+      $this->app->erp->BelegFreigabe('gutschrift', $gutschrift);
+    }
   }
 
 
