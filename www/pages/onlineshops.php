@@ -264,7 +264,7 @@ INNER JOIN shopexport s ON
 
     $this->app->ActionHandler('artikellist', 'ShopexportArtikelList');
 
-    $this->app->ActionHandler('functioncall', 'ShopexportFunctionCall');
+    $this->app->ActionHandler('shopspecificfunction', 'ShopExportspecificfunction');
 
     $this->app->erp->Headlines('Shopexport');
     $this->app->ActionHandlerListen($app);
@@ -3150,17 +3150,19 @@ INNER JOIN shopexport s ON
       $moduleName = $this->app->DB->Select("SELECT modulename FROM shopexport WHERE id = '$id' LIMIT 1");
       try {
         $obj = $this->app->erp->LoadModul($moduleName);
-        if(method_exists($obj,'EinstellungenStruktur')){
-          $struktur = $obj->EinstellungenStruktur($id);
-          foreach ($struktur['felder'] as $fieldname => $fieldData){
-            if($fieldData['typ'] === 'password'){
-              if($fieldsToSave[$fieldname] === '***************') {
-                $oldData = json_decode($this->app->DB->Select('SELECT einstellungen_json FROM shopexport WHERE id=' . $id), true);
-                $fieldsToSave[$fieldname] = $oldData['felder'][$fieldname];
+        if (!empty($obj)) {
+            if(method_exists($obj,'EinstellungenStruktur')){
+              $struktur = $obj->EinstellungenStruktur($id);
+              foreach ($struktur['felder'] as $fieldname => $fieldData){
+                if($fieldData['typ'] === 'password'){
+                  if($fieldsToSave[$fieldname] === '***************') {
+                    $oldData = json_decode($this->app->DB->Select('SELECT einstellungen_json FROM shopexport WHERE id=' . $id), true);
+                    $fieldsToSave[$fieldname] = $oldData['felder'][$fieldname];
+                  }
+                  $fieldsToSave[$fieldname] = substr(md5($fieldsToSave[$fieldname]),0,15);
+                }
               }
-              $fieldsToSave[$fieldname] = substr(md5($fieldsToSave[$fieldname]),0,15);
             }
-          }
         }
       }catch(Exception $ex){
 //        $this->app->erp->LogFile('Fehlerhafter Aufruf in Modul: '.$moduleName);
@@ -4261,7 +4263,7 @@ INNER JOIN shopexport s ON
       return new JsonResponse(
         [
           'success' => true,
-          'input'   => !$useJson?$xml_data:json_encode($cart),
+          'input'   => !$useJson?$xml_data:json_encode($cart,JSON_PRETTY_PRINT),
           'object'  => '<pre>'.print_r($cart,true).'</pre>',
           'preview' => print_r($e->getMessage(),true),
         ]
@@ -4281,9 +4283,9 @@ INNER JOIN shopexport s ON
     return new JsonResponse(
       [
         'success' => true,
-        'input'   => !$useJson?$xml_data:json_encode($cart),
+        'input'   => !$useJson?$xml_data:json_encode($cart,JSON_PRETTY_PRINT),
         'object'  => '<pre>'.print_r($cart,true).'</pre>',
-        'preview' => !$useJson?$xmlDataPreview:json_encode($cart),
+        'preview' => !$useJson?$xmlDataPreview:json_encode($cart,JSON_PRETTY_PRINT),
       ]
     );
   }
@@ -4570,7 +4572,7 @@ INNER JOIN shopexport s ON
     }
     try{
       if($isJson) {
-        $xmlData = json_encode($newCart);
+        $xmlData = json_encode($newCart,JSON_PRETTY_PRINT);
       }
       else {
         $xmlData = $this->convertArrayToSimpleXml($newCart);
@@ -4996,11 +4998,12 @@ INNER JOIN shopexport s ON
         $this->logger->Log($level, 'Onlineshops (Shop '.$shopid.') '.$message, (array) $dump);
     }
 
-    public function ShopexportFunctionCall()
+    public function ShopExportspecificfunction()
     {
         $id = (int)$this->app->Secure->GetGET('id');
-        $function = $this->app->Secure->GetGET('function');
-        $result = $this->app->remote->RemoteCommand($id, $function);
+        $shopspecificfunction = $this->app->Secure->GetGET('function');
+        $data = array('shopid' => $id);
+        $result = $this->app->remote->RemoteCommand($id, $shopspecificfunction, $data);
         $action = $this->app->Secure->GetGET('redirect');
         $action = preg_replace('/[^a-z]/', '', $action);
         if (!empty($result['message'])) {

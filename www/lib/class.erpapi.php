@@ -3831,6 +3831,35 @@ title: 'Abschicken',
     }
   }
 
+  function LoadZahlungsweiseModul($module, $moduleId) {
+
+    $module = preg_replace('/[^a-zA-Z0-9\_]/','',$module);
+
+    if(empty($module)) {
+      return null;
+    }
+    if(strpos($module,'zahlungsweise_') === 0) {
+      $module = substr($module, 14);
+      if(empty($module)) {
+        return null;
+      }
+    }
+    if(strpos($module, '.') !== false || strpos($module, '/') !== false || strpos($module, '\\')) {
+      return null;
+    }
+    $path = dirname(__DIR__).'/lib/zahlungsweisen/'.$module.'.php';
+    if(!is_file($path)) {
+      return null;
+    }
+
+    include_once $path ;
+    $classname = 'Zahlungsweise_'.$module;
+    if(!class_exists($classname)) {
+      return null;
+    }
+    return new $classname($this->app, $moduleId);
+  }
+
   // @refactor Document Komponente
   function Zahlungsweisetext($doctype,$doctypeid)
   {
@@ -3884,28 +3913,16 @@ title: 'Abschicken',
 
       if($zahlungsweiseid['modul'] != '')
       {
-        $zahlungsweiseid['modul'] = preg_replace('/[^a-zA-Z0-9\_]/','',$zahlungsweiseid['modul']);
-        $pfad = dirname(__DIR__).'/lib/zahlungsweisen/'.$zahlungsweiseid['modul'].'.php';
-        if($zahlungsweiseid['modul'] && @is_file($pfad))
+        $obj = $this->LoadZahlungsweiseModul($zahlungsweiseid['modul'], $zahlungsweiseid['id']);
+        if($obj && method_exists($obj, 'GetZahlungsweiseText'))
         {
-          $classname = 'Zahlungsweise_'.$zahlungsweiseid['modul'];
-          if(!class_exists($classname)){
-            include_once($pfad);
-          }
-          if(class_exists($classname))
-          {
-            $obj = new $classname($this->app, $zahlungsweiseid['id']);
-            if($obj && method_exists($obj, 'GetZahlungsweiseText'))
-            {
-              $zahlungsweisetexttmp = $obj->GetZahlungsweiseText($doctype, $doctypeid);
-              if($zahlungsweisetexttmp!='') {
-                if($zahlungsweiseid['modul'] == 'tagxmonat'){
-                  $zahlungsweisetext = $zahlungsweisetexttmp."\r\n";
-                }
-                else{
-                  $zahlungsweisetext .= "\r\n".$zahlungsweisetexttmp."\r\n";
-                }
-              }
+          $zahlungsweisetexttmp = $obj->GetZahlungsweiseText($doctype, $doctypeid);
+          if($zahlungsweisetexttmp!='') {
+            if($zahlungsweiseid['modul'] == 'tagxmonat'){
+              $zahlungsweisetext = $zahlungsweisetexttmp."\r\n";
+            }
+            else{
+              $zahlungsweisetext .= "\r\n".$zahlungsweisetexttmp."\r\n";
             }
           }
         }
@@ -16121,23 +16138,7 @@ function Gegenkonto($ust_befreit,$ustid='', $doctype = '', $doctypeId = 0)
       LIMIT 1
     ")){
         foreach ($zahlungsweisenmodule as $zahlungsweisenmodul) {
-          $_zahlungsweisenmodul = preg_replace('/[^a-zA-Z0-9\_]/', '', $zahlungsweisenmodul['modul']);
-          if(!$_zahlungsweisenmodul){
-            continue;
-          }
-          if(!file_exists(__DIR__ . '/zahlungsweisen/' . $_zahlungsweisenmodul . '.php')){
-            continue;
-          }
-
-          $class = 'Zahlungsweise_' . $_zahlungsweisenmodul;
-          if(!class_exists($class)){
-            include_once __DIR__ . '/zahlungsweisen/' . $_zahlungsweisenmodul . '.php';
-          }
-          if(!class_exists($class)){
-            continue;
-          }
-
-          $obj = new $class($this->app, $zahlungsweisenmodul['id']);
+          $obj = $this->LoadZahlungsweiseModul($zahlungsweisenmodul['modul'], $zahlungsweisenmodul['id']);
           if($obj && method_exists($obj, 'ZahlungFreigeben')){
             $obj->ZahlungFreigeben($auftrag, $id);
           }
@@ -16565,6 +16566,24 @@ function Gegenkonto($ust_befreit,$ustid='', $doctype = '', $doctypeId = 0)
     var_dump($variable);
     $result = ob_get_clean();
     return $result;
+  }
+
+  function ImportvorlageImport($id = 0, $importvorlage = '', string $file_contents) {
+    $obj = $this->LoadModul('importvorlage');
+    if(!empty($obj) && method_exists($obj, 'ImportvorlageDo'))
+    {
+        if (empty($id)) {
+            $id = $this->app->DB->Select("SELECT id FROM importvorlage WHERE bezeichnung = '".$importvorlage."' LIMIT 1");
+            if (empty($id)) {
+                return(array('success' => false, 'message' => 'Importvorlage nicht gefunden'));
+            }
+        }
+        $tmpdatei = $this->app->erp->GetTMP().'importvorlageimport'.microtime(true);
+        file_put_contents($tmpdatei, $file_contents);
+        $result = $obj->ImportvorlageDo(parameter: array('id' => $id, 'stueckliste_csv' => $tmpdatei));
+        return($result);
+    }
+    return 0;
   }
 
   function ImportvorlageLog($importvorlage,$zeitstempel,$tabelle,$datensatz,$ersterdatensatz="0")
@@ -17635,6 +17654,9 @@ function CheckShopTabelle($artikel)
       $fastlane = 0;
     }
 
+    if (empty($warenkorb['zahlungsweise'])) {
+        $warenkorb['zahlungsweise'] = $this->app->DB->Select("SELECT zahlungsweise FROM adresse WHERE id = '$adresse' LIMIT 1");
+    }
 
     $warenkorb['zahlungsweise'] = str_replace(array('&uuml;','&Uuml;','&auml;','&Auml;','&ouml;','&Ouml;','&szlig;'),array('ü','Ü','ä','Ä','ö','Ö','ß'), $warenkorb['zahlungsweise']);
     if($zahlungsweisenmapping)
@@ -25525,45 +25547,40 @@ function MailSendFinal($from,$from_name,$to,$to_name,$betreff,$text,$files="",$p
       if(strlen(trim($this->Signatur($from))) > 0 && $eigenesignatur == 1)
       {
         $signaturtext = $this->Signatur($from);
-        if($this->isHTML($signaturtext))
-          $body = str_replace('\r\n',"\n",$text)."<br>".$signaturtext;
-        else
-          $body = str_replace('\r\n',"\n",$text)."<br>".nl2br($signaturtext);
       }else{
         if($projekt > 0 && $this->Projektdaten($projekt,"absendesignatur")!=""){
           $signaturtext = $this->Projektdaten($projekt,"absendesignatur");
-          if($this->isHTML($signaturtext))
-            $body = str_replace('\r\n',"\n",$text)."<br><br>".$signaturtext;
-          else
-            $body = str_replace('\r\n',"\n",$text)."<br><br>".$this->ReadyForPDF(nl2br($signaturtext));
         }else{
           if(strlen(trim($this->Signatur($from))) > 0 && $eigenesignatur == 0){
             $signaturtext = $this->Signatur($from);
-            if($this->isHTML($signaturtext))
-              $body = str_replace('\r\n',"\n",$text)."<br>".$signaturtext;
-            else
-              $body = str_replace('\r\n',"\n",$text)."<br>".nl2br($signaturtext);
-          }else{
-            $body = str_replace('\r\n',"\n",$text);
           }
         }
-
       }
-    } else {
-      $body = str_replace('\r\n',"\n",$text);
+      if (str_contains(strip_tags($text), strip_tags($signaturtext))) {
+        $signaturtext = null;
+      }
     }
 
-    {
-      $email_html_template = $this->Projektdaten($projekt, "email_html_template");
-      if($email_html_template == ""){
-        $email_html_template = $this->Firmendaten('email_html_template');
-      }
-    } 
-    if($email_html_template!="" && preg_match("/{CONTENT}/",$email_html_template))
+    $email_html_template = $this->Projektdaten($projekt, "email_html_template");
+    if($email_html_template == ""){
+      $email_html_template = $this->Firmendaten('email_html_template');
+    }
+    if($email_html_template!="")
     {
       $email_html_template = preg_replace('~\x{00a0}~siu',' ',$email_html_template);
       $email_html_template = preg_replace( "#((&nbsp;|\s|<br>)+$)#", "", trim($email_html_template) );
-      $body = str_replace('{CONTENT}',$body,$email_html_template);
+      if (
+        !str_contains($email_html_template,"{CONTENT}") &&
+        !str_contains($email_html_template,"{TEXT}") &&
+        !str_contains($email_html_template,"{FOOTER}")
+        ) {
+          $email_html_template = '{CONTENT}<br>'.$email_html_template;
+      }
+      $body = str_replace('{CONTENT}',$signaturtext?($text."<br>".$signaturtext):$text,$email_html_template);
+      $body = str_replace('{TEXT}',$text,$body);
+      $body = str_replace('{SIGNATUR}',"<br>".$signaturtext,$body);
+    } else {
+        $body = $text.$signaturtext?:("<br>".$signaturtext);
     }
 
     $sysMailerSent = false;
@@ -25574,7 +25591,7 @@ function MailSendFinal($from,$from_name,$to,$to_name,$betreff,$text,$files="",$p
     }
 
     if ($sysMailer !== null) {
-      
+
       $recipients = [];
 
       $to_csv = "";
@@ -25872,6 +25889,7 @@ function MailSendFinal($from,$from_name,$to,$to_name,$betreff,$text,$files="",$p
     $uebersetzung['dokument_telefon']['deutsch'] = "Telefon";
     $uebersetzung['dokument_email']['deutsch'] = "E-Mail";
     $uebersetzung['dokument_teillieferung']['deutsch'] = "Teillieferung von Auftrag";
+    $uebersetzung['dokument_hersteller']['deutsch'] = "Hersteller";
     $uebersetzung['dokument_herstellernummer']['deutsch'] = "Herstellernummer";
     $uebersetzung['dokument_abmessung']['deutsch'] = "Abmessung";
 
@@ -26058,7 +26076,7 @@ function MailSendFinal($from,$from_name,$to,$to_name,$betreff,$text,$files="",$p
     {
       return $wert;
     }
-    return $field; // Not found!
+    return "Beschriftung fehlt (".$this->beschriftung_sprache."): ".$field; // Not found!
   }
 
 
@@ -26318,8 +26336,20 @@ function Firmendaten($field,$projekt="")
     $signatur = str_replace('{MITARBEITER_MOBIL}',$data[0]['mobil'],$signatur);
     $signatur = str_replace('{MITARBEITER_EMAIL}',$data[0]['email'],$signatur);
 
-    if($this->isHTML($signatur)) return "<br><br>".$signatur;
-    return "\r\n\r\n".$this->ReadyForPDF($signatur);
+    if ($this->isHTML($signatur)) {
+        $newline = "<br>";
+    } else {
+        $newline = "\r\n";
+    }
+
+    if (strlen($signatur) > 0) {
+        if (preg_match("/[a-zA-Z0-9]/",$signatur[0])) {
+            $signatur = $newline.$signatur;
+        }
+    }
+
+    if($this->isHTML($signatur)) return $newline.$signatur;
+    return $newline.$this->ReadyForPDF($signatur);
   }
 
 
@@ -28792,7 +28822,11 @@ function Firmendaten($field,$projekt="")
           unset($backlink);
         }
 
-        $user = $this->app->DB->Select("SELECT usereditid FROM $modul WHERE id='$id' LIMIT 1");
+        try {
+            $user = $this->app->DB->Select("SELECT usereditid FROM $modul WHERE id='$id' LIMIT 1");
+        } catch (Exception $e) {
+            return false;
+        }
         if($this->app->DB->error())return false;
         $user_adresse = $this->app->DB->Select("SELECT adresse FROM user WHERE id='$user' LIMIT 1");
         $user_name = $this->app->DB->Select("SELECT name FROM adresse WHERE id='$user_adresse' LIMIT 1");
@@ -33730,6 +33764,9 @@ function Firmendaten($field,$projekt="")
 
       public function LoadSteuersaetze($id,$typ,$projekt='')
       {
+
+        $steuersatz_zielland = false;
+
         if($id <= 0 || empty($typ)) {
           return;
         }
@@ -33757,11 +33794,21 @@ function Firmendaten($field,$projekt="")
           $steuersatz_ermaessigt = $projekt_arr['steuersatz_ermaessigt'];
         }
         else {
-          $steuersatz_normal = $this->Firmendaten('steuersatz_normal');
-          $steuersatz_ermaessigt = $this->Firmendaten('steuersatz_ermaessigt');
+            $land = $this->app->DB->Select("SELECT land FROM $typ WHERE id = $id");
+            if($objSteuersaetze !== null && method_exists($objSteuersaetze, 'checkTaxesToSet')) {
+                $steuersaetze = $objSteuersaetze->getTaxesByCountry($land);
+            }
+            if (!empty($steuersaetze)) {
+                $steuersatz_normal = $steuersaetze['normal'];
+                $steuersatz_ermaessigt = $steuersaetze['ermaessigt'];
+                $steuersatz_zielland = true;
+            } else {
+                $steuersatz_normal = $this->Firmendaten('steuersatz_normal');
+                $steuersatz_ermaessigt = $this->Firmendaten('steuersatz_ermaessigt');
+            }
         }
 
-        $this->app->DB->Update("UPDATE $typ SET steuersatz_normal='$steuersatz_normal',steuersatz_ermaessigt='$steuersatz_ermaessigt' WHERE id='$id' LIMIT 1");
+        $this->app->DB->Update("UPDATE $typ SET steuersatz_normal='$steuersatz_normal',steuersatz_ermaessigt='$steuersatz_ermaessigt',steuersatz_zielland='$steuersatz_zielland' WHERE id='$id' LIMIT 1");
         $this->app->erp->WriteChangeLog();
       }
 
@@ -37660,6 +37707,20 @@ function Firmendaten($field,$projekt="")
         return ($date);
       }
 
+      function GetDateiDatumFormat($id)
+      {
+        $version = $this->app->DB->Select("SELECT MAX(version) FROM datei_version WHERE datei='$id'");
+        $date = $this->app->DB->Select("SELECT ".$this->app->erp->FormatDate("datum")." FROM datei_version WHERE datei='$id' AND version='$version' LIMIT 1");
+        return ($date);
+      }
+
+      function GetDateiDatumZeitFormat($id)
+      {
+        $version = $this->app->DB->Select("SELECT MAX(version) FROM datei_version WHERE datei='$id'");
+        $date = $this->app->DB->Select("SELECT ".$this->app->erp->FormatDateTime("datum")." FROM datei_version WHERE datei='$id' AND version='$version' LIMIT 1");
+        return ($date);
+      }
+
     /*
     * Retrieve files from stichwoerter and provide them in tmp for access
     */
@@ -37755,66 +37816,44 @@ function Firmendaten($field,$projekt="")
         return number_format(($size/1024/1024),2).' MB';
       }
 
-
+      function GetDateiMimeType($id) {
+        $path = $this->GetDateiPfad($id);
+        return(mime_content_type($path));
+      }
 
       function SendDatei($id,$versionid='') {
         session_write_close();
         ob_end_clean();
         set_time_limit(0);
 
-        if($versionid>0){
-          $newid = $versionid;
+        if($versionid > 0){
+            $path = $this->GetDateiPfadVersion($versionid);
+            $name = $this->app->DB->Select("SELECT dateiname FROM datei_version WHERE id='$versionid' LIMIT 1");
         } else{
-          $version = 0;
-          $newid = 0;
-          if((int)$id > 0) {
-            $version = $this->app->DB->Select("SELECT MAX(version) FROM datei_version WHERE datei='$id'");
-            $newid = $this->app->DB->Select("SELECT id FROM datei_version WHERE datei='$id' AND version='$version' LIMIT 1");
-          }
+            $path = $this->GetDateiPfad($id);
+            $name = $this->GetDateiName($id);
         }
-
-
-        $name = $newid <=0?'':$this->app->DB->Select("SELECT dateiname FROM datei_version WHERE id='$newid' LIMIT 1");
-        $path = '';
-        if($id > 0){
-          $path = $this->GetDateiPfad($id);
-          if(!@file_exists($path)) {
-            $path = '';
-          }
-        }
-        //$name=basename($path);
+        $file_size = filesize($path);
 
         //filenames in IE containing dots will screw up the
         //filename unless we add this
 
         if ( strpos ( $_SERVER [ 'HTTP_USER_AGENT' ], "MSIE" ) > 0 )
         {
-          $header_name =  'Content-Disposition: attachment; filename="' . rawurlencode ( $name ) . '"' ;
+          $header_name = 'Content-Disposition: attachment; filename="' . rawurlencode ( $name ) . '"' ;
         }
         else {
-          $header_name =   'Content-Disposition: attachment; filename*=UTF-8\'\'' . rawurlencode ( $name ) ;
+          $header_name = 'Content-Disposition: attachment; filename*=UTF-8\'\'' . rawurlencode ( $name ) ;
         }
 
-        $contenttype= $this->content_type($name);
-
-        //required, or it might try to send the serving     //document instead of the file
+        $contenttype = $this->content_type($name);
         header("Content-Type: $contenttype");
-        header("Content-Length: " .(string)(empty($path)?0:@filesize($path)) );
-        //header('Content-Disposition: inline; filename="'.$name.'"');
-        //$name = $this->Dateinamen($name);
-        //header('Content-Disposition: attachment; filename="'.$name.'"');
+        header("Content-Length: " .$file_size );
         header($header_name);
-
-        if(!empty($path) && $file = fopen($path, 'rb')){
-          while( (!feof($file)) && (connection_status()==0) ){
-            print(fread($file, 1024*8));
-            flush();
-          }
-          fclose($file);
-        }
+        if (ob_get_level()) ob_end_clean();
+        readfile($path);
         return((connection_status()==0) and !connection_aborted());
       }
-
 
       function content_type($name) {
         // Defines the content type based upon the extension of the file
@@ -37885,11 +37924,11 @@ function Firmendaten($field,$projekt="")
 
         if($modul !== ''){
           $zusaetzlicheStichworter = $this->app->DB->SelectArr(
-            "SELECT * FROM datei_stichwortvorlagen WHERE modul='$modul' OR modul='' ORDER by beschriftung"
+            "SELECT * FROM datei_stichwortvorlagen WHERE ausblenden <> 1 AND (modul='$modul' OR modul='') ORDER by beschriftung"
           );
           $cZusaetzlicheStichworter = empty($zusaetzlicheStichworter)?0:(!empty($zusaetzlicheStichworter)?count($zusaetzlicheStichworter):0);
           for($i=0;$i<$cZusaetzlicheStichworter;$i++){
-            $dateiTypen[] = ['wert' => $zusaetzlicheStichworter[$i]['beschriftung'], 'beschriftung' => $zusaetzlicheStichworter[$i]['beschriftung']];
+            $dateiTypen[] = ['wert' => $zusaetzlicheStichworter[$i]['kennung'], 'beschriftung' => $zusaetzlicheStichworter[$i]['beschriftung']];
           }
         }
 
@@ -37922,32 +37961,48 @@ function Firmendaten($field,$projekt="")
         return array('image'=>$this->GetDatei($dateiid),'filename'=>$filename,'extension'=>$path_info['extension']);
       }
 
-
-      function GetArtikelStandardbild($artikel,$return_dateiid=false)
+      function GetArtikelStandardbild(int $artikel, $return_file_contents=false)
       {
-        $dateiid = $this->app->DB->Select(sprintf("
-           SELECT dv.datei AS datei 
-           FROM datei_stichwoerter AS ds 
+
+        $result = array('fileid'=>0,'filename'=>'','extension'=>'','from_parent'=>false,'image'=>null);
+
+        if($artikel <= 0) {
+          return $result;
+        }
+        $sql = "
+           SELECT dv.datei AS datei
+           FROM datei_stichwoerter AS ds
            JOIN (SELECT datei, MAX(id) AS id FROM datei_version GROUP BY datei) AS dv ON dv.datei = ds.datei
            JOIN datei AS d on ds.datei = d.id
-           WHERE ds.objekt LIKE 'Artikel' AND d.geloescht = 0 AND
-            ds.parameter = '%d' AND 
-             (ds.subjekt LIKE 'Shopbild' OR ds.subjekt LIKE 'Druckbild' OR ds.subjekt LIKE 'Bild') 
-           ORDER BY ds.subjekt LIKE 'Shopbild' DESC, ds.subjekt LIKE 'Druckbild' DESC, ds.sort
-           LIMIT 1",
-           $artikel)
-        );
+           WHERE
+            ds.objekt LIKE 'Artikel' AND
+            d.geloescht = 0 AND
+            (ds.subjekt LIKE 'Shopbild' OR ds.subjekt LIKE 'Druckbild' OR ds.subjekt LIKE 'Bild') AND
+            ds.parameter =
+        ";
+        $order = " ORDER BY ds.subjekt LIKE 'Shopbild' DESC, ds.subjekt LIKE 'Druckbild' DESC, ds.sort LIMIT 1";
+        $result['fileid'] = $this->app->DB->Select($sql.$artikel.$order);
 
-        if($artikel <= 0 || $dateiid <= 0) {
-          return false;
+        if($result['fileid'] <= 0) {
+            $artikel = $this->app->DB->SELECT("SELECT variante, variante_von FROM artikel WHERE variante = 1 AND id = ".$artikel);
+            if ($artikel) {
+                $result['fileid'] = $this->app->DB->Select($sql.$artikel.$order);
+                if($result['fileid'] > 0) {
+                    $result['from_parent'] = true;
+                }
+            }
         }
-        if($return_dateiid) {
-          return $dateiid;
+        if($artikel <= 0) {
+          return $result;
         }
 
-        $filename = $this->GetDateiName($dateiid);
-        $path_info = pathinfo($filename);
-        return array('image'=>$this->GetDatei($dateiid),'filename'=>$filename,'extension'=>$path_info['extension']);
+        $result['filename'] = $this->GetDateiName($result['fileid']);
+        $result['extension'] = pathinfo($result['filename'])['extension'];
+
+        if ($return_file_contents) {
+            $result['image'] = $this->GetDatei($result['fileid']);
+        }
+        return $result;
       }
 
       function DeleteEmailbackupMail($id,$adresse="")
