@@ -17,6 +17,7 @@ use Xentral\Components\Pdf\Exception\PdfComponentExceptionInterface;
 use Xentral\Components\Pdf\PdfMerger;
 
 include __DIR__.'/_gen/gutschrift.php';
+require_once dirname(__DIR__).'/lib/class.documentlinkservice.php';
 
 class Gutschrift extends GenGutschrift
 {
@@ -525,6 +526,20 @@ class Gutschrift extends GenGutschrift
     if($rechnung=="" || $rechnung <=0 ) $rechnung = "-";
     $this->app->Tpl->Set(RECHNUNG,$rechnung);
 */
+    $documentLinkService = new DocumentLinkService($this->app);
+    $documentLinks = $documentLinkService->getRelatedDocuments('gutschrift', $id);
+    $documentLinkService->setTemplateDocumentLinks(
+      $this->app->Tpl,
+      $documentLinks,
+      [
+        'RECHNUNG' => 'rechnung',
+        'AUFTRAG' => 'auftrag',
+        'LIEFERSCHEIN' => 'lieferschein',
+        'RETOURE' => 'retoure',
+        'TRACKING' => 'versandpakete',
+      ]
+    );
+
       if($auftragArr[0]['ust_befreit']==0){
         $this->app->Tpl->Set('STEUER', "Inland");
       }
@@ -1357,6 +1372,12 @@ class Gutschrift extends GenGutschrift
         number_format($extsoll,2,',','.').
         ' &uuml;berein <input type="submit" name="resetextsoll" value="Festgeschriebene Summe zur&uuml;cksetzen" /></div></form>'
       );
+    }
+
+    $documentLinkService = new DocumentLinkService($this->app);
+    $documentMessage = $documentLinkService->renderRelatedDocumentsMessage('gutschrift', $id);
+    if($documentMessage !== '') {
+      $this->app->Tpl->Add('MESSAGE', $documentMessage);
     }
 
     parent::GutschriftEdit();

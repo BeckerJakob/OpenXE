@@ -25,6 +25,7 @@ use Xentral\Components\Pdf\Exception\PdfComponentExceptionInterface;
 use Xentral\Components\Pdf\PdfMerger;
 
 include '_gen/lieferschein.php';
+require_once dirname(__DIR__).'/lib/class.documentlinkservice.php';
 
 class Lieferschein extends GenLieferschein
 {
@@ -1086,6 +1087,19 @@ class Lieferschein extends GenLieferschein
     }
     else
       $this->app->Tpl->Set('RECHNUNG',"-");
+
+    $documentLinkService = new DocumentLinkService($this->app);
+    $documentLinks = $documentLinkService->getRelatedDocuments('lieferschein', $id);
+    $documentLinkService->setTemplateDocumentLinks(
+      $this->app->Tpl,
+      $documentLinks,
+      [
+        'AUFTRAG' => 'auftrag',
+        'RECHNUNG' => 'rechnung',
+        'RETOURE' => 'retoure',
+        'TRACKING' => 'versandpakete',
+      ]
+    );
     if($auftragArr[0]['ust_befreit']==0)
       $this->app->Tpl->Set('STEUER',"Inland");
     else if($auftragArr[0]['ust_befreit']==1)
@@ -2220,6 +2234,11 @@ class Lieferschein extends GenLieferschein
 
 
     $this->app->Tpl->Set('AKTIV_TAB1',"selected");
+    $documentLinkService = new DocumentLinkService($this->app);
+    $documentMessage = $documentLinkService->renderRelatedDocumentsMessage('lieferschein', $id);
+    if($documentMessage !== '') {
+      $this->app->Tpl->Add('MESSAGE', $documentMessage);
+    }
     parent::LieferscheinEdit();
     if($id > 0 && $this->app->DB->Select(
         sprintf(

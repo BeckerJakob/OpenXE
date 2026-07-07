@@ -25,7 +25,8 @@
 
 <tr valign="bottom"><td class="auftraginfo_cell">{|Lieferschein|}:</td><td class="auftraginfo_cell" nowrap>[LIEFERSCHEIN]</td><td class="auftraginfo_cell">{|Versteuerung|}:</td><td class="auftraginfo_cell">[STEUER]</td></tr>
 <tr><td class="auftraginfo_cell">{|Rechnung|}:</td><td class="auftraginfo_cell">[RECHNUNG]</td><td class="auftraginfo_cell">{|Eigene Umsatzsteuer ID|}:</td><td class="auftraginfo_cell">[DELIVERYTHRESHOLDVATID]</td></tr>
-<tr><td class="auftraginfo_cell">{|Tracking|}:</td><td class="auftraginfo_cell">[TRACKING]</td><td class="auftraginfo_cell">Status:</td><td class="auftraginfo_cell">[STATUS]</td></tr>
+<tr><td class="auftraginfo_cell">{|Retoure|}:</td><td class="auftraginfo_cell">[RETOURE]</td><td class="auftraginfo_cell">Status:</td><td class="auftraginfo_cell">[STATUS]</td></tr>
+<tr><td class="auftraginfo_cell">{|Tracking|}:</td><td class="auftraginfo_cell">[TRACKING]</td><td class="auftraginfo_cell"></td><td class="auftraginfo_cell"></td></tr>
 </table>
 
 </div>

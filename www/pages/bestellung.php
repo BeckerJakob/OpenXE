@@ -21,6 +21,7 @@ use Xentral\Modules\ScanArticle\Service\ScanArticleService;
 use Xentral\Modules\ScanArticle\Exception\ArticleNotFoundException;
 
 include '_gen/bestellung.php';
+require_once dirname(__DIR__).'/lib/class.documentlinkservice.php';
 
 class Bestellung extends GenBestellung
 {
@@ -886,6 +887,19 @@ class Bestellung extends GenBestellung
       }
     }
 
+    $documentLinkService = new DocumentLinkService($this->app);
+    $documentLinks = $documentLinkService->getRelatedDocuments('bestellung', $id);
+    $documentLinkService->setTemplateDocumentLinks(
+      $this->app->Tpl,
+      $documentLinks,
+      [
+        'PREISANFRAGE' => 'preisanfrage',
+        'AUFTRAG' => 'auftrag',
+        'LIEFERSCHEIN' => 'lieferschein',
+        'RECHNUNG' => 'rechnung',
+      ]
+    );
+
     // $nowarp-Parameter (letzter Parameter) auf false setzen, damit lange Artikeltitel umbrechen können
     $artikel = $table->DisplayNew("return", "Preis", "noAction", false, 0, 0, false);
 
@@ -1693,21 +1707,6 @@ GROUP BY
         $this->app->Tpl->Set('LIEFERANT',"&nbsp;&nbsp;&nbsp;Lf-Nr. ".$lieferantennummer);
     }
 
-    $check = $this->app->DB->SelectArr("SELECT a.belegnr, a.id, a.name
-    FROM bestellung_position bp 
-    INNER JOIN auftrag_position ap ON ap.id = bp.auftrag_position_id
-    INNER JOIN auftrag a ON ap.auftrag = a.id
-    WHERE bp.bestellung='$id' GROUP BY a.belegnr, a.id ORDER BY a.belegnr, a.id");
-    if($check)
-    {
-      $this->app->Tpl->Add('MESSAGE',"<div class=\"info\">Zu dieser Bestellung geh&ouml;r".((!empty($check)?count($check):0) == 1?'t der Auftrag':'en die Auftr&auml;ge:'));
-      foreach($check as $row)
-      {
-        $this->app->Tpl->Add('MESSAGE','&nbsp;<a href="index.php?module=auftrag&action=edit&id='.$row['id'].'" target="_blank"><input type="button" value="'.($row['belegnr']?$row['belegnr']:'Entwurf')." (".$row['name'].')" /></a>');
-      }
-      $this->app->Tpl->Add('MESSAGE',"</div>");
-    }
-
     if($this->app->Secure->GetPOST("speichern")!="")
     {
       $abweichenderechnungsadresse = $this->app->Secure->GetPOST("abweichenderechnungsadresse");
@@ -1849,6 +1848,11 @@ GROUP BY
     if($abweichendelieferadresse=="1") $this->app->Tpl->Set('ABWEICHENDELIEFERADRESSESTYLE',"");
 
     $this->app->Tpl->Set('AKTIV_TAB1',"selected");
+    $documentLinkService = new DocumentLinkService($this->app);
+    $documentMessage = $documentLinkService->renderRelatedDocumentsMessage('bestellung', $id);
+    if($documentMessage !== '') {
+      $this->app->Tpl->Add('MESSAGE', $documentMessage);
+    }
     parent::BestellungEdit();
 
     $this->app->erp->MessageHandlerStandardForm();	

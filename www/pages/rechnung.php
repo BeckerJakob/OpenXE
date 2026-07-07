@@ -17,6 +17,7 @@ use Xentral\Components\Pdf\Exception\PdfComponentExceptionInterface;
 use Xentral\Components\Pdf\PdfMerger;
 
 include_once __DIR__.'/_gen/rechnung.php';
+require_once dirname(__DIR__).'/lib/class.documentlinkservice.php';
 //require_once("Payment/DTA.php"); //PEAR
 
 class Rechnung extends GenRechnung
@@ -864,7 +865,18 @@ class Rechnung extends GenRechnung
       }
       
     }
-    
+    $documentLinkService = new DocumentLinkService($this->app);
+    $documentLinks = $documentLinkService->getRelatedDocuments('rechnung', $id);
+    $documentLinkService->setTemplateDocumentLinks(
+      $this->app->Tpl,
+      $documentLinks,
+      [
+        'AUFTRAG' => 'auftrag',
+        'LIEFERSCHEIN' => 'lieferschein',
+        'GUTSCHRIFT' => 'gutschrift',
+        'RETOURE' => 'retoure',
+      ]
+    );
 
 
     if($auftragArr[0]['ust_befreit']==0)
@@ -2207,6 +2219,12 @@ class Rechnung extends GenRechnung
           number_format($extsoll,2,',','.').
         ' &uuml;berein <input type="submit" name="resetextsoll" value="Festgeschriebene Summe zur&uuml;cksetzen" /></div></form>'
       );
+    }
+
+    $documentLinkService = new DocumentLinkService($this->app);
+    $documentMessage = $documentLinkService->renderRelatedDocumentsMessage('rechnung', $id);
+    if($documentMessage !== '') {
+      $this->app->Tpl->Add('MESSAGE', $documentMessage);
     }
 
     parent::RechnungEdit();

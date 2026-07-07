@@ -22,6 +22,7 @@ use Xentral\Modules\ScanArticle\Service\ScanArticleService;
 use Xentral\Modules\ScanArticle\Exception\ArticleNotFoundException;
 
 include '_gen/auftrag.php';
+require_once dirname(__DIR__).'/lib/class.documentlinkservice.php';
 
 
 
@@ -2793,6 +2794,23 @@ class Auftrag extends GenAuftrag
 
     $this->app->Tpl->Set('TRACKING',implode('<br>',$tracking_list));
 
+    $documentLinkService = new DocumentLinkService($this->app);
+    $documentLinks = $documentLinkService->getRelatedDocuments('auftrag', $id);
+    $documentLinkService->setTemplateDocumentLinks(
+      $this->app->Tpl,
+      $documentLinks,
+      [
+        'ANGEBOT' => 'angebot',
+        'LIEFERSCHEIN' => 'lieferschein',
+        'RECHNUNG' => 'rechnung',
+        'GUTSCHRIFT' => 'gutschrift',
+        'BESTELLUNG' => 'bestellung',
+        'RETOURE' => 'retoure',
+        'PREISANFRAGE' => 'preisanfrage',
+        'TRACKING' => 'versandpakete',
+      ]
+    );
+
 
 
 
@@ -5415,32 +5433,6 @@ class Auftrag extends GenAuftrag
         $this->app->Tpl->AddMessage('info',"Zu diesem Auftrag geh&ouml;ren Tickets: ".implode(', ',array_map('ticketlink', $tickets)), html: true);
     }
 
-    $check = $this->app->DB->SelectPairs(
-      "SELECT b.id, b.belegnr
-      FROM auftrag_position ap
-      INNER JOIN bestellung_position bp ON ap.id = bp.auftrag_position_id
-      INNER JOIN bestellung b ON bp.bestellung = b.id
-      WHERE ap.auftrag='$id'
-      GROUP BY b.belegnr, b.id
-      ORDER BY b.belegnr, b.id"
-    );
-    if($check) {
-      $this->app->Tpl->Add(
-        'MESSAGE',
-        "<div class=\"info\">Zu diesem Auftrag geh&ouml;r"
-        .((!empty($check)?count($check):0) == 1?'t':'en')
-        ." die Bestellung".((!empty($check)?count($check):0) == 1?':':'en:')
-      );
-      foreach($check as $supplierOrderId => $supplieryNumber) {
-        $this->app->Tpl->Add('MESSAGE','&nbsp;<a href="index.php?module=bestellung&action=edit&id='
-          .$supplierOrderId.'" target="_blank"><input type="button" value="'
-          .($supplieryNumber?$supplieryNumber:'ENTWURF').'" /></a>'
-        );
-      }
-      $this->app->Tpl->Add('MESSAGE',"</div>");
-    }
-
-
     if($this->app->erp->ModulVorhanden('lieferkette')) {
       $auftraglieferkette = $this->app->DB->Select(
         "SELECT l.auftrag
@@ -5614,57 +5606,7 @@ class Auftrag extends GenAuftrag
     }
 
     $this->AuftragAmpel($id,'AMPEL');
-    $optional = '';
-
-      $lieferscheine = $this->app->DB->SelectPairs(
-        "SELECT id,belegnr FROM lieferschein WHERE auftragid='$id' AND auftragid > 0"
-      );
-      $deliveryNoteIds = array_keys($lieferscheine);
-      $deliveryNoteIdsImplode = implode(',', $deliveryNoteIds);
-      if(!empty($lieferscheine)) {
-        foreach($lieferscheine as $deliveryNoteId => $deliveryNoteNumber) {
-          $optional .= "&nbsp;<input type=\"button\" value=\"LS "
-            .$deliveryNoteNumber
-            ."\" onclick=\"window.location.href='index.php?module=lieferschein&action=edit&id="
-            .$deliveryNoteId."'\">";
-        }
-      }
-
-      $rechnungid = $this->app->DB->Select("SELECT rechnungid FROM auftrag WHERE id = '$id' LIMIT 1");
-      $rechnungen = $this->app->DB->SelectPairs(
-        "SELECT id,belegnr FROM rechnung WHERE (auftragid='$id' AND auftragid > 0) OR id = '$rechnungid'"
-      );
-      if(!empty($rechnungen)) {
-        foreach($rechnungen as $invoiceId => $invoiceNumber) {
-          $optional .= "&nbsp;<input type=\"button\" value=\"RE "
-            .$invoiceNumber
-            ."\" onclick=\"window.location.href='index.php?module=rechnung&action=edit&id="
-            .$invoiceId."'\">";
-        }
-      }
-
-      // #106 --- START: GUTSCHRIFTEN LADEN ---
-      $foundInvoiceIds = array_keys($rechnungen);
-
-    if(!empty($foundInvoiceIds)) {
-        $idList = implode(',', $foundInvoiceIds);
-
-        $gutschriften = $this->app->DB->SelectPairs(
-            "SELECT id, belegnr FROM gutschrift WHERE rechnungid IN ($idList)"
-        );
-
-        // 4. Buttons generieren
-        if(!empty($gutschriften)) {
-            foreach($gutschriften as $gsId => $gsNumber) {
-                $optional .= "&nbsp;<input type=\"button\" value=\"GS "
-                    .$gsNumber
-                    ."\" onclick=\"window.location.href='index.php?module=gutschrift&action=edit&id="
-                    .$gsId."'\">";
-            }
-        }
-    }
-
-    // --- ENDE: GUTSCHRIFTEN LADEN ---
+    $documentLinkService = new DocumentLinkService($this->app);
 
       $projekt = $this->app->DB->Select("SELECT projekt from auftrag where id = '$id' LIMIT 1");
 
@@ -5674,16 +5616,8 @@ class Auftrag extends GenAuftrag
         if ($schreibschutz=='1' && $this->app->erp->RechteVorhanden('auftrag','schreibschutz')) {
           $this->app->Tpl->Add(
             'MESSAGE',
-            "<div class=\"warning\">Dieser Auftrag ist schreibgesch&uuml;tzt und darf daher nicht bearbeitet werden!&nbsp;<input type=\"button\" value=\"Schreibschutz entfernen\" onclick=\"if(!confirm('Soll der Schreibschutz f&uuml;r diesen Auftrag wirklich entfernt werden?')) return false;else window.location.href='index.php?module=auftrag&action=schreibschutz&id=$id';\">&nbsp;$optional</div>"
+            "<div class=\"warning\">Dieser Auftrag ist schreibgesch&uuml;tzt und darf daher nicht bearbeitet werden!&nbsp;<input type=\"button\" value=\"Schreibschutz entfernen\" onclick=\"if(!confirm('Soll der Schreibschutz f&uuml;r diesen Auftrag wirklich entfernt werden?')) return false;else window.location.href='index.php?module=auftrag&action=schreibschutz&id=$id';\"></div>"
           );
-        }
-        else {
-            if(isset($optional) && (string)$optional !== '') {
-                $this->app->Tpl->Add(
-                    'MESSAGE',
-                    "<div class=\"warning\">Zu diesem Auftrag gibt es folgende Dokumente. &nbsp;$optional</div>"
-                );
-            }
         }
     }
 
@@ -5938,6 +5872,10 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
         number_format($extsoll,2,',','.').
         ' &uuml;berein <input type="submit" name="resetextsoll" value="Festgeschriebene Summe zur&uuml;cksetzen" /></div></form>'
       );
+    }
+    $documentMessage = $documentLinkService->renderRelatedDocumentsMessage('auftrag', $id);
+    if($documentMessage !== '') {
+      $this->app->Tpl->Add('MESSAGE', $documentMessage);
     }
     parent::AuftragEdit();
     $this->app->erp->CheckBearbeiter($id,'auftrag');
