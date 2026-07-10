@@ -33090,7 +33090,7 @@ function Firmendaten($field,$projekt="")
           $this->WeiterfuehrenDateianhang("Rechnung", $id, "Gutschrift", $newid);
         }
 
-        $arr = $this->app->DB->SelectArr("SELECT NOW() as datum,ihrebestellnummer,projekt, belegnr as rechnung,anschreiben,aktion,ansprechpartner,titel,lieferbedingung,bodyzusatz,
+        $arr = $this->app->DB->SelectArr("SELECT NOW() as datum,IFNULL(NULLIF((SELECT a.belegnr FROM auftrag AS a WHERE a.id = `rechnung`.`auftragid` AND a.belegnr <> '0' LIMIT 1), ''), ihrebestellnummer) AS ihrebestellnummer,projekt, belegnr as rechnung,anschreiben,aktion,ansprechpartner,titel,lieferbedingung,bodyzusatz,
             freitext,adresse,name,abteilung,unterabteilung,strasse,adresszusatz,plz,ort,land,ustid,email,telefon,telefax,betreff,kundennummer,versandart,zahlungsweise,zahlungszieltage,ust_befreit, keinsteuersatz, id as rechnungid,rabatt,rabatt1,rabatt2,rabatt3,rabatt4,rabatt5,gruppe,vertriebid,bearbeiterid,provision,provision_summe,bearbeiter,projektfiliale,typ,internebezeichnung,ohne_artikeltext,kurs,
             `kundennummer_buchhaltung`,
             zahlungszieltageskonto,zahlungszielskonto,firma,waehrung,steuersatz_normal,steuersatz_zwischen,steuersatz_ermaessigt,steuersatz_starkermaessigt,steuersatz_dienstleistung,'angelegt' as status,gln,kostenstelle, sprache FROM rechnung WHERE id='$id' LIMIT 1");
