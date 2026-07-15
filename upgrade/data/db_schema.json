@@ -48351,6 +48351,17 @@
                     "Comment": ""
                 },
                 {
+                    "Field": "format",
+                    "Type": "int",
+                    "Collation": null,
+                    "Null": "YES",
+                    "Key": "",
+                    "Default": null,
+                    "Extra": "",
+                    "Privileges": "select,insert,update,references",
+                    "Comment": ""
+                },
+                {
                     "Field": "internebemerkung",
                     "Type": "text",
                     "Collation": "utf8mb3_general_ci",

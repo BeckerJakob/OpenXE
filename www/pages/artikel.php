@@ -1390,10 +1390,9 @@ class Artikel extends GenArtikel {
         }
         if($more_data10 == 1){
             $beschreibung_sql = "'<br><i>',
-                a.anabregs_text,
+                COALESCE(a.anabregs_text,''),
                 '</i>',";
         }
-
         $sql .= "
               a.nummer as nummer, 
               CONCAT(
