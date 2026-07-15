@@ -510,6 +510,10 @@
                               <td>[USTID][MSGUSTID]</td>
                            </tr>
                            <tr>
+                              <td>&nbsp;</td>
+                              <td><label><input type="checkbox" name="ustid_update_adresse" value="1" checked> {|USt-ID auch im Kundenstamm aktualisieren|}</label><input type="hidden" name="ustid_force_recalculate_confirmed" id="ustid_force_recalculate_confirmed" value="0"></td>
+                           </tr>
+                           <tr>
                               <td>{|Besteuerung|}:</td>
                               <td>[UST_BEFREIT][MSGUST_BEFREIT]&nbsp;[KEINSTEUERSATZ][MSGKEINSTEUERSATZ]&nbsp;{|ohne Hinweis bei EU oder Export|}</td>
                            </tr>

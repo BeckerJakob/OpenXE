@@ -2921,6 +2921,47 @@ class Rechnung extends GenRechnung
       $this->app->Tpl->Add('MESSAGE', $documentMessage);
     }
 
+    $invoiceTaxBefore = [];
+    if($id > 0) {
+      $invoiceTaxBefore = $this->app->DB->SelectRow(
+        sprintf(
+          'SELECT ustid, ust_befreit, schreibschutz, status, versendet FROM rechnung WHERE id = %d LIMIT 1',
+          (int)$id
+        )
+      );
+      $taxForceRequired = !empty($invoiceTaxBefore)
+        && (
+          (string)$invoiceTaxBefore['schreibschutz'] === '1'
+          || (string)$invoiceTaxBefore['status'] === 'versendet'
+          || (string)$invoiceTaxBefore['versendet'] === '1'
+        );
+      $this->app->Tpl->Add(
+        'JAVASCRIPT',
+        sprintf(
+          "\$(document).ready(function() {
+            var initialUstId = %s;
+            var initialUstBefreit = %s;
+            var forceRequired = %s;
+            \$('#eprooform').on('submit', function() {
+              var ustId = \$.trim(\$('[name=\"ustid\"]').val() || '');
+              var ustBefreit = \$('[name=\"ust_befreit\"]').val() || '';
+              if(forceRequired && \$('#ustid_force_recalculate_confirmed').val() !== '1'
+                && (ustId !== initialUstId || ustBefreit !== initialUstBefreit)
+              ) {
+                if(!confirm('Die USt-ID / Besteuerung wird auf einer versendeten oder geschuetzten Rechnung geaendert. OpenXE berechnet Rechnung und verknuepfte Belege danach neu. Fortfahren?')) {
+                  return false;
+                }
+                \$('#ustid_force_recalculate_confirmed').val('1');
+              }
+            });
+          });",
+          json_encode(trim((string)$invoiceTaxBefore['ustid'])),
+          json_encode(isset($invoiceTaxBefore['ust_befreit']) ? trim((string)$invoiceTaxBefore['ust_befreit']) : ''),
+          $taxForceRequired ? 'true' : 'false'
+        )
+      );
+    }
+
     parent::RechnungEdit();
     $savePosted = $speichern!='';
     $saveEvent = $savePosted;
@@ -2941,6 +2982,11 @@ class Rechnung extends GenRechnung
       if(!empty($invoiceLinkData)) {
         $invoiceUstId = trim((string)$invoiceLinkData['ustid']);
         $invoiceTaxExempt = isset($invoiceLinkData['ust_befreit']) ? trim((string)$invoiceLinkData['ust_befreit']) : '';
+        $invoiceTaxChanged = !empty($invoiceTaxBefore)
+          && (
+            trim((string)$invoiceTaxBefore['ustid']) !== $invoiceUstId
+            || (isset($invoiceTaxBefore['ust_befreit']) ? trim((string)$invoiceTaxBefore['ust_befreit']) : '') !== $invoiceTaxExempt
+          );
         $linkedOrderIds = [];
         $linkedOrderId = (int)$invoiceLinkData['auftragid'];
         if($linkedOrderId > 0) {
@@ -3104,6 +3150,28 @@ class Rechnung extends GenRechnung
               $linkedInvoiceIdList
             )
           );
+        }
+        if($invoiceTaxChanged) {
+          if($this->app->Secure->GetPOST('ustid_update_adresse') !== '') {
+            $this->app->erp->BelegUstIdInAdresseUebernehmen('rechnung', $id);
+          }
+          if(!empty($linkedOrderIds)) {
+            foreach($linkedOrderIds as $linkedOrderId) {
+              $this->app->erp->BelegSteuerlichNeuaufbauen('auftrag', (int)$linkedOrderId, true, true);
+              if($this->app->Secure->GetPOST('ustid_update_adresse') !== '') {
+                $this->app->erp->BelegUstIdInAdresseUebernehmen('auftrag', (int)$linkedOrderId);
+              }
+            }
+          }
+          if(!empty($linkedInvoiceIds)) {
+            foreach($linkedInvoiceIds as $linkedInvoiceId) {
+              $this->app->erp->BelegSteuerlichNeuaufbauen('rechnung', (int)$linkedInvoiceId, true, true);
+              if($this->app->Secure->GetPOST('ustid_update_adresse') !== '') {
+                $this->app->erp->BelegUstIdInAdresseUebernehmen('rechnung', (int)$linkedInvoiceId);
+              }
+            }
+          }
+          $this->app->Tpl->Add('MESSAGE', '<div class="info">USt-ID / Besteuerung wurde ge&auml;ndert. Rechnung und verkn&uuml;pfte Belege wurden steuerlich neu berechnet.</div>');
         }
       }
     }

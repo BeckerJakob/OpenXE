@@ -432,6 +432,7 @@ function abweichend(cmd)
 <fieldset><legend>UST-Pr&uuml;fung</legend>
 <table width="100%">
 <tr><td width="200">{|UST ID|}:</td><td>[USTID][MSGUSTID]</td></tr>
+<tr><td>&nbsp;</td><td><label><input type="checkbox" name="ustid_update_adresse" value="1" checked> {|USt-ID auch im Kundenstamm aktualisieren|}</label><input type="hidden" name="ustid_force_recalculate_confirmed" id="ustid_force_recalculate_confirmed" value="0"></td></tr>
 <tr>
     <td>
         {|Besteuerung|}:

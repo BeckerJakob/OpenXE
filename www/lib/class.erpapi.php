@@ -34279,6 +34279,173 @@ function Firmendaten($field,$projekt="")
         $this->ANABREGSNeuberechnen($id,"auftrag",$force);
       }
 
+      function BelegSteuerlichNeuaufbauen($typ, $id, $force = false, $resetExtsoll = false)
+      {
+        $id = (int)$id;
+        if($id <= 0 || !in_array($typ, ['auftrag', 'rechnung'], true)) {
+          return false;
+        }
+
+        $belegarr = $this->app->DB->SelectRow(
+          sprintf(
+            'SELECT id, belegnr, adresse, ustid, ust_befreit, schreibschutz, extsoll FROM `%s` WHERE id = %d LIMIT 1',
+            $typ, $id
+          )
+        );
+        if(empty($belegarr)) {
+          return false;
+        }
+
+        $wasProtected = (string)$belegarr['schreibschutz'] === '1';
+        if($wasProtected && !$force) {
+          return false;
+        }
+
+        if($wasProtected) {
+          $this->app->DB->Update(
+            sprintf(
+              'UPDATE `%s` SET schreibschutz = 0 WHERE id = %d LIMIT 1',
+              $typ, $id
+            )
+          );
+        }
+
+        if($resetExtsoll && isset($belegarr['extsoll']) && (float)$belegarr['extsoll'] !== 0.0) {
+          $this->app->DB->Update(
+            sprintf(
+              'UPDATE `%s` SET extsoll = 0 WHERE id = %d LIMIT 1',
+              $typ, $id
+            )
+          );
+        }
+
+        $this->LoadSteuersaetzeWaehrung($id, $typ);
+        $this->BelegPositionenSteuerlichNeuaufbauen($typ, $id);
+
+        if($typ === 'auftrag') {
+          $this->AuftragNeuberechnen($id, $force || $wasProtected);
+          $this->AuftragEinzelnBerechnen($id);
+          if((int)$this->app->DB->Select("SELECT ust_befreit FROM auftrag WHERE id = '$id' LIMIT 1") === 1
+            && trim((string)$this->app->DB->Select("SELECT ustid FROM auftrag WHERE id = '$id' LIMIT 1")) !== ''
+          ) {
+            $this->app->DB->Update("UPDATE auftrag SET ust_ok = 0 WHERE id = '$id' LIMIT 1");
+          }
+          $this->AuftragProtokoll($id, 'USt-ID / Besteuerung geaendert: Steuer und Summen neu berechnet');
+        } else {
+          $this->RechnungNeuberechnen($id, $force || $wasProtected);
+          $this->RechnungProtokoll($id, 'USt-ID / Besteuerung geaendert: Steuer und Summen neu berechnet');
+        }
+
+        if($wasProtected) {
+          $this->app->DB->Update(
+            sprintf(
+              'UPDATE `%s` SET schreibschutz = 1 WHERE id = %d LIMIT 1',
+              $typ, $id
+            )
+          );
+        }
+
+        return true;
+      }
+
+      function BelegPositionenSteuerlichNeuaufbauen($typ, $id)
+      {
+        $id = (int)$id;
+        if($id <= 0 || !in_array($typ, ['auftrag', 'rechnung'], true)) {
+          return;
+        }
+
+        $postyp = $typ.'_position';
+        $positions = $this->app->DB->SelectArr(
+          sprintf(
+            'SELECT id, erloesefestschreiben FROM `%s` WHERE `%s` = %d',
+            $postyp, $typ, $id
+          )
+        );
+        if(empty($positions)) {
+          return;
+        }
+
+        $method = ucfirst($typ).'MitUmsatzeuer';
+        $mitUmsatzsteuer = method_exists($this, $method) ? $this->$method($id) : true;
+
+        foreach($positions as $position) {
+          $positionId = (int)$position['id'];
+          if($positionId <= 0) {
+            continue;
+          }
+
+          $this->app->DB->Update(
+            sprintf(
+              'UPDATE `%s` SET steuersatz = NULL WHERE id = %d LIMIT 1',
+              $postyp, $positionId
+            )
+          );
+
+          $steuersatz = null;
+          $steuertext = '';
+          $erloese = '';
+          $this->GetSteuerPosition($typ, $positionId, $steuersatz, $steuertext, $erloese);
+          if(!$mitUmsatzsteuer) {
+            $steuersatz = 0;
+          }
+
+          $steuersatzSql = ($steuersatz === null || $steuersatz === '')
+            ? 'NULL'
+            : sprintf('%F', (float)$steuersatz);
+          $updates = [
+            'steuersatz = '.$steuersatzSql,
+            sprintf("steuertext = '%s'", $this->app->DB->real_escape_string((string)$steuertext)),
+          ];
+          if((string)$position['erloesefestschreiben'] !== '1') {
+            $updates[] = sprintf("erloese = '%s'", $this->app->DB->real_escape_string((string)$erloese));
+          }
+
+          $this->app->DB->Update(
+            sprintf(
+              'UPDATE `%s` SET %s WHERE id = %d LIMIT 1',
+              $postyp, implode(', ', $updates), $positionId
+            )
+          );
+        }
+
+        $this->BerechneDeckungsbeitrag($id, $typ);
+      }
+
+      function BelegUstIdInAdresseUebernehmen($typ, $id)
+      {
+        $id = (int)$id;
+        if($id <= 0 || !in_array($typ, ['auftrag', 'rechnung'], true)) {
+          return false;
+        }
+
+        $beleg = $this->app->DB->SelectRow(
+          sprintf(
+            'SELECT adresse, ustid FROM `%s` WHERE id = %d LIMIT 1',
+            $typ, $id
+          )
+        );
+        if(empty($beleg)) {
+          return false;
+        }
+        $adresse = (int)$beleg['adresse'];
+        if($adresse <= 0) {
+          return false;
+        }
+
+        $ustid = $this->app->DB->real_escape_string(trim((string)$beleg['ustid']));
+        $ustBefreit = (int)$this->AdresseUSTCheck($adresse);
+        $this->app->DB->Update(
+          sprintf(
+            "UPDATE adresse SET ustid = '%s', ust_befreit = %d WHERE id = %d LIMIT 1",
+            $ustid, $ustBefreit, $adresse
+          )
+        );
+        $this->ObjektProtokoll('adresse', $adresse, 'adresse_ustid_update', 'USt-ID aus '.ucfirst($typ).' uebernommen');
+
+        return true;
+      }
+
 
 
       function GutschriftNeuberechnen($id)
@@ -37085,9 +37252,9 @@ function Firmendaten($field,$projekt="")
         return number_format($this->GutschriftZwischensummeSteuersaetzeBrutto2($id,$art),",");
       }
 
-      function RechnungNeuberechnen($id)
+      function RechnungNeuberechnen($id,$force=false)
       {
-        $this->ANABREGSNeuberechnen($id,"rechnung");
+        $this->ANABREGSNeuberechnen($id,"rechnung",$force);
       }
 
 

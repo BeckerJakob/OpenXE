@@ -5859,6 +5859,42 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
     if($documentMessage !== '') {
       $this->app->Tpl->Add('MESSAGE', $documentMessage);
     }
+    $orderTaxBefore = [];
+    if($id > 0) {
+      $orderTaxBefore = $this->app->DB->SelectRow(
+        sprintf(
+          'SELECT ustid, ust_befreit, schreibschutz, status FROM auftrag WHERE id = %d LIMIT 1',
+          (int)$id
+        )
+      );
+      $taxForceRequired = !empty($orderTaxBefore)
+        && ((string)$orderTaxBefore['schreibschutz'] === '1' || (string)$orderTaxBefore['status'] === 'abgeschlossen');
+      $this->app->Tpl->Add(
+        'JAVASCRIPT',
+        sprintf(
+          "\$(document).ready(function() {
+            var initialUstId = %s;
+            var initialUstBefreit = %s;
+            var forceRequired = %s;
+            \$('#eprooform').on('submit', function() {
+              var ustId = \$.trim(\$('[name=\"ustid\"]').val() || '');
+              var ustBefreit = \$('[name=\"ust_befreit\"]').val() || '';
+              if(forceRequired && \$('#ustid_force_recalculate_confirmed').val() !== '1'
+                && (ustId !== initialUstId || ustBefreit !== initialUstBefreit)
+              ) {
+                if(!confirm('Die USt-ID / Besteuerung wird auf einem abgeschlossenen oder geschuetzten Auftrag geaendert. OpenXE berechnet Auftrag und verknuepfte Rechnungen danach neu. Fortfahren?')) {
+                  return false;
+                }
+                \$('#ustid_force_recalculate_confirmed').val('1');
+              }
+            });
+          });",
+          json_encode(trim((string)$orderTaxBefore['ustid'])),
+          json_encode(isset($orderTaxBefore['ust_befreit']) ? trim((string)$orderTaxBefore['ust_befreit']) : ''),
+          $taxForceRequired ? 'true' : 'false'
+        )
+      );
+    }
     parent::AuftragEdit();
     $this->app->erp->CheckBearbeiter($id,'auftrag');
     $this->app->erp->CheckVertrieb($id,'auftrag');
@@ -5878,6 +5914,11 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
       );
       $orderUstId = trim((string)$orderSyncData['ustid']);
       $orderTaxExempt = isset($orderSyncData['ust_befreit']) ? trim((string)$orderSyncData['ust_befreit']) : '';
+      $orderTaxChanged = !empty($orderTaxBefore)
+        && (
+          trim((string)$orderTaxBefore['ustid']) !== $orderUstId
+          || (isset($orderTaxBefore['ust_befreit']) ? trim((string)$orderTaxBefore['ust_befreit']) : '') !== $orderTaxExempt
+        );
       $linkedInvoiceIds = [];
       $orderNumber = trim((string)$orderSyncData['belegnr']);
       $invoiceOrderCondition = sprintf('auftragid = %d', (int)$id);
@@ -5961,6 +6002,21 @@ Die Gesamtsumme stimmt nicht mehr mit urspr&uuml;nglich festgelegten Betrag '.
             $linkedInvoiceIdList
           )
         );
+      }
+      if($orderTaxChanged) {
+        if($this->app->Secure->GetPOST('ustid_update_adresse') !== '') {
+          $this->app->erp->BelegUstIdInAdresseUebernehmen('auftrag', $id);
+        }
+        $this->app->erp->BelegSteuerlichNeuaufbauen('auftrag', $id, true, true);
+        if(!empty($linkedInvoiceIds)) {
+          foreach($linkedInvoiceIds as $linkedInvoiceId) {
+            $this->app->erp->BelegSteuerlichNeuaufbauen('rechnung', (int)$linkedInvoiceId, true, true);
+            if($this->app->Secure->GetPOST('ustid_update_adresse') !== '') {
+              $this->app->erp->BelegUstIdInAdresseUebernehmen('rechnung', (int)$linkedInvoiceId);
+            }
+          }
+        }
+        $this->app->Tpl->Add('MESSAGE', '<div class="info">USt-ID / Besteuerung wurde ge&auml;ndert. Auftrag und verkn&uuml;pfte Rechnungen wurden steuerlich neu berechnet.</div>');
       }
     }
 
