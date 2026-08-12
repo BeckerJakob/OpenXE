@@ -167,7 +167,7 @@ Haeufige Ursachen:
 | `sudo: a password is required` | sudoers fuer `chown` fehlt | Regel `<deploy-user> ALL=(root) NOPASSWD: /usr/bin/chown` in `/etc/sudoers.d/openxe-deploy` |
 | `Permission denied` auf `.git/index.lock` | Upgrade lief als `www-data`, Repo gehoert Deploy-User | Pipeline nutzt temporaeres `chown` auf Deploy-User |
 | `Clear modified files or use -f` | `gitinfo.json` geaendert | Pipeline nutzt `-f`; bei manuellem Lauf ebenfalls `-f` |
-| `curl: (22) The requested URL returned error: 403` | Apache liefert fuer `127.0.0.1/OpenXE` keinen Zugriff | `PRODUCTION_HTTP_HOST` setzen; testen: `curl -I --resolve 'HOST:443:127.0.0.1' https://HOST/OpenXE/favicon.ico` |
+| `curl: (22) The requested URL returned error: 403` | Statische Dateien blockiert | `PRODUCTION_HTTP_HOST` setzen; `/OpenXE/www/index.php` per `--resolve` testen |
 | Schema-Differenzen nach Upgrade | PRD-DB weicht vom JSON ab | oft normal; `upgrade.php -db` pruefen, Backup vor Prod |
 | Code zurueck, DB vorn | nur Code-Rollback bei Fehler | DB manuell aus Backup wiederherstellen falls noetig |
 

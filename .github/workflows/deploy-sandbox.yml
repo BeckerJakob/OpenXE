@@ -104,23 +104,32 @@ jobs:
           fi
 
           verify_deploy_health() {
-            local url_path="/OpenXE/favicon.ico"
+            check_https_path() {
+              local path="$1"
+              local code
+              code="$(curl -sS -o /dev/null -w '%{http_code}' --resolve "${HTTP_HOST}:443:127.0.0.1" "https://${HTTP_HOST}${path}" 2>/dev/null || echo "000")"
+              echo "HTTP ${code}: https://${HTTP_HOST}${path}"
+              case "$code" in
+                200|301|302|401) return 0 ;;
+                *) return 1 ;;
+              esac
+            }
 
             if [ -n "${HTTP_HOST:-}" ]; then
-              echo "HTTP-Healthcheck mit Host-Header: ${HTTP_HOST}"
-              if curl -fsS -o /dev/null --resolve "${HTTP_HOST}:443:127.0.0.1" "https://${HTTP_HOST}${url_path}"; then
-                return
-              fi
-              curl -fsS -o /dev/null -L -H "Host: ${HTTP_HOST}" "http://127.0.0.1${url_path}"
-              return
+              echo "HTTP-Healthcheck fuer Host: ${HTTP_HOST}"
+              for path in \
+                "/OpenXE/www/index.php" \
+                "/OpenXE/index.php" \
+                "/OpenXE/favicon.ico" \
+                "/favicon.ico" \
+                "/OpenXE/"; do
+                if check_https_path "$path"; then
+                  return
+                fi
+              done
             fi
 
-            if curl -fsS -o /dev/null "http://127.0.0.1${url_path}" 2>/dev/null; then
-              return
-            fi
-
-            echo "Lokaler HTTP-Check auf 127.0.0.1/OpenXE fehlgeschlagen (typisch ohne passenden VirtualHost)."
-            echo "Pruefe Apache-Status und App-Dateien als Fallback."
+            echo "HTTP-Endpunkte nicht erreichbar oder nur 403, Fallback: Apache + App-Dateien."
             systemctl is-active --quiet apache2
             test -r "$APP_DIR/index.php"
             test -r "$APP_DIR/www/index.php"
