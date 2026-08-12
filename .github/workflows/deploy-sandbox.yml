@@ -72,25 +72,33 @@ jobs:
           PREVIOUS_REV="$(git -C "$APP_DIR" rev-parse HEAD)"
           echo "Aktueller Stand vor Deploy: $PREVIOUS_REV"
 
-          run_as_www_data() {
-            sudo -n -u www-data env \
-              GIT_CONFIG_COUNT=1 \
-              GIT_CONFIG_KEY_0=safe.directory \
-              GIT_CONFIG_VALUE_0="$APP_DIR" \
-              "$@"
+          take_repo_for_deploy() {
+            sudo -n chown -R "$USER:$USER" "$APP_DIR"
           }
 
+          restore_repo_ownership() {
+            sudo -n chown -R www-data:www-data "$APP_DIR"
+          }
+
+          rollback_code() {
+            take_repo_for_deploy
+            git -C "$APP_DIR" reset --hard "$PREVIOUS_REV"
+            restore_repo_ownership
+          }
+
+          take_repo_for_deploy
           cd "$APP_DIR/upgrade"
-          if ! run_as_www_data php data/upgrade.php -do -f; then
+          if ! php data/upgrade.php -do -f; then
             echo "OpenXE-Upgrade fehlgeschlagen. Setze Code auf $PREVIOUS_REV zurueck."
-            run_as_www_data git -C "$APP_DIR" reset --hard "$PREVIOUS_REV" || true
+            rollback_code || true
             exit 1
           fi
+          restore_repo_ownership
 
           ACTUAL_SHA="$(git -C "$APP_DIR" rev-parse HEAD)"
           if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
             echo "Unerwarteter Commit nach Deploy: erwartet $EXPECTED_SHA, aktuell $ACTUAL_SHA"
-            run_as_www_data git -C "$APP_DIR" reset --hard "$PREVIOUS_REV" || true
+            rollback_code || true
             exit 1
           fi
 

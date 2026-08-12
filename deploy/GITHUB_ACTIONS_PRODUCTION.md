@@ -2,7 +2,7 @@
 
 Diese Anleitung richtet ein manuell freizugebendes OpenXE-Deployment auf den Produktivserver ein.
 
-Die Pipeline liegt in `.github/workflows/deploy-production.yml`. Sie verbindet sich per SSH mit dem Produktivserver und fuehrt dort `upgrade.php -do -f` als `www-data` aus (Code + Datenbank).
+Die Pipeline liegt in `.github/workflows/deploy-production.yml`. Sie verbindet sich per SSH mit dem Produktivserver und fuehrt dort `upgrade.php -do -f` als Deploy-User aus (Code + Datenbank).
 
 ## Sicherheitsmodell
 
@@ -21,7 +21,7 @@ Das Produktiv-Deployment laeuft bewusst nicht automatisch bei jedem Push.
 
 ```text
 Host: <PRODUCTION_SSH_HOST> (z. B. SSH-Alias openxe-prd)
-User: jakob
+User: <deploy-user>
 Repo: /var/www/html/OpenXE
 ```
 
@@ -55,7 +55,7 @@ Empfohlen:
 ```text
 PRODUCTION_SSH_HOST=<Produktivserver-Host oder IP>
 PRODUCTION_SSH_PORT=22
-PRODUCTION_SSH_USER=jakob
+PRODUCTION_SSH_USER=<deploy-user>
 PRODUCTION_SSH_PRIVATE_KEY=<Inhalt des privaten SSH-Keys>
 PRODUCTION_SSH_KNOWN_HOSTS=<gepruefter Host-Key des Produktivservers>
 PRODUCTION_DEPLOY_PATH=/var/www/html/OpenXE
@@ -95,14 +95,13 @@ Checkliste fuer den Wechsel auf Sandbox + Produktion:
 sudo visudo -f /etc/sudoers.d/openxe-deploy
 ```
 
-Inhalt:
+Inhalt (`<deploy-user>` durch den SSH-User ersetzen):
 
 ```sudoers
-jakob ALL=(www-data) NOPASSWD: /usr/bin/php
-jakob ALL=(www-data) NOPASSWD: /usr/bin/git
+<deploy-user> ALL=(root) NOPASSWD: /usr/bin/chown
 ```
 
-`upgrade.php` muss aus dem Verzeichnis `upgrade/` mit relativem Pfad `data/upgrade.php` gestartet werden. Eine sudoers-Regel mit absolutem Skriptpfad passt deshalb nicht zur Pipeline.
+`upgrade.php` laeuft als Deploy-User aus dem Verzeichnis `upgrade/` mit relativem Pfad `data/upgrade.php`.
 
 Dateirechte der sudoers-Datei setzen:
 
@@ -112,18 +111,14 @@ sudo chmod 0440 /etc/sudoers.d/openxe-deploy
 sudo visudo -c
 ```
 
-Git als `www-data` meldet sonst `dubious ownership`. Die Pipeline setzt `safe.directory` per Umgebungsvariable. Fuer manuelle Tests einmalig:
-
-```bash
-sudo git config --system --add safe.directory /var/www/html/OpenXE
-```
-
 Pruefen (exakt wie in der GitHub Action):
 
 ```bash
+sudo chown -R <deploy-user>:<deploy-user> /var/www/html/OpenXE
 cd /var/www/html/OpenXE/upgrade
-sudo -n -u www-data env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/var/www/html/OpenXE php data/upgrade.php -db
-sudo -n -u www-data env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/var/www/html/OpenXE git -C /var/www/html/OpenXE status -sb
+php data/upgrade.php -db
+git -C /var/www/html/OpenXE status -sb
+sudo chown -R www-data:www-data /var/www/html/OpenXE
 ```
 
 ## Was die Pipeline macht
@@ -131,10 +126,11 @@ sudo -n -u www-data env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_C
 1. Manuelle Bestaetigung und `master`-Branch pruefen.
 2. SSH-Verbindung mit Secrets und geprueftem Host-Key.
 3. Aktuellen Commit merken (`PREVIOUS_REV`).
-4. `sudo -u www-data php data/upgrade.php -do -f` (Code + DB gegen neues Schema).
-5. Pruefen, dass `git rev-parse HEAD` dem Pipeline-Commit entspricht.
-6. HTTP-Healthcheck gegen `http://127.0.0.1/OpenXE/`.
-7. Bei Fehler nach Git-Update: `git reset --hard` auf `PREVIOUS_REV` (nur Code).
+4. Repo temporaer auf Deploy-User umstellen, dann `php data/upgrade.php -do -f` (Code + DB gegen neues Schema).
+5. Repo wieder auf `www-data` zurueckstellen.
+6. Pruefen, dass `git rev-parse HEAD` dem Pipeline-Commit entspricht.
+7. HTTP-Healthcheck gegen `http://127.0.0.1/OpenXE/`.
+8. Bei Fehler nach Git-Update: `git reset --hard` auf `PREVIOUS_REV` (nur Code).
 
 ## Manuell ausloesen
 
@@ -165,7 +161,8 @@ Haeufige Ursachen:
 | --- | --- | --- |
 | `Permission denied (publickey)` | falscher Key/User | `PRODUCTION_SSH_*` pruefen |
 | `Host key verification failed` | Known Hosts fehlen | `PRODUCTION_SSH_KNOWN_HOSTS` setzen |
-| `sudo: a password is required` | sudoers fehlt | `/etc/sudoers.d/openxe-deploy` pruefen |
+| `sudo: a password is required` | sudoers fuer `chown` fehlt | Regel `<deploy-user> ALL=(root) NOPASSWD: /usr/bin/chown` in `/etc/sudoers.d/openxe-deploy` |
+| `Permission denied` auf `.git/index.lock` | Upgrade lief als `www-data`, Repo gehoert Deploy-User | Pipeline nutzt temporaeres `chown` auf Deploy-User |
 | `Clear modified files or use -f` | `gitinfo.json` geaendert | Pipeline nutzt `-f`; bei manuellem Lauf ebenfalls `-f` |
 | Schema-Differenzen nach Upgrade | PRD-DB weicht vom JSON ab | oft normal; `upgrade.php -db` pruefen, Backup vor Prod |
 | Code zurueck, DB vorn | nur Code-Rollback bei Fehler | DB manuell aus Backup wiederherstellen falls noetig |
