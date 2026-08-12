@@ -102,13 +102,32 @@ sudo visudo -f /etc/sudoers.d/openxe-deploy
 Inhalt:
 
 ```sudoers
-jakob ALL=(www-data) NOPASSWD: /usr/bin/php /var/www/html/OpenXE/upgrade/data/upgrade.php *
+jakob ALL=(www-data) NOPASSWD: /usr/bin/php
+jakob ALL=(www-data) NOPASSWD: /usr/bin/git
 ```
 
-Danach pruefen:
+`upgrade.php` muss aus dem Verzeichnis `upgrade/` mit relativem Pfad `data/upgrade.php` gestartet werden. Eine sudoers-Regel mit absolutem Skriptpfad passt deshalb nicht zur Pipeline.
+
+Dateirechte der sudoers-Datei setzen (sonst Warnung von `visudo -c`):
 
 ```bash
-sudo -n -u www-data php /var/www/html/OpenXE/upgrade/data/upgrade.php -db
+sudo chown root:root /etc/sudoers.d/openxe-deploy
+sudo chmod 0440 /etc/sudoers.d/openxe-deploy
+sudo visudo -c
+```
+
+Git als `www-data` meldet sonst `dubious ownership`, weil das Repo dem Deploy-User gehoert. Die Pipeline setzt `safe.directory` per Umgebungsvariable. Fuer manuelle Tests:
+
+```bash
+sudo git config --system --add safe.directory /var/www/html/OpenXE
+```
+
+Danach pruefen (exakt wie in der GitHub Action):
+
+```bash
+cd /var/www/html/OpenXE/upgrade
+sudo -n -u www-data env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/var/www/html/OpenXE php data/upgrade.php -db
+sudo -n -u www-data env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/var/www/html/OpenXE git -C /var/www/html/OpenXE status -sb
 ```
 
 Wenn ein Passwort abgefragt wird, schlaegt auch die GitHub Action fehl.
@@ -152,6 +171,8 @@ Typische Ursachen:
 | `Host key verification failed` | `SANDBOX_SSH_KNOWN_HOSTS` fehlt/falsch | Host-Key neu setzen |
 | `sudo: a password is required` | sudoers-Regel fehlt | `/etc/sudoers.d/openxe-deploy` pruefen |
 | `Clear modified files or use -f` | lokale Aenderungen blockieren Upgrade | Pipeline nutzt `-f`; manuell ggf. `git checkout -- gitinfo.json` |
+| `Must be executed from 'upgrade' directory` | `upgrade.php` aus falschem Verzeichnis gestartet | immer erst `cd .../upgrade`, dann `php data/upgrade.php` |
+| `sudo: a password is required` | sudoers passt nicht (z. B. absoluter statt relativer Pfad) | Regel auf `/usr/bin/php` und `/usr/bin/git` erweitern |
 | `Unerwarteter Commit nach Deploy` | Pull hat anderen Stand als `master`-HEAD | `remote.json` und GitHub-Remote pruefen |
 | Upgrade nur DB, kein Code | manuell `-do -db` statt `-do` | Pipeline nutzt korrekt `-do -f` |
 

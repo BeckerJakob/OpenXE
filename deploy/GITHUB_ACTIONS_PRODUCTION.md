@@ -98,13 +98,32 @@ sudo visudo -f /etc/sudoers.d/openxe-deploy
 Inhalt:
 
 ```sudoers
-jakob ALL=(www-data) NOPASSWD: /usr/bin/php /var/www/html/OpenXE/upgrade/data/upgrade.php *
+jakob ALL=(www-data) NOPASSWD: /usr/bin/php
+jakob ALL=(www-data) NOPASSWD: /usr/bin/git
 ```
 
-Pruefen:
+`upgrade.php` muss aus dem Verzeichnis `upgrade/` mit relativem Pfad `data/upgrade.php` gestartet werden. Eine sudoers-Regel mit absolutem Skriptpfad passt deshalb nicht zur Pipeline.
+
+Dateirechte der sudoers-Datei setzen:
 
 ```bash
-sudo -n -u www-data php /var/www/html/OpenXE/upgrade/data/upgrade.php -db
+sudo chown root:root /etc/sudoers.d/openxe-deploy
+sudo chmod 0440 /etc/sudoers.d/openxe-deploy
+sudo visudo -c
+```
+
+Git als `www-data` meldet sonst `dubious ownership`. Die Pipeline setzt `safe.directory` per Umgebungsvariable. Fuer manuelle Tests einmalig:
+
+```bash
+sudo git config --system --add safe.directory /var/www/html/OpenXE
+```
+
+Pruefen (exakt wie in der GitHub Action):
+
+```bash
+cd /var/www/html/OpenXE/upgrade
+sudo -n -u www-data env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/var/www/html/OpenXE php data/upgrade.php -db
+sudo -n -u www-data env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/var/www/html/OpenXE git -C /var/www/html/OpenXE status -sb
 ```
 
 ## Was die Pipeline macht

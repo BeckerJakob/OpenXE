@@ -93,7 +93,11 @@ jobs:
             fi
 
             echo "Deployment fehlgeschlagen. Setze Code auf $PREVIOUS_REV zurueck."
-            sudo -n -u www-data git -C "$APP_DIR" reset --hard "$PREVIOUS_REV" || true
+            sudo -n -u www-data env \
+              GIT_CONFIG_COUNT=1 \
+              GIT_CONFIG_KEY_0=safe.directory \
+              GIT_CONFIG_VALUE_0="$APP_DIR" \
+              git -C "$APP_DIR" reset --hard "$PREVIOUS_REV" || true
             exit "$status"
           }
 
@@ -104,11 +108,19 @@ jobs:
           PREVIOUS_REV="$(git -C "$APP_DIR" rev-parse HEAD)"
           echo "Aktueller Stand vor Deploy: $PREVIOUS_REV"
 
+          run_as_www_data() {
+            sudo -n -u www-data env \
+              GIT_CONFIG_COUNT=1 \
+              GIT_CONFIG_KEY_0=safe.directory \
+              GIT_CONFIG_VALUE_0="$APP_DIR" \
+              "$@"
+          }
+
           trap restore_previous_revision ERR
           UPGRADE_STARTED=1
 
           cd "$APP_DIR/upgrade"
-          sudo -n -u www-data php data/upgrade.php -do -f
+          run_as_www_data php data/upgrade.php -do -f
 
           ACTUAL_SHA="$(git -C "$APP_DIR" rev-parse HEAD)"
           if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
