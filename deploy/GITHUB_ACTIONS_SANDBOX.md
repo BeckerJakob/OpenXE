@@ -41,7 +41,10 @@ SANDBOX_SSH_USER=<deploy-user>
 SANDBOX_SSH_PRIVATE_KEY=<Inhalt des privaten SSH-Keys>
 SANDBOX_SSH_KNOWN_HOSTS=<gepruefter Host-Key des Servers>
 SANDBOX_DEPLOY_PATH=/var/www/html/OpenXE
+SANDBOX_HTTP_HOST=<optional: ServerName/Domain fuer OpenXE im Browser>
 ```
+
+`SANDBOX_HTTP_HOST` ist optional. Wenn gesetzt, prueft die Pipeline HTTP mit `Host`-Header gegen `127.0.0.1` (noetig, wenn Apache ohne passenden VirtualHost auf localhost 403 liefert). Ohne Secret: Fallback auf `apache2`-Status und vorhandene App-Dateien.
 
 ### Private Key einfuegen
 
@@ -138,7 +141,7 @@ Bei jedem Push auf `master`:
    - geaenderte `gitinfo.json` per `-f` akzeptieren
 4. Repo wieder auf `www-data` zurueckstellen.
 5. Pruefen, dass `git rev-parse HEAD` dem Pipeline-Commit (`github.sha`) entspricht.
-6. HTTP-Healthcheck gegen `http://127.0.0.1/OpenXE/favicon.ico` (statische Datei, kein Login).
+6. HTTP-Healthcheck: mit `SANDBOX_HTTP_HOST` per `Host`-Header, sonst Fallback (Apache aktiv + `index.php` vorhanden).
 7. Bei Fehler: Code-Rollback auf `PREVIOUS_REV` (kein DB-Rollback).
 
 ## Manuell ausloesen
@@ -168,7 +171,8 @@ Typische Ursachen:
 | `sudo: a password is required` | sudoers fuer `chown` fehlt | Regel `<deploy-user> ALL=(root) NOPASSWD: /usr/bin/chown` in `/etc/sudoers.d/openxe-deploy` |
 | `Permission denied` auf `.git/index.lock` | Upgrade lief als `www-data`, Repo gehoert Deploy-User | Pipeline nutzt temporaeres `chown` auf Deploy-User |
 | `Unerwarteter Commit nach Deploy` | Pull hat anderen Stand als `master`-HEAD | `remote.json` und GitHub-Remote pruefen |
-| `curl: (22) The requested URL returned error: 403` | Healthcheck auf `/OpenXE/` trifft Login/ACL | Pipeline prueft `favicon.ico`; lokal testen: `curl -I http://127.0.0.1/OpenXE/favicon.ico` |
+| `curl: (22) The requested URL returned error: 403` | Apache liefert fuer `127.0.0.1/OpenXE` keinen Zugriff | Optional `SANDBOX_HTTP_HOST` setzen; lokal testen: `curl -I -H "Host: DEINE-DOMAIN" http://127.0.0.1/OpenXE/favicon.ico` |
+| Upgrade nur DB, kein Code | manuell `-do -db` statt `-do` | Pipeline nutzt korrekt `-do -f` |
 
 ## Sicherheitshinweise
 
