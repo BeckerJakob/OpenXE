@@ -44,7 +44,7 @@ SANDBOX_DEPLOY_PATH=/var/www/html/OpenXE
 SANDBOX_HTTP_HOST=<optional: ServerName/Domain fuer OpenXE im Browser>
 ```
 
-`SANDBOX_HTTP_HOST` ist optional. Wenn gesetzt, prueft die Pipeline HTTP mit `Host`-Header gegen `127.0.0.1` (noetig, wenn Apache ohne passenden VirtualHost auf localhost 403 liefert). Ohne Secret: Fallback auf `apache2`-Status und vorhandene App-Dateien.
+`SANDBOX_HTTP_HOST` ist optional, aber empfohlen (z. B. `openxe-sbx.example.com` aus `apache2ctl -S`). Die Pipeline prueft dann per `--resolve` den HTTPS-VirtualHost lokal; Port 80 liefert oft nur einen Redirect nach HTTPS.
 
 ### Private Key einfuegen
 
@@ -171,7 +171,7 @@ Typische Ursachen:
 | `sudo: a password is required` | sudoers fuer `chown` fehlt | Regel `<deploy-user> ALL=(root) NOPASSWD: /usr/bin/chown` in `/etc/sudoers.d/openxe-deploy` |
 | `Permission denied` auf `.git/index.lock` | Upgrade lief als `www-data`, Repo gehoert Deploy-User | Pipeline nutzt temporaeres `chown` auf Deploy-User |
 | `Unerwarteter Commit nach Deploy` | Pull hat anderen Stand als `master`-HEAD | `remote.json` und GitHub-Remote pruefen |
-| `curl: (22) The requested URL returned error: 403` | Apache liefert fuer `127.0.0.1/OpenXE` keinen Zugriff | Optional `SANDBOX_HTTP_HOST` setzen; lokal testen: `curl -I -H "Host: DEINE-DOMAIN" http://127.0.0.1/OpenXE/favicon.ico` |
+| `curl: (22) The requested URL returned error: 403` | Apache liefert fuer `127.0.0.1/OpenXE` keinen Zugriff | `SANDBOX_HTTP_HOST` setzen (z. B. `openxe-sbx.example.com`); testen: `curl -I --resolve 'HOST:443:127.0.0.1' https://HOST/OpenXE/favicon.ico` |
 | Upgrade nur DB, kein Code | manuell `-do -db` statt `-do` | Pipeline nutzt korrekt `-do -f` |
 
 ## Sicherheitshinweise

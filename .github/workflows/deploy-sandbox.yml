@@ -104,15 +104,18 @@ jobs:
           fi
 
           verify_deploy_health() {
-            local url="http://127.0.0.1/OpenXE/favicon.ico"
+            local url_path="/OpenXE/favicon.ico"
 
             if [ -n "${HTTP_HOST:-}" ]; then
               echo "HTTP-Healthcheck mit Host-Header: ${HTTP_HOST}"
-              curl -fsS -o /dev/null -H "Host: ${HTTP_HOST}" "$url"
+              if curl -fsS -o /dev/null --resolve "${HTTP_HOST}:443:127.0.0.1" "https://${HTTP_HOST}${url_path}"; then
+                return
+              fi
+              curl -fsS -o /dev/null -L -H "Host: ${HTTP_HOST}" "http://127.0.0.1${url_path}"
               return
             fi
 
-            if curl -fsS -o /dev/null "$url" 2>/dev/null; then
+            if curl -fsS -o /dev/null "http://127.0.0.1${url_path}" 2>/dev/null; then
               return
             fi
 
