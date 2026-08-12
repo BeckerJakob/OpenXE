@@ -1,0 +1,91 @@
+name: Deploy OpenXE Sandbox
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-openxe-sandbox
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy OpenXE to sandbox server
+    runs-on: ubuntu-latest
+    environment: sandbox
+    timeout-minutes: 30
+
+    steps:
+      - name: Configure SSH
+        env:
+          SANDBOX_SSH_PRIVATE_KEY: ${{ secrets.SANDBOX_SSH_PRIVATE_KEY }}
+          SANDBOX_SSH_KNOWN_HOSTS: ${{ secrets.SANDBOX_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "${SANDBOX_SSH_PRIVATE_KEY}"
+          test -n "${SANDBOX_SSH_KNOWN_HOSTS}"
+
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${SANDBOX_SSH_PRIVATE_KEY}" > ~/.ssh/openxe_sandbox
+          printf '%s\n' "${SANDBOX_SSH_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/openxe_sandbox ~/.ssh/known_hosts
+
+      - name: Deploy current master on sandbox
+        env:
+          SANDBOX_SSH_HOST: ${{ secrets.SANDBOX_SSH_HOST }}
+          SANDBOX_SSH_PORT: ${{ secrets.SANDBOX_SSH_PORT }}
+          SANDBOX_SSH_USER: ${{ secrets.SANDBOX_SSH_USER }}
+          SANDBOX_DEPLOY_PATH: ${{ secrets.SANDBOX_DEPLOY_PATH }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "${SANDBOX_SSH_HOST}"
+          test -n "${SANDBOX_SSH_USER}"
+          test -n "${EXPECTED_SHA}"
+
+          SSH_PORT="${SANDBOX_SSH_PORT:-22}"
+          DEPLOY_PATH="${SANDBOX_DEPLOY_PATH:-/var/www/html/OpenXE}"
+
+          ssh \
+            -i ~/.ssh/openxe_sandbox \
+            -p "${SSH_PORT}" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "${SANDBOX_SSH_USER}@${SANDBOX_SSH_HOST}" \
+            "EXPECTED_SHA=${EXPECTED_SHA} APP_DIR=${DEPLOY_PATH}" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+
+          APP_DIR="${APP_DIR:-/var/www/html/OpenXE}"
+          EXPECTED_SHA="${EXPECTED_SHA:?EXPECTED_SHA fehlt}"
+          PREVIOUS_REV=""
+
+          test -d "$APP_DIR/.git"
+          test -d "$APP_DIR/upgrade"
+          test -f "$APP_DIR/upgrade/data/upgrade.php"
+
+          PREVIOUS_REV="$(git -C "$APP_DIR" rev-parse HEAD)"
+          echo "Aktueller Stand vor Deploy: $PREVIOUS_REV"
+
+          cd "$APP_DIR/upgrade"
+          if ! sudo -n -u www-data php data/upgrade.php -do -f; then
+            echo "OpenXE-Upgrade fehlgeschlagen. Setze Code auf $PREVIOUS_REV zurueck."
+            sudo -n -u www-data git -C "$APP_DIR" reset --hard "$PREVIOUS_REV" || true
+            exit 1
+          fi
+
+          ACTUAL_SHA="$(git -C "$APP_DIR" rev-parse HEAD)"
+          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "Unerwarteter Commit nach Deploy: erwartet $EXPECTED_SHA, aktuell $ACTUAL_SHA"
+            sudo -n -u www-data git -C "$APP_DIR" reset --hard "$PREVIOUS_REV" || true
+            exit 1
+          fi
+
+          curl -fsS -o /dev/null -L http://127.0.0.1/OpenXE/
+          echo "Sandbox-Deployment erfolgreich: $ACTUAL_SHA"
+          REMOTE
