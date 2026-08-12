@@ -129,7 +129,7 @@ sudo chown -R www-data:www-data /var/www/html/OpenXE
 4. Repo temporaer auf Deploy-User umstellen, dann `php data/upgrade.php -do -f` (Code + DB gegen neues Schema).
 5. Repo wieder auf `www-data` zurueckstellen.
 6. Pruefen, dass `git rev-parse HEAD` dem Pipeline-Commit entspricht.
-7. HTTP-Healthcheck gegen `http://127.0.0.1/OpenXE/`.
+7. HTTP-Healthcheck gegen `http://127.0.0.1/OpenXE/favicon.ico` (statische Datei, kein Login).
 8. Bei Fehler nach Git-Update: `git reset --hard` auf `PREVIOUS_REV` (nur Code).
 
 ## Manuell ausloesen
@@ -164,6 +164,7 @@ Haeufige Ursachen:
 | `sudo: a password is required` | sudoers fuer `chown` fehlt | Regel `<deploy-user> ALL=(root) NOPASSWD: /usr/bin/chown` in `/etc/sudoers.d/openxe-deploy` |
 | `Permission denied` auf `.git/index.lock` | Upgrade lief als `www-data`, Repo gehoert Deploy-User | Pipeline nutzt temporaeres `chown` auf Deploy-User |
 | `Clear modified files or use -f` | `gitinfo.json` geaendert | Pipeline nutzt `-f`; bei manuellem Lauf ebenfalls `-f` |
+| `curl: (22) The requested URL returned error: 403` | Healthcheck auf `/OpenXE/` trifft Login/ACL | Pipeline prueft `favicon.ico`; lokal testen: `curl -I http://127.0.0.1/OpenXE/favicon.ico` |
 | Schema-Differenzen nach Upgrade | PRD-DB weicht vom JSON ab | oft normal; `upgrade.php -db` pruefen, Backup vor Prod |
 | Code zurueck, DB vorn | nur Code-Rollback bei Fehler | DB manuell aus Backup wiederherstellen falls noetig |
 

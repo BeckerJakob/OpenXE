@@ -120,7 +120,7 @@ jobs:
             exit 1
           fi
 
-          curl -fsS -o /dev/null -L http://127.0.0.1/OpenXE/
+          curl -fsS -o /dev/null http://127.0.0.1/OpenXE/favicon.ico
 
           trap - ERR
           echo "Produktiv-Deployment erfolgreich: $ACTUAL_SHA"

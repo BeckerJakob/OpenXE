@@ -138,7 +138,7 @@ Bei jedem Push auf `master`:
    - geaenderte `gitinfo.json` per `-f` akzeptieren
 4. Repo wieder auf `www-data` zurueckstellen.
 5. Pruefen, dass `git rev-parse HEAD` dem Pipeline-Commit (`github.sha`) entspricht.
-6. HTTP-Healthcheck gegen `http://127.0.0.1/OpenXE/`.
+6. HTTP-Healthcheck gegen `http://127.0.0.1/OpenXE/favicon.ico` (statische Datei, kein Login).
 7. Bei Fehler: Code-Rollback auf `PREVIOUS_REV` (kein DB-Rollback).
 
 ## Manuell ausloesen
@@ -168,7 +168,7 @@ Typische Ursachen:
 | `sudo: a password is required` | sudoers fuer `chown` fehlt | Regel `<deploy-user> ALL=(root) NOPASSWD: /usr/bin/chown` in `/etc/sudoers.d/openxe-deploy` |
 | `Permission denied` auf `.git/index.lock` | Upgrade lief als `www-data`, Repo gehoert Deploy-User | Pipeline nutzt temporaeres `chown` auf Deploy-User |
 | `Unerwarteter Commit nach Deploy` | Pull hat anderen Stand als `master`-HEAD | `remote.json` und GitHub-Remote pruefen |
-| Upgrade nur DB, kein Code | manuell `-do -db` statt `-do` | Pipeline nutzt korrekt `-do -f` |
+| `curl: (22) The requested URL returned error: 403` | Healthcheck auf `/OpenXE/` trifft Login/ACL | Pipeline prueft `favicon.ico`; lokal testen: `curl -I http://127.0.0.1/OpenXE/favicon.ico` |
 
 ## Sicherheitshinweise
 

@@ -102,6 +102,6 @@ jobs:
             exit 1
           fi
 
-          curl -fsS -o /dev/null -L http://127.0.0.1/OpenXE/
+          curl -fsS -o /dev/null http://127.0.0.1/OpenXE/favicon.ico
           echo "Sandbox-Deployment erfolgreich: $ACTUAL_SHA"
           REMOTE
