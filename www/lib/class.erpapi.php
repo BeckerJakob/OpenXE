@@ -132,6 +132,13 @@ class erpAPI
     }
   }
 
+  public function deactivateCronjob($parameter) {
+    $this->loadCronjobObj();
+    if(method_exists($this->cronjobObj,'deactivateCronjob')) {
+      $this->cronjobObj->deactivateCronjob($parameter);
+    }
+  }
+
   /**
    * @param array $output
    * @param array $task
@@ -296,6 +303,14 @@ public function checkPDFClass($beleg)
       return $obj->ArtikelUebertragen($datei, $artikelarr, $uebertragung);
     }
     return false;
+  }
+
+  public function ArtikelUebertragenResetChangedInfo($shopId) {
+    $this->app->erp->SetKonfigurationValue('shopexport_artikeluebertragen_check_start_'.$shopId,'');
+    $this->app->erp->SetKonfigurationValue('shopexport_artikeluebertragen_check_checked_'.$shopId,'');
+    $this->app->erp->SetKonfigurationValue('shopexport_artikeluebertragen_check_changed_'.$shopId,'');
+    $this->app->erp->SetKonfigurationValue('shopexport_artikeluebertragen_check_transfered_'.$shopId,'');
+    $this->app->erp->SetKonfigurationValue('shopexport_artikeluebertragen_check_lastid_'.$shopId,'');
   }
 
   /** @deprecated */
@@ -37659,13 +37674,16 @@ function Firmendaten($field,$projekt="")
 
       function AddDateiStichwort($id,$subjekt,$objekt,$parameter,$without_log=false,$parameter2=0,$objekt2='')
       {
-        $typen = $this->getDateiTypen(strtolower($objekt));
-        if (!in_array(strtolower($subjekt),array_keys($typen))) {
-            throw new Exception("Unbekanntes Stichwort ".$subjekt." für ".$objekt);
+        if (empty($objekt) || empty($parameter)) {
+            throw new Exception("Leere Objektangabe Objekt ".$objekt." Parameter ".$parameter);
         }
         $datei_objekt = $this->getDateiObjekt(strtolower($objekt), $parameter, 'id');
         if (empty($datei_objekt)) {
             throw new Exception("Unbekanntes Objekt ".$objekt." ".$parameter);
+        }
+        $typen = $this->getDateiTypen(strtolower($objekt));
+        if (!in_array(strtolower($subjekt),array_keys($typen))) {
+            throw new Exception("Unbekanntes Stichwort ".$subjekt." für ".$objekt);
         }
         if(strtolower($objekt) === 'artikel' && $parameter) {
           $this->app->DB->Update("UPDATE artikel SET bildvorschau = '' WHERE id = '".$parameter."' LIMIT 1");
@@ -37880,7 +37898,7 @@ function Firmendaten($field,$projekt="")
                         'auftrag',
                         'verbindlichkeit',
                         'lieferantengutschrift'
-                    ) AND t.id = '".$ticketid."'
+                    ) AND dst.objekt = 'Ticket' AND t.id = '".$ticketid."'
             ";
 
             return($this->app->DB->SelectArr($sql));
@@ -38182,7 +38200,8 @@ function Firmendaten($field,$projekt="")
                 'aufgaben'=> ['wert' => 'aufgaben','tabelle' => 'aufgaben', 'suchfelder' => ['id']],
                 'konto'=> ['wert' => 'konto','tabelle' => 'konto', 'suchfelder' => ['id']],
                 'retoure'=> ['wert' => 'retoure','tabelle' => 'retoure', 'suchfelder' => ['belegnr']],
-                'ticket_header'=> ['wert' => 'ticket_header','tabelle' => 'ticket_header', 'suchfelder' => ['id']],
+                'ticket_header'=> ['wert' => 'ticket_header','tabelle' => 'ticket', 'suchfelder' => ['id']],
+                'ticket'=> ['wert' => 'Ticket','tabelle' => 'ticket_nachricht', 'suchfelder' => ['id']],
                 'lieferantengutschrift'=> ['wert' => 'lieferantengutschrift','tabelle' => 'lieferantengutschrift', 'suchfelder' => ['belegnr', 'rechnung']],
                 'versandpaket'=> ['wert' => 'versandpaket','tabelle' => 'versandpakete', 'suchfelder' => ['id']],            );
         }

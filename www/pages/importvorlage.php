@@ -80,8 +80,8 @@ class Importvorlage extends GenImportvorlage {
         '/nummer/',
         '/lieferantname/',
         '/lieferantnummer/',
-        '/datei(?<nummer>\d)/',
-        '/dateistichwort(?<nummer>\d)/'
+        '/shopid(_[\d]+)/',
+        '/shopaktiv(_[\d]+)/'
     );
 
   public $javascript = [
@@ -852,7 +852,7 @@ class Importvorlage extends GenImportvorlage {
     {
       $this->app->erp->MenuEintrag('index.php?module=importvorlage&action=edit&id='.$id,'Details');
       $this->app->erp->MenuEintrag('index.php?module=importvorlage&action=import&id='.$id,'Import starten: Datei heraufladen');
-      $this->app->erp->MenuEintrag('index.php?module=importvorlage&action=formate&id='.$id,'Formate');      
+      $this->app->erp->MenuEintrag('index.php?module=importvorlage&action=formate&id='.$id,'Formate');
       $this->app->erp->MenuEintrag('index.php?module=importvorlage&action=list','Zur&uuml;ck zur &Uuml;bersicht');
     }
 
@@ -1112,7 +1112,7 @@ class Importvorlage extends GenImportvorlage {
                         }
                     }
                 }
-                $zip->close();       
+                $zip->close();
             break;
             case SELF::FORMAT_CSV:
             // break omitted
@@ -1161,8 +1161,9 @@ class Importvorlage extends GenImportvorlage {
             if($isCronjobActive){
               $jobId = $this->create($this->app->User->GetID(), $id, $stueckliste_csv, $rowcounter_real);
             }
-      
+
             $preview_headings = array_merge(['Zeile','Nummer','Aktion','Info','|'],array_column($prepare_result[0]['values'],'field'));
+            $preview_headings[] = ""; // Last is always empty
             $action_translate = array('none' => 'Keine', 'create' => 'Neu', 'update' => 'Aktualisieren');
 
             $preview_data = "";
@@ -1182,26 +1183,34 @@ class Importvorlage extends GenImportvorlage {
                 $et->AddRow($row);
                 if (++$prepare_row_limit == 50) {
                     $limit_erreicht = true;
-                    break;            
+                    break;
                 }
             }
-            $et->DisplayNew('ERGEBNIS',"");
-
-            if ($limit_erreicht) {
-                $limit_text = 'Vorschau: Es werden aktuell nur 50 von <b>'
-                . $rowcounter_real . '</b> Datens&auml;tzen angezeigt. Importiert werden aber alle ';
+            $et->DisplayNew('ERGEBNIS');
+            $error_count = $rowcounter_real - $create_count - $update_count;
+            if ($error_count > 0) {
+                $this->app->Tpl->Add(
+                    'IMPORTBUTTON',
+                    '<div class="error"><input type="submit" name="" value="importieren" disabled>'
+                    . $rowcounter_real . ' Datens&auml;tze, davon '.$create_count.' neu, '.$update_count.' ge&auml;ndert, '.$error_count.' mit Fehlern!'
+                    . ' <a href="index.php?module=importvorlage&action=preview">Vorschau als CSV herunterladen</a>'
+                    . '</div>'
+                );
+            } else {
+                if ($limit_erreicht) {
+                    $limit_text = 'Vorschau: Es werden aktuell nur 50 von <b>'
+                    . $rowcounter_real . '</b> Datens&auml;tzen angezeigt. Importiert werden aber alle ';
+                }
+                $this->app->Tpl->Add(
+                    'IMPORTBUTTON',
+                    '<div class="info"><input type="submit" name="import" value="importieren">'
+                    . $limit_text
+                    . $rowcounter_real . ' Datens&auml;tze, davon '.$create_count.' neu, '.$update_count.' ge&auml;ndert.<input type="hidden" name="importdateiname" value="'
+                    . $stueckliste_csv . '"><input type="hidden" name="jobid" value="'.$jobId.'" />'
+                    . ' <a href="index.php?module=importvorlage&action=preview">Vorschau als CSV herunterladen</a>'
+                    . '</div>'
+                );
             }
-
-            $this->app->Tpl->Add(
-                'IMPORTBUTTON',
-                '<div class="info"><input type="submit" name="import" value="importieren">'
-                . $limit_text
-                . $rowcounter_real . ' Datens&auml;tze, davon '.$create_count.' neu, '.$update_count.' ge&auml;ndert.<input type="hidden" name="importdateiname" value="'
-                . $stueckliste_csv . '"><input type="hidden" name="jobid" value="'.$jobId.'" />'
-                . ' <a href="index.php?module=importvorlage&action=preview">Vorschau als CSV herunterladen</a>'
-                . '</div>'
-            );
-            
         } // !empty($stueckliste) file ready
     } // upload
 
@@ -3051,7 +3060,7 @@ class Importvorlage extends GenImportvorlage {
                     }
                     $this->app->DB->Update("UPDATE `artikel` SET `lager_platz` = $lagerplatz WHERE id = '{$artikelid}' LIMIT 1");
                   break;
-                  default:      
+                  default:
                     $handled = false;
                     foreach (SELF::handled_fields as $handled_field) {
                         if (preg_match($handled_field, $value)) {
@@ -3227,31 +3236,47 @@ class Importvorlage extends GenImportvorlage {
             }
 
             //Shops
+            $shopids = array();
             foreach ($tmp as $feldname => $feldwerte) {
-              $feldtmp = explode('_',$feldname);
-              if($feldtmp['0'] === 'shop' || $feldtmp['0'] === 'aktiv'){
-                if(isset($feldtmp['1'])){
-                  $shopid = (int)$feldtmp['1'];
-                  $wert = (int)$feldwerte[$i];
-                  if($this->app->DB->Select("SELECT id FROM shopexport WHERE id ='$shopid' LIMIT 1")){
-                    $artikelonlineshopsid = $this->app->DB->Select("SELECT id FROM artikel_onlineshops WHERE artikel='$artikelid' AND shop='$shopid'");
-                    if($feldtmp['0'] === 'shop'){
-                      if($artikelonlineshopsid < 1){
-                        if($wert == 1){
-                          $this->app->DB->Insert("INSERT INTO artikel_onlineshops (artikel, shop, aktiv, ausartikel,autolagerlampe) VALUES ('$artikelid','$shopid',1,1,0)");
+                $feldtmp = explode('_',$feldname);
+                if ($feldtmp['0'] === 'shopid') {
+                    if (isset($feldtmp['1'])) {
+                        $shop_X = $feldtmp['1'];
+                        $shopid = (int) $feldwerte[$i];
+                        if ($this->app->DB->Select("SELECT id FROM shopexport WHERE id ='$shopid' LIMIT 1")) {
+                            $shopids[$shop_X] = $shopid;
+                        } else {
+                            $importvorlagedoresult['messages'][] = "Shop ID nicht gefunden (".$feldname."): ".$feldwerte[$i];
+                            $importvorlagedoresult['success'] = false;
                         }
-                      }elseif($wert == 0){
-                        $this->app->DB->Select("DELETE FROM artikel_onlineshops WHERE artikel='$artikelid' AND shop='$shopid'");
-                      }
-                    }else if($feldtmp['0'] === 'aktiv'){
-                      if($wert > 1){
-                        $wert = 1;
-                      }
-                      $this->app->DB->Update("UPDATE artikel_onlineshops SET aktiv='$wert' WHERE artikel='$artikelid' AND shop='$shopid'");
                     }
-                  }
                 }
-              }
+                if ($feldtmp['0'] === 'shopaktiv') {
+                    if(isset($feldtmp['1'])) {
+                        $shop_X = $feldtmp['1'];
+                        $shopid = $shopids[$shop_X];
+                        $wert = $feldwerte[$i];
+                        if (!empty($shopid)) {
+                            switch ($wert) {
+                                case '0':
+                                case '1':
+                                    $artikelonlineshopsid = $this->app->DB->Select("SELECT id FROM artikel_onlineshops WHERE artikel='$artikelid' AND shop='$shopid'");
+                                    if (!empty($artikelonlineshopsid)) {
+                                        $this->app->DB->Update("UPDATE artikel_onlineshops SET aktiv='$wert' WHERE artikel='$artikelid' AND shop='$shopid'");
+                                    } else {
+                                        $this->app->DB->Insert("INSERT INTO artikel_onlineshops (artikel, shop, aktiv, ausartikel,autolagerlampe) VALUES ('$artikelid','$shopid',1,1,0)");
+                                    }
+                                break;
+                                case '-1':
+                                    $this->app->DB->Select("DELETE FROM artikel_onlineshops WHERE artikel='$artikelid' AND shop='$shopid'");
+                                break;
+                            }
+                        } else {
+                            $importvorlagedoresult['messages'][] = "Shop nicht gefunden (".$feldname.")";
+                            $importvorlagedoresult['success'] = false;
+                        }
+                    }
+                }
             }
 
             //Fremdnummern
@@ -5386,12 +5411,12 @@ class Importvorlage extends GenImportvorlage {
         $checked = "";
         break;
         case 'dateien':
-        
+
             $action_anzeige = '';
             $allowed_fields = array('dateiaktion', 'quellpfad', 'objekt', 'objektsuchfeld', 'objektnummer', 'stichwort', 'dateiname', 'titel', 'beschreibung', 'sprache', 'dms-objekt', 'dms-objektsuchfeld', 'dms-objektnummer', 'dms-stichwort', 'dms-dateiname');
             // Create a row dataset (without checked and cmd)
             foreach($fields as $key => $value) {
-                $checkfields[$key][0] = $value;            
+                $checkfields[$key][0] = $value;
             }
             unset($checkfields['waehrung']);
             $row = array();
@@ -5407,7 +5432,7 @@ class Importvorlage extends GenImportvorlage {
             $action = $dateien_result['action'];
             $action_anzeige = $dateien_result['action_anzeige'];
             $result_row[] = $dateien_result['result_row'];
-        
+
         break;
     }
 
@@ -5568,7 +5593,7 @@ class Importvorlage extends GenImportvorlage {
             $dms_objeknummer = $fields['dms-objektnummer'];
             $dms_stichwort = $global_data['dateitypen_artikel'][strtolower($fields['dms-stichwort'])];
             $dms_dateiname = $fields['dms-dateiname'];
-                    
+
             if (in_array($dateiaktion,['aendern', 'entfernen'])) {
                 if (empty($dms_objekt) || empty($dms_objeknummer)) {
                     $action_anzeige .= "DMS-Objekt nicht angegeben";
@@ -5592,7 +5617,7 @@ class Importvorlage extends GenImportvorlage {
                 }
                 $result_row['dms_dateien'] = $dms_dateien;
             }
-            
+
             // check stichwort
             $stichwort = $global_data['dateitypen_artikel'][strtolower($fields['stichwort'])];
             if (empty($stichwort) && empty($fields['dateiname']) && empty($fields['titel']) && empty($fields['beschreibung'])) {
@@ -5602,6 +5627,18 @@ class Importvorlage extends GenImportvorlage {
 
             // Check target objekt
             if (in_array($dateiaktion,['zip','url','aendern','entfernen'])) {
+                $objekt = $this->app->erp->getDateiObjekt($fields['objekt'],$fields['objektnummer'],$fields['objektsuchfeld']);
+                if (empty($objekt)) {
+                    // && empty($fields['dateiname']) && empty($fields['titel']) && empty($fields['beschreibung'])) {
+                    $action_anzeige .= "Objekt nicht gefunden: ".$fields['objekt']." ".$fields['objektnummer'].$check;
+                    break;
+                }
+                $result_row['datei_objekt'] = $objekt;
+                $nummer = $fields['objektnummer'];
+           }
+
+           // Check target objekt
+           if (in_array($dateiaktion,['aendern','entfernen'])) {
                 $objekt = $this->app->erp->getDateiObjekt($fields['objekt'],$fields['objektnummer'],$fields['objektsuchfeld']);
                 if (empty($objekt) && empty($fields['dateiname']) && empty($fields['titel']) && empty($fields['beschreibung'])) {
                     $action_anzeige .= "Objekt nicht gefunden: ".$fields['objekt']." ".$fields['objektnummer'].$check;
@@ -5616,7 +5653,7 @@ class Importvorlage extends GenImportvorlage {
                 $dateiname = basename($fields['quellpfad']);
                 $dms_dateien = $this->app->erp->GetDateiSubjektObjekt($stichwort['wert'],$objekt['objekt'],$objekt['id'],$fields['dateiname']);
             }
-            
+
             switch ($dateiaktion) {
                 case 'url':
                     $action_anzeige .= 'Dateiaktion URL nicht implementiert. ';
