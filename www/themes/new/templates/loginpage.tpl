@@ -40,7 +40,7 @@
 			<div class="copyright">
 				&copy; [YEAR] by OpenXE-org & Xentral&nbsp;ERP&nbsp;Software&nbsp;GmbH.<br>
                 OpenXE is free open source software under AGPL/EGPL license, based on <a href="https://xentral.com" target="_blank">Xentral®</a>.<br>
-				<a href="https://github.com/OpenXE-org/OpenXE/commits/master">[XENTRALVERSION]</a>
+				<a href="https://github.com/BeckerJakob/OpenXE/commits/master">[XENTRALVERSION]</a>
 			</div>
 		</div>
 
