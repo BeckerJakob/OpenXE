@@ -84,10 +84,18 @@
                                                     </tr>
                                                     <tr [KOPFFELDERHIDDEN]>
                                                         <td>
-                                                            {|Steuersatz %|}:
+                                                            {|Steuersatz normal %|}:
                                                         </td>
                                                         <td>
                                                             <input type="number" step="0.01" min="0" name="ustnormal" id="ustnormal" value="[USTNORMAL]" placeholder="[STANDARDSTEUERSATZ]" size="20" [KOPFFELDERDISABLED]>
+                                                        </td>
+                                                    </tr>
+                                                    <tr [KOPFFELDERHIDDEN]>
+                                                        <td>
+                                                            {|Steuersatz erm&auml;&szlig;igt %|}:
+                                                        </td>
+                                                        <td>
+                                                            <input type="number" step="0.01" min="0" name="ustermaessigt" id="ustermaessigt" value="[USTERMAESSIGT]" placeholder="[STANDARDSTEUERSATZERMAESSIGT]" size="20" [KOPFFELDERDISABLED]>
                                                         </td>
                                                     </tr>
                                                     <tr [KOPFFELDERHIDDEN]>

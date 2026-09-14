@@ -684,6 +684,7 @@ class Verbindlichkeit {
                 $freigabe = $this->app->DB->SelectArr("SELECT rechnungsfreigabe, freigabe FROM verbindlichkeit WHERE id =".$id)[0];
                 $kopf_sachkonto = $input['sachkonto'] ?? '';
                 $kopf_ustnormal = $input['ustnormal'] ?? '';
+                $kopf_ustermaessigt = $input['ustermaessigt'] ?? '';
                 $kopf_betrag = $input['betrag'] ?? '';
                 if ($freigabe['rechnungsfreigabe'] || $freigabe['freigabe']) {
                     $internebemerkung = $input['internebemerkung'];
@@ -706,6 +707,7 @@ class Verbindlichkeit {
                     if ($kopfposition_erlaubt) {
                         $input['sachkonto'] = $kopf_sachkonto;
                         $input['ustnormal'] = $kopf_ustnormal;
+                        $input['ustermaessigt'] = $kopf_ustermaessigt;
                     }
                 } else {
 
@@ -1109,6 +1111,14 @@ class Verbindlichkeit {
                 }
             }
             $this->app->Tpl->Set('USTNORMAL', $ustnormal_display);
+            $ustermaessigt_display = '';
+            if ($verbindlichkeit_from_db['ustermaessigt'] !== '' && $verbindlichkeit_from_db['ustermaessigt'] !== null) {
+                $ustermaessigt_value = (float)str_replace(',', '.', (string)$verbindlichkeit_from_db['ustermaessigt']);
+                if ($ustermaessigt_value >= 0) {
+                    $ustermaessigt_display = number_format($ustermaessigt_value, 2, '.', '');
+                }
+            }
+            $this->app->Tpl->Set('USTERMAESSIGT', $ustermaessigt_display);
         }
 
         // Check  positions
@@ -1278,6 +1288,11 @@ class Verbindlichkeit {
             $standardsteuersatz = 19;
         }
         $this->app->Tpl->Set('STANDARDSTEUERSATZ', $standardsteuersatz);
+        $standardsteuersatzermaessigt = $this->app->erp->Firmendaten('steuersatz_ermaessigt');
+        if (empty($standardsteuersatzermaessigt)) {
+            $standardsteuersatzermaessigt = 7;
+        }
+        $this->app->Tpl->Set('STANDARDSTEUERSATZERMAESSIGT', $standardsteuersatzermaessigt);
 
         if (!empty($verbindlichkeit_from_db)) {
             // -- POSITIONEN
@@ -1408,6 +1423,7 @@ class Verbindlichkeit {
 	    $input['internebemerkung'] = $this->app->Secure->GetPOST('internebemerkung');
         $input['sachkonto'] = $this->normalize_sachkonto($this->app->Secure->GetPOST('sachkonto'));
         $input['ustnormal'] = $this->normalize_steuersatz($this->app->Secure->GetPOST('ustnormal'));
+        $input['ustermaessigt'] = $this->normalize_steuersatz($this->app->Secure->GetPOST('ustermaessigt'));
         return $input;
     }
 
